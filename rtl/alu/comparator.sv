@@ -1,4 +1,13 @@
 `timescale 1ns/1ps
+// ============================================================
+// ALU comparison sub-unit
+//
+// Equality and ordered comparisons. Each produces a 1-bit boolean
+// zero-extended to WIDTH bits (1 = true, 0 = false). The *_U
+// variants compare unsigned; the *_S variants compare signed
+// (two's complement).
+// ============================================================
+
 module comparator #(
     parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(

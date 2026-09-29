@@ -2,6 +2,15 @@
 `ifndef ALU_PKG_SV
 `define ALU_PKG_SV
 
+// ============================================================
+// ALU package
+//
+// Single source of truth for the ALU opcode encoding and the
+// status-flag layout. The ALU sub-units, the decoder and the CPU
+// packages all consume these definitions, so the opcode numbering
+// is defined in exactly one place.
+// ============================================================
+
 package alu_pkg;
 
     // ============================================================
@@ -10,6 +19,12 @@ package alu_pkg;
 
     localparam int OPCODE_WIDTH = 6;
 
+    // Status flags, packed MSB-first:
+    //   Z  : result is zero
+    //   N  : result sign bit (MSB)
+    //   C  : carry out / no borrow
+    //   V  : signed overflow
+    //   DZ : divide by zero
     typedef struct packed {
         logic Z;
         logic N;
@@ -82,6 +97,8 @@ package alu_pkg;
         ALU_GES    = 'h27
     } opcode_t;
 
+    // Number of defined opcodes (0x00..ALU_GES) and the number of
+    // distinct encodings the OPCODE_WIDTH-bit field can hold.
     localparam int OPCODE_COUNT = int'(ALU_GES) + 1;
     localparam int OPCODE_ENCODINGS = 1 << OPCODE_WIDTH;
 

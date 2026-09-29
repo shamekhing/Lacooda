@@ -1,4 +1,13 @@
 `timescale 1ns/1ps
+// ============================================================
+// ALU shift / rotate sub-unit
+//
+// SHL, SHR, arithmetic right shift (SAR) and the ROL/ROR
+// rotations. The rotate amount is reduced modulo WIDTH, which the
+// "shift by WIDTH - amount" trick below relies on; WIDTH must be a
+// power of two (the default 64 satisfies this).
+// ============================================================
+
 module shifter #(
     parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(

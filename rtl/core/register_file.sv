@@ -1,4 +1,13 @@
 `timescale 1ns/1ps
+// ============================================================
+// Register file
+//
+// Two asynchronous read ports and one synchronous write port.
+// Register 0 is architecturally hardwired to zero: writes to it
+// are ignored and reads from it always return zero. Reset is
+// asynchronous and clears every register.
+// ============================================================
+
 module register_file #(
     parameter int DATA_WIDTH = cpu_pkg::DATA_WIDTH,
     parameter int ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH,

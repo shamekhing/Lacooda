@@ -1,4 +1,12 @@
 `timescale 1ns/1ps
+// ============================================================
+// Status register
+//
+// Single-entry register holding the ALU flags. Cleared
+// asynchronously by reset; otherwise updated on the rising clock
+// edge only when write_enable is asserted.
+// ============================================================
+
 module status_register (
     input logic clk,
     input logic rst,

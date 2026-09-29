@@ -1,4 +1,21 @@
 `timescale 1ns/1ps
+// ============================================================
+// Datapath
+//
+// Wires the register file, operand-B multiplexer, ALU and status
+// register together for a single-issue integer core.
+//
+//   - operand A always comes from register rs1
+//   - operand B is either register rs2 or the sign-extended
+//     immediate, selected by use_immediate
+//   - the ALU result is written back to rd
+//   - ALU flags are latched into the status register
+//
+// Register and flag writes are additionally gated by the ALU
+// `valid` output and by reset, so an illegal opcode or an active
+// reset can never modify architectural state.
+// ============================================================
+
 module datapath #(
     parameter int DATA_WIDTH = cpu_pkg::DATA_WIDTH,
     parameter int REG_ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH

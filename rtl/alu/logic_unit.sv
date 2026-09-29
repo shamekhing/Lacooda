@@ -1,4 +1,12 @@
 `timescale 1ns/1ps
+// ============================================================
+// ALU bitwise-logic sub-unit
+//
+// Pure bitwise operations (no flags): AND/OR/XOR/NOT/NAND/NOR/
+// XNOR, plus the two operand pass-throughs used to implement
+// MOV (PASS_A) and MOVI (PASS_B).
+// ============================================================
+
 module logic_unit #(
     parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(

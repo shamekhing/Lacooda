@@ -1,5 +1,27 @@
 `timescale 1ns/1ps
 
+// ============================================================
+// Instruction decoder
+//
+// Splits a 64-bit instruction into its fields, validates the
+// operand format and produces the datapath control signals.
+//
+// Format rules per instruction class:
+//   MOV (PASS_A) & unary ops : operand A = RS1; no immediate;
+//                              RS2 and IMM32 must be zero
+//   MOVI (PASS_B)            : operand B = sign-extended IMM32;
+//                              immediate mode required; RS1/RS2 zero
+//   binary ops               : register mode needs IMM32 = 0;
+//                              immediate mode needs RS2 = 0
+//
+// In addition: reserved bits must be zero and MOV/MOVI must not
+// update the status register. Any violation clears every control
+// output and raises illegal_instruction.
+//
+// The opcode-classification helpers live here because the decoder
+// is their only consumer.
+// ============================================================
+
 module decoder (
     input  cpu_pkg::instruction_t instruction,
 

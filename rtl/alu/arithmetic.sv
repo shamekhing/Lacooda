@@ -1,4 +1,20 @@
 `timescale 1ns/1ps
+// ============================================================
+// ALU arithmetic sub-unit
+//
+// Handles ADD/ADC/SUB/SBC, MUL/MULH, unsigned and signed
+// DIV/MOD, NEG, ABS and the signed/unsigned MIN/MAX operations.
+//
+// Side-channel status:
+//   carry    : unsigned carry out (ADD) / no-borrow (SUB)
+//   overflow : signed overflow; set when the true result is not
+//              representable in WIDTH bits
+//   div_zero : asserted whenever the divisor B is zero
+//
+// The signed MIN/-1 division and modulo cases are special-cased to
+// avoid the implementation-defined overflow of signed division.
+// ============================================================
+
 module arithmetic #(
     parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(

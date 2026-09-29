@@ -2,6 +2,15 @@
 `ifndef CPU_PKG_SV
 `define CPU_PKG_SV
 
+// ============================================================
+// CPU package
+//
+// Core data-path widths and types, the instruction bit layout, the
+// packed instruction-field view, and the small helpers used to
+// build and sign-extend instructions. Opcodes are imported from
+// alu_pkg so the whole design shares one opcode type.
+// ============================================================
+
 package cpu_pkg;
 
     import alu_pkg::*;
@@ -18,6 +27,7 @@ package cpu_pkg;
     typedef logic [IMMEDIATE_WIDTH-1:0] imm_t;
     localparam reg_addr_t ZERO_REG = '0;
 
+    // Bit positions of the packed instruction fields (LSB first).
     localparam int IMM_LSB = 0;
     localparam int IMM_MSB = IMM_LSB + IMMEDIATE_WIDTH - 1;
     localparam int RS2_LSB = IMM_MSB + 1;
@@ -34,6 +44,8 @@ package cpu_pkg;
     localparam int RESERVED_MSB = INSTRUCTION_WIDTH - 1;
     localparam int RESERVED_WIDTH = INSTRUCTION_WIDTH - RESERVED_LSB;
 
+    // Packed overlay of the 64-bit instruction word. The first
+    // member occupies the most significant bits.
     typedef struct packed {
         logic [RESERVED_WIDTH-1:0] reserved;
         logic update_status;
@@ -45,10 +57,12 @@ package cpu_pkg;
         imm_t imm32;
     } instruction_fields_t;
 
+    // Sign-extend the 32-bit immediate field to the data width.
     function automatic data_t sign_extend_imm32(input imm_t value);
         return {{(DATA_WIDTH-IMMEDIATE_WIDTH){value[IMMEDIATE_WIDTH-1]}}, value};
     endfunction
 
+    // Assemble a 64-bit instruction word from the individual fields.
     function automatic instruction_t encode_instruction(
         input opcode_t opcode,
         input reg_addr_t rd, rs1, rs2,

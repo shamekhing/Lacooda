@@ -1,6 +1,6 @@
 module register_file #(
     parameter int DATA_WIDTH = 64,
-    parameter int ADDR_WIDTH = 8,
+    parameter int ADDR_WIDTH = 6,
     parameter int REG_COUNT  = (1 << ADDR_WIDTH)
 ) (
     input  logic                  clk,

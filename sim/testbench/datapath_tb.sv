@@ -10,9 +10,9 @@ module datapath_tb;
 
     logic rst;
 
-    logic [7:0] rs1;
-    logic [7:0] rs2;
-    logic [7:0] rd;
+    logic [5:0] rs1;
+    logic [5:0] rs2;
+    logic [5:0] rd;
 
     logic [5:0] alu_op;
     logic carry_in;
@@ -71,9 +71,9 @@ module datapath_tb;
 
     task automatic execute(
         input logic [5:0] operation,
-        input logic [7:0] src_a,
-        input logic [7:0] src_b,
-        input logic [7:0] dest,
+        input logic [5:0] src_a,
+        input logic [5:0] src_b,
+        input logic [5:0] dest,
 
         input logic imm_enable,
         input logic [63:0] imm,
@@ -115,7 +115,7 @@ module datapath_tb;
     // =========================================================
 
     task automatic expect_reg(
-        input logic [7:0] addr,
+        input logic [5:0] addr,
         input logic [63:0] expected
     );
 
@@ -320,17 +320,17 @@ module datapath_tb;
         expect_reg(7, 123);
 
         // =====================================================
-        // Test register R200
+        // Test register R63
         // =====================================================
 
         execute(
             ALU_PASS_A,
-            7, 0, 200,
+            7, 0, 63,
             0, 0,
             1, 0, 0
         );
 
-        expect_reg(200, 123);
+        expect_reg(63, 123);
 
         // =====================================================
         // R0 must remain zero.
@@ -418,7 +418,7 @@ module datapath_tb;
 
         rst = 0;
 
-        expect_reg(200, 0);
+        expect_reg(63, 0);
         expect_reg(7, 0);
 
         // =====================================================

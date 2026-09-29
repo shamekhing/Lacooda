@@ -1,7 +1,7 @@
 
 module datapath #(
     parameter int DATA_WIDTH = 64,
-    parameter int REG_ADDR_WIDTH = 8
+    parameter int REG_ADDR_WIDTH = 6
 ) (
     input logic clk,
     input logic rst,

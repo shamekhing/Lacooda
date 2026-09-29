@@ -42,7 +42,33 @@ vvp sim/build/register_file_sim
 mv -f register_file.vcd sim/waveforms/register_file.vcd
 
 # ============================================================
-# 3. WAVEFORMS
+# 3. DATAPATH
+# ============================================================
+
+echo "========== DATAPATH TEST =========="
+
+iverilog -g2012 -Wall \
+    -s datapath_tb \
+    -o sim/build/datapath_sim \
+    rtl/packages/opcode_pkg.sv \
+    rtl/packages/flags_pkg.sv \
+    rtl/alu/arithmetic.sv \
+    rtl/alu/logic_unit.sv \
+    rtl/alu/shifter.sv \
+    rtl/alu/comparator.sv \
+    rtl/alu/alu.sv \
+    rtl/core/register_file.sv \
+    rtl/core/status_register.sv \
+    rtl/core/datapath.sv \
+    sim/testbench/datapath_tb.sv
+
+vvp sim/build/datapath_sim
+
+mv -f datapath.vcd sim/waveforms/datapath.vcd
+
+
+# ============================================================
+# 4. WAVEFORMS
 # ============================================================
 
 echo "========== ALL TESTS PASSED =========="
@@ -50,7 +76,8 @@ echo "========== ALL TESTS PASSED =========="
 # Clear conflicting Snap libraries
 unset GTK_PATH GIO_MODULE_DIR LD_LIBRARY_PATH LD_PRELOAD
 
-# Open both waveform files
+# Open waveforms files
 gtkwave \
     sim/waveforms/alu.vcd \
-    sim/waveforms/register_file.vcd
+    sim/waveforms/register_file.vcd \
+    sim/waveforms/datapath.vcd

@@ -1,7 +1,7 @@
-
+`timescale 1ns/1ps
 module datapath #(
-    parameter int DATA_WIDTH = 64,
-    parameter int REG_ADDR_WIDTH = 6
+    parameter int DATA_WIDTH = cpu_pkg::DATA_WIDTH,
+    parameter int REG_ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH
 ) (
     input logic clk,
     input logic rst,
@@ -12,7 +12,7 @@ module datapath #(
     input logic [REG_ADDR_WIDTH-1:0] rd,
 
     // ALU control
-    input logic [5:0] alu_op,
+    input alu_pkg::opcode_t alu_op,
     input logic carry_in,
 
     // Immediate operand
@@ -30,8 +30,8 @@ module datapath #(
     output logic valid,
 
     // Flags
-    output flags_pkg::flags_t alu_flags,
-    output flags_pkg::flags_t status_flags
+    output alu_pkg::flags_t alu_flags,
+    output alu_pkg::flags_t status_flags
 );
 
     logic [DATA_WIDTH-1:0] register_b;

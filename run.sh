@@ -13,8 +13,8 @@ echo "========== ALU TEST =========="
 iverilog -g2012 -Wall \
     -s alu_tb \
     -o sim/build/alu_sim \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/flags_pkg.sv \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
     rtl/alu/arithmetic.sv \
     rtl/alu/logic_unit.sv \
     rtl/alu/shifter.sv \
@@ -35,6 +35,8 @@ echo "========== REGISTER FILE TEST =========="
 iverilog -g2012 -Wall \
     -s register_file_tb \
     -o sim/build/register_file_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
     rtl/core/register_file.sv \
     sim/testbench/register_file_tb.sv
 
@@ -50,8 +52,8 @@ echo "========== DATAPATH TEST =========="
 iverilog -g2012 -Wall \
     -s datapath_tb \
     -o sim/build/datapath_sim \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/flags_pkg.sv \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
     rtl/alu/arithmetic.sv \
     rtl/alu/logic_unit.sv \
     rtl/alu/shifter.sv \
@@ -68,10 +70,31 @@ mv -f datapath.vcd sim/waveforms/datapath.vcd
 
 
 # ============================================================
-# 4. WAVEFORMS
+# 4. DECODER
+# ============================================================
+
+echo "========== DECODER TEST =========="
+
+iverilog -g2012 -Wall \
+    -s decoder_tb \
+    -o sim/build/decoder_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/core/decoder.sv \
+    sim/testbench/decoder_tb.sv
+
+vvp sim/build/decoder_sim
+mv -f decoder_tb.vcd sim/waveforms/decoder_tb.vcd
+
+# ============================================================
+# WAVEFORMS
 # ============================================================
 
 echo "========== ALL TESTS PASSED =========="
+
+if [[ "${1:-}" == "--no-gui" ]]; then
+    exit 0
+fi
 
 # Clear conflicting Snap libraries
 unset GTK_PATH GIO_MODULE_DIR LD_LIBRARY_PATH LD_PRELOAD
@@ -80,4 +103,5 @@ unset GTK_PATH GIO_MODULE_DIR LD_LIBRARY_PATH LD_PRELOAD
 gtkwave \
     sim/waveforms/alu.vcd \
     sim/waveforms/register_file.vcd \
-    sim/waveforms/datapath.vcd
+    sim/waveforms/datapath.vcd \
+    sim/waveforms/decoder_tb.vcd

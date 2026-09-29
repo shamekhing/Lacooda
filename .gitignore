@@ -5,6 +5,7 @@
 
 sim/build/*
 sim/waveforms/*
+/*_sim
 
 # Preserve the directories in Git
 !sim/build/.gitkeep

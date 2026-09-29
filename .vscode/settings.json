@@ -1,0 +1,1 @@
+{"systemverilog.includeIndexing":["**/*.sv","**/*.svh"],"systemverilog.libraryIndexing":["rtl/packages/meta_pkg.sv","rtl/packages/alu_pkg.sv"],"systemverilog.linter":"verilator","systemverilog.launchConfiguration":"verilator --sv --lint-only -Wall -y rtl/packages","systemverilog.lintOnUnsaved":false,"verilog.lint.verilator.enabled":false,"verilog.lint.slang.enabled":false}

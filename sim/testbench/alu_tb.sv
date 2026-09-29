@@ -3,7 +3,7 @@
 
 module alu_tb;
 
-    import opcode_pkg::*;
+    import alu_pkg::*;
 
     localparam int WIDTH = 64;
 
@@ -18,8 +18,8 @@ module alu_tb;
     logic [WIDTH-1:0] result;
     logic valid;
 
-    flags_pkg::flags_t flags;
-    flags_pkg::flags_t stored_flags;
+    alu_pkg::flags_t flags;
+    alu_pkg::flags_t stored_flags;
 
     integer tests  = 0;
     integer errors = 0;

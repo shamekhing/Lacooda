@@ -3,7 +3,7 @@
 
 module datapath_tb;
 
-    import opcode_pkg::*;
+    import alu_pkg::*;
 
     logic clk = 0;
     always #5 clk = ~clk;
@@ -29,8 +29,8 @@ module datapath_tb;
 
     logic valid;
 
-    flags_pkg::flags_t alu_flags;
-    flags_pkg::flags_t status_flags;
+    alu_pkg::flags_t alu_flags;
+    alu_pkg::flags_t status_flags;
 
     integer tests = 0;
     integer errors = 0;

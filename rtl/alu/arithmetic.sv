@@ -1,9 +1,9 @@
-
+`timescale 1ns/1ps
 module arithmetic #(
-    parameter int WIDTH = 64
+    parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  logic [5:0] op,
+    input  alu_pkg::opcode_t op,
     input  logic carry_in,
 
     output logic [WIDTH-1:0] result,
@@ -12,7 +12,7 @@ module arithmetic #(
     output logic div_zero
 );
 
-    import opcode_pkg::*;
+    import alu_pkg::*;
 
     logic [WIDTH:0] temp;
     logic [2*WIDTH-1:0] product;

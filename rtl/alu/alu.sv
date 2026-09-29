@@ -1,17 +1,17 @@
-
+`timescale 1ns/1ps
 module alu #(
-    parameter int WIDTH = 64
+    parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  logic [5:0] op,
+    input  alu_pkg::opcode_t op,
     input  logic carry_in,
 
     output logic [WIDTH-1:0] result,
-    output flags_pkg::flags_t flags,
+    output alu_pkg::flags_t flags,
     output logic valid
 );
 
-    import opcode_pkg::*;
+    import alu_pkg::*;
 
     logic [WIDTH-1:0] arithmetic_result;
     logic [WIDTH-1:0] logic_result;

@@ -1,14 +1,14 @@
-
+`timescale 1ns/1ps
 module comparator #(
-    parameter int WIDTH = 64
+    parameter int WIDTH = cpu_pkg::DATA_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  logic [5:0] op,
+    input  alu_pkg::opcode_t op,
 
     output logic [WIDTH-1:0] result
 );
 
-    import opcode_pkg::*;
+    import alu_pkg::*;
 
     always_comb begin
         result = '0;

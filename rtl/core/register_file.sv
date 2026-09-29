@@ -1,0 +1,31 @@
+module register_file #(
+    parameter int DATA_WIDTH = 64,
+    parameter int ADDR_WIDTH = 8,
+    parameter int REG_COUNT  = (1 << ADDR_WIDTH)
+) (
+    input  logic                  clk,
+    input  logic                  rst,
+    input  logic [ADDR_WIDTH-1:0] read_addr_a,
+    output logic [DATA_WIDTH-1:0] read_data_a,
+    input  logic [ADDR_WIDTH-1:0] read_addr_b,
+    output logic [DATA_WIDTH-1:0] read_data_b,
+    input  logic                  write_enable,
+    input  logic [ADDR_WIDTH-1:0] write_addr,
+    input  logic [DATA_WIDTH-1:0] write_data
+);
+    logic [DATA_WIDTH-1:0] registers [0:REG_COUNT-1];
+
+    // R0 is architecturally hardwired to zero.
+    assign read_data_a = (read_addr_a == '0) ? '0 : registers[read_addr_a];
+    assign read_data_b = (read_addr_b == '0) ? '0 : registers[read_addr_b];
+
+    integer i;
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            for (i = 0; i < REG_COUNT; i = i + 1)
+                registers[i] <= '0;
+        end else if (write_enable && (write_addr != '0)) begin
+            registers[write_addr] <= write_data;
+        end
+    end
+endmodule

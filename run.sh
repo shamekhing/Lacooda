@@ -86,6 +86,35 @@ iverilog -g2012 -Wall \
 vvp sim/build/decoder_sim
 mv -f decoder_tb.vcd sim/waveforms/decoder_tb.vcd
 
+
+# ============================================================
+# 5. CPU CORE INTEGRATION
+# ============================================================
+
+echo "========== CPU CORE TEST =========="
+
+iverilog -g2012 -Wall \
+    -s cpu_core_tb \
+    -o sim/build/cpu_core_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/alu/arithmetic.sv \
+    rtl/alu/logic_unit.sv \
+    rtl/alu/shifter.sv \
+    rtl/alu/comparator.sv \
+    rtl/alu/alu.sv \
+    rtl/core/register_file.sv \
+    rtl/core/status_register.sv \
+    rtl/core/datapath.sv \
+    rtl/core/decoder.sv \
+    rtl/core/cpu_core.sv \
+    sim/testbench/cpu_core_tb.sv
+
+vvp sim/build/cpu_core_sim
+
+mv -f cpu_core.vcd sim/waveforms/cpu_core.vcd
+
+
 # ============================================================
 # WAVEFORMS
 # ============================================================
@@ -104,4 +133,6 @@ gtkwave \
     sim/waveforms/alu.vcd \
     sim/waveforms/register_file.vcd \
     sim/waveforms/datapath.vcd \
-    sim/waveforms/decoder_tb.vcd
+    sim/waveforms/decoder_tb.vcd \
+    sim/waveforms/cpu_core.vcd
+

@@ -114,6 +114,53 @@ vvp sim/build/cpu_core_sim
 
 mv -f cpu_core.vcd sim/waveforms/cpu_core.vcd
 
+# ============================================================
+# 6. PROGRAM COUNTER
+# ============================================================
+
+echo "========== PROGRAM COUNTER TEST =========="
+
+iverilog -g2012 -Wall \
+    -s program_counter_tb \
+    -o sim/build/program_counter_sim \
+    rtl/core/program_counter.sv \
+    sim/testbench/program_counter_tb.sv
+
+vvp sim/build/program_counter_sim
+
+mv -f program_counter.vcd sim/waveforms/program_counter.vcd
+
+
+# ============================================================
+# 7. CPU SYSTEM 
+# ============================================================
+
+echo "========== CPU SYSTEM TEST =========="
+
+iverilog -g2012 -Wall \
+    -s cpu_system_tb \
+    -o sim/build/cpu_system_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/alu/arithmetic.sv \
+    rtl/alu/logic_unit.sv \
+    rtl/alu/shifter.sv \
+    rtl/alu/comparator.sv \
+    rtl/alu/alu.sv \
+    rtl/core/register_file.sv \
+    rtl/core/status_register.sv \
+    rtl/core/datapath.sv \
+    rtl/core/decoder.sv \
+    rtl/core/cpu_core.sv \
+    rtl/core/program_counter.sv \
+    rtl/memory/instruction_memory.sv \
+    rtl/core/instruction_fetch.sv \
+    rtl/core/cpu_system.sv \
+    sim/testbench/cpu_system_tb.sv
+
+vvp sim/build/cpu_system_sim
+
+mv -f cpu_system.vcd sim/waveforms/cpu_system.vcd
 
 # ============================================================
 # WAVEFORMS
@@ -134,5 +181,6 @@ gtkwave \
     sim/waveforms/register_file.vcd \
     sim/waveforms/datapath.vcd \
     sim/waveforms/decoder_tb.vcd \
-    sim/waveforms/cpu_core.vcd
-
+    sim/waveforms/cpu_core.vcd \
+    sim/waveforms/program_counter.vcd \
+    sim/waveforms/cpu_system.vcd

@@ -9,6 +9,9 @@ module instruction_memory #(
     cpu_pkg::instruction_t memory [0:DEPTH-1];
 
     initial begin
+        for (int i = 0; i < DEPTH; i++)
+            memory[i] = '0;
+
         $readmemh(INIT_FILE, memory);
     end
 

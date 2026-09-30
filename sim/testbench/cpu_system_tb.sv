@@ -116,6 +116,9 @@ module cpu_system_tb;
         // Stop before fetching beyond the program.
         @(negedge clk);
         run = 0;
+        #1;
+        assert (instruction === '0)
+            else $fatal(1, "Unloaded instruction memory must read zero");
 
         $display("PASS: cpu_system_tb");
         $finish;

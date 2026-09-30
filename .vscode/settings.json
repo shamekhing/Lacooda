@@ -1,1 +1,13 @@
-{"systemverilog.includeIndexing":["**/*.sv","**/*.svh"],"systemverilog.libraryIndexing":["rtl/packages/meta_pkg.sv","rtl/packages/alu_pkg.sv"],"systemverilog.linter":"verilator","systemverilog.launchConfiguration":"verilator --sv --lint-only -Wall -y rtl/packages","systemverilog.lintOnUnsaved":false,"verilog.lint.verilator.enabled":false,"verilog.lint.slang.enabled":false}
+{
+  "systemverilog.includeIndexing": ["**/*.sv", "**/*.svh"],
+  "systemverilog.libraryIndexing": [
+    "rtl/packages/alu_pkg.sv",
+    "rtl/packages/cpu_pkg.sv",
+    "rtl/packages/bus_pkg.sv"
+  ],
+  "systemverilog.linter": "verilator",
+  "systemverilog.launchConfiguration": "verilator --sv --lint-only -Wall -y rtl/packages -y rtl/cpu -y rtl/cpu/alu -y rtl/cpu/core -y rtl/cpu/fetch -y rtl/bus -y rtl/memory -y rtl/soc",
+  "systemverilog.lintOnUnsaved": false,
+  "verilog.lint.verilator.enabled": false,
+  "verilog.lint.slang.enabled": false
+}

@@ -36,6 +36,12 @@ module cpu_core_tb;
     integer tests = 0;
     integer errors = 0;
 
+    // Keep the Stage-7 store value tied to what the configured immediate
+    // field can actually encode. For example, with IMMEDIATE_WIDTH=8,
+    // imm_t'(777) encodes 8'h09, so the architectural MOVI value is 9.
+    localparam imm_t STORE_TEST_IMM = imm_t'(777);
+    localparam data_t STORE_TEST_VALUE = sign_extend_imm32(STORE_TEST_IMM);
+
     cpu_core dut (
         .clk(clk),
         .rst(rst),
@@ -301,7 +307,7 @@ module cpu_core_tb;
             data_t'(8 * DATA_BYTES)
         );
 
-        // MOVI R11, #777      -- value to store
+        // MOVI R11, #STORE_TEST_IMM -- value to store after encoding
         execute(
             make_instruction(
                 ALU_PASS_B,
@@ -310,10 +316,10 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(777)
+                STORE_TEST_IMM
             ),
             1'b1,
-            data_t'(777)
+            STORE_TEST_VALUE
         );
 
         // STORE R11, [R10 + DATA_BYTES]
@@ -327,7 +333,7 @@ module cpu_core_tb;
         if (!(instruction_valid && execution_valid && !illegal_instruction &&
               bus_valid && bus_write && bus_ready &&
               bus_address == data_t'(9 * DATA_BYTES) &&
-              bus_write_data == data_t'(777))) begin
+              bus_write_data == STORE_TEST_VALUE)) begin
             $display(
                 "FAIL: STORE bus addr=%h data=%h valid=%b write=%b ready=%b",
                 bus_address, bus_write_data, bus_valid, bus_write, bus_ready
@@ -348,7 +354,7 @@ module cpu_core_tb;
         instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(DATA_BYTES));
         instruction_enable = 1'b1;
         bus_ready = 1'b0;
-        bus_read_data = data_t'(777);
+        bus_read_data = STORE_TEST_VALUE;
         #1;
 
         tests = tests + 1;
@@ -394,7 +400,7 @@ module cpu_core_tb;
         bus_ready = 1'b1;
         bus_read_data = '0;
 
-        check_register(reg_addr_t'(12), data_t'(777));
+        check_register(reg_addr_t'(12), STORE_TEST_VALUE);
 
         // Writing to R0 must not change its value.
         execute(

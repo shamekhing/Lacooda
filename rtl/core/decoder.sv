@@ -61,23 +61,23 @@ module decoder (
     // ------------------------------------------------------------
     // Opcode classification.
     // ------------------------------------------------------------
-    function automatic logic is_valid_alu_opcode(input opcode_t op);
+    function automatic logic is_valid_alu_opcode(input instruction_opcode_t op);
         return (op <= ALU_GES);
     endfunction
 
-    function automatic logic is_unary_opcode(input opcode_t op);
+    function automatic logic is_unary_opcode(input instruction_opcode_t op);
         return (op == ALU_NEG || op == ALU_ABS || op == ALU_NOT);
     endfunction
 
-    function automatic logic is_mov_op(input opcode_t op);
+    function automatic logic is_mov_op(input instruction_opcode_t op);
         return (op == ALU_PASS_A);
     endfunction
 
-    function automatic logic is_movi_op(input opcode_t op);
+    function automatic logic is_movi_op(input instruction_opcode_t op);
         return (op == ALU_PASS_B);
     endfunction
 
-    function automatic logic is_branch_opcode(input opcode_t op);
+    function automatic logic is_branch_opcode(input instruction_opcode_t op);
         return (
             op == CTRL_JMP  ||
             op == CTRL_BEQ  ||
@@ -106,7 +106,11 @@ module decoder (
         format_valid = opcode_valid;
 
         // Every currently defined instruction requires reserved bits 0.
-        if (fields.reserved != '0)
+        if ((instruction >> USED_INSTRUCTION_BITS) != '0)
+            format_valid = 1'b0;
+
+        // Non-power-of-two register counts leave unused address encodings.
+        if (fields.rd >= REG_COUNT || fields.rs1 >= REG_COUNT || fields.rs2 >= REG_COUNT)
             format_valid = 1'b0;
 
         if (branch_op) begin
@@ -219,7 +223,7 @@ module decoder (
                 rs2 = fields.rs2;
                 rd  = fields.rd;
 
-                alu_op = fields.opcode;
+                alu_op = opcode_t'(fields.opcode);
                 immediate = sign_extend_imm32(fields.imm32);
                 use_immediate = fields.immediate_mode;
 

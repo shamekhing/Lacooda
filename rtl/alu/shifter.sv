@@ -3,9 +3,8 @@
 // ALU shift / rotate sub-unit
 //
 // SHL, SHR, arithmetic right shift (SAR) and the ROL/ROR
-// rotations. The rotate amount is reduced modulo WIDTH, which the
-// "shift by WIDTH - amount" trick below relies on; WIDTH must be a
-// power of two (the default 64 satisfies this).
+// rotations. The rotate amount is reduced modulo WIDTH, including
+// byte-scaled widths that are not powers of two.
 // ============================================================
 
 module shifter #(
@@ -23,9 +22,8 @@ module shifter #(
 
     logic [SHIFT_BITS-1:0] amount;
 
-    // Rotations use the shift amount modulo WIDTH.
-    // WIDTH must be a power of two.
-    assign amount = B[SHIFT_BITS-1:0];
+    // Rotations use the full shift operand modulo WIDTH.
+    assign amount = SHIFT_BITS'(B % WIDTH);
 
     always_comb begin
         result = '0;

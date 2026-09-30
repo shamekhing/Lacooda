@@ -100,7 +100,7 @@ package alu_pkg;
     // Number of defined opcodes (0x00..ALU_GES) and the number of
     // distinct encodings the OPCODE_WIDTH-bit field can hold.
     localparam int OPCODE_COUNT = int'(ALU_GES) + 1;
-    localparam int OPCODE_ENCODINGS = 1 << OPCODE_WIDTH;
+    localparam logic [OPCODE_WIDTH:0] OPCODE_ENCODINGS = {1'b1, {OPCODE_WIDTH{1'b0}}};
 
 endpackage
 

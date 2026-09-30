@@ -5,14 +5,14 @@ module alu_tb;
 
     import alu_pkg::*;
 
-    localparam int WIDTH = 64;
+    localparam int WIDTH = cpu_pkg::DATA_WIDTH;
 
     logic clk = 0;
     logic rst;
     logic write_enable;
 
     logic [WIDTH-1:0] A, B;
-    logic [5:0] op;
+    logic [OPCODE_WIDTH-1:0] op;
     logic carry_in;
 
     logic [WIDTH-1:0] result;
@@ -57,12 +57,12 @@ module alu_tb;
     // =========================================================
 
     task automatic check(
-        input logic [5:0] operation,
-        input logic [63:0] a,
-        input logic [63:0] b,
+        input logic [OPCODE_WIDTH-1:0] operation,
+        input logic [WIDTH-1:0] a,
+        input logic [WIDTH-1:0] b,
         input logic cin,
 
-        input logic [63:0] expected_result,
+        input logic [WIDTH-1:0] expected_result,
 
         input logic expected_c,
         input logic expected_v,
@@ -86,7 +86,7 @@ module alu_tb;
                          (expected_result == 64'd0);
 
             expected_n = expected_valid &&
-                         expected_result[63];
+                         expected_result[WIDTH-1];
 
             tests = tests + 1;
 
@@ -235,7 +235,7 @@ module alu_tb;
         // Carry-out
         check(
             ALU_ADD,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
             0,
@@ -245,18 +245,18 @@ module alu_tb;
         // Signed overflow
         check(
             ALU_ADD,
-            64'h7FFFFFFFFFFFFFFF,
+            {1'b0, {(WIDTH-1){1'b1}}},
             1,
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 1, 0, 1
         );
 
         // Negative signed overflow
         check(
             ALU_ADD,
-            64'h8000000000000000,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
+            {1'b1, {(WIDTH-1){1'b0}}},
             0,
             0,
             1, 1, 0, 1
@@ -265,7 +265,7 @@ module alu_tb;
         // ADC carry-in
         check(
             ALU_ADC,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0,
             1,
             0,
@@ -274,10 +274,10 @@ module alu_tb;
 
         check(
             ALU_ADC,
-            64'hFFFFFFFFFFFFFFFF,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
+            {WIDTH{1'b1}},
             1,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1, 0, 0, 1
         );
 
@@ -287,7 +287,7 @@ module alu_tb;
             0,
             1,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
@@ -298,10 +298,10 @@ module alu_tb;
         // Subtraction overflow
         check(
             ALU_SUB,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             1,
             0,
-            64'h7FFFFFFFFFFFFFFF,
+            {1'b0, {(WIDTH-1){1'b1}}},
             1, 1, 0, 1
         );
 
@@ -311,7 +311,7 @@ module alu_tb;
             0,
             0,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
@@ -320,7 +320,7 @@ module alu_tb;
             5,
             5,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
@@ -329,10 +329,10 @@ module alu_tb;
 
         check(
             ALU_SBC,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             1,
             1,
-            64'h7FFFFFFFFFFFFFFF,
+            {1'b0, {(WIDTH-1){1'b1}}},
             1, 1, 0, 1
         );
 
@@ -348,20 +348,20 @@ module alu_tb;
         check(ALU_MUL, 0, 123, 0,
               0, 0, 0, 0, 1);
 
-        // Low 64 bits
+        // Low WIDTH bits
         check(
             ALU_MUL,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             2,
             0,
-            64'hFFFFFFFFFFFFFFFE,
+            {{(WIDTH-1){1'b1}}, 1'b0},
             0, 0, 0, 1
         );
 
-        // Upper 64 bits
+        // Upper WIDTH bits
         check(
             ALU_MULH,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             2,
             0,
             1,
@@ -370,10 +370,10 @@ module alu_tb;
 
         check(
             ALU_MULH,
-            64'hFFFFFFFFFFFFFFFF,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
+            {WIDTH{1'b1}},
             0,
-            64'hFFFFFFFFFFFFFFFE,
+            {{(WIDTH-1){1'b1}}, 1'b0},
             0, 0, 0, 1
         );
 
@@ -473,17 +473,17 @@ module alu_tb;
         // Minimum signed integer / -1
         check(
             ALU_DIVS,
-            64'h8000000000000000,
-            64'hFFFFFFFFFFFFFFFF,
+            {1'b1, {(WIDTH-1){1'b0}}},
+            {WIDTH{1'b1}},
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 1, 0, 1
         );
 
         check(
             ALU_MODS,
-            64'h8000000000000000,
-            64'hFFFFFFFFFFFFFFFF,
+            {1'b1, {(WIDTH-1){1'b0}}},
+            {WIDTH{1'b1}},
             0,
             0,
             0, 0, 0, 1
@@ -503,10 +503,10 @@ module alu_tb;
 
         check(
             ALU_NEG,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0,
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 1, 0, 1
         );
 
@@ -521,10 +521,10 @@ module alu_tb;
 
         check(
             ALU_ABS,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0,
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 1, 0, 1
         );
 
@@ -536,7 +536,7 @@ module alu_tb;
 
         check(
             ALU_MINU,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
             1,
@@ -545,10 +545,10 @@ module alu_tb;
 
         check(
             ALU_MAXU,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
@@ -572,16 +572,16 @@ module alu_tb;
 
         check(
             ALU_MINS,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
         check(
             ALU_MAXS,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
             1,
@@ -608,7 +608,7 @@ module alu_tb;
             0,
             0,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
@@ -617,7 +617,7 @@ module alu_tb;
             64'hFF,
             64'h0F,
             0,
-            64'hFFFFFFFFFFFFFFF0,
+            {{(WIDTH-4){1'b1}}, 4'h0},
             0, 0, 0, 1
         );
 
@@ -626,7 +626,7 @@ module alu_tb;
             64'hF0,
             64'h0F,
             0,
-            64'hFFFFFFFFFFFFFF00,
+            {{(WIDTH-8){1'b1}}, 8'h00},
             0, 0, 0, 1
         );
 
@@ -635,7 +635,7 @@ module alu_tb;
             64'hAA,
             64'h55,
             0,
-            64'hFFFFFFFFFFFFFF00,
+            {{(WIDTH-8){1'b1}}, 8'h00},
             0, 0, 0, 1
         );
 
@@ -659,16 +659,16 @@ module alu_tb;
 
         check(
             ALU_SAR,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             1,
             0,
-            64'hC000000000000000,
+            {2'b11, {(WIDTH-2){1'b0}}},
             0, 0, 0, 1
         );
 
         check(
             ALU_ROL,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             1,
             0,
             1,
@@ -680,31 +680,31 @@ module alu_tb;
             1,
             1,
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 0, 0, 1
         );
 
         // Shift by WIDTH
-        check(ALU_SHL, 1, 64, 0,
+        check(ALU_SHL, 1, WIDTH, 0,
               0, 0, 0, 0, 1);
 
-        check(ALU_SHR, 1, 64, 0,
+        check(ALU_SHR, 1, WIDTH, 0,
               0, 0, 0, 0, 1);
 
         check(
             ALU_SAR,
-            64'h8000000000000000,
-            64,
+            {1'b1, {(WIDTH-1){1'b0}}},
+            WIDTH,
             0,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             0, 0, 0, 1
         );
 
         // Rotate by WIDTH
-        check(ALU_ROL, 1, 64, 0,
+        check(ALU_ROL, 1, WIDTH, 0,
               1, 0, 0, 0, 1);
 
-        check(ALU_ROR, 1, 64, 0,
+        check(ALU_ROR, 1, WIDTH, 0,
               1, 0, 0, 0, 1);
 
         // Rotate by zero
@@ -715,15 +715,15 @@ module alu_tb;
               123, 0, 0, 0, 1);
 
         // Rotate by WIDTH + 1
-        check(ALU_ROL, 1, 65, 0,
+        check(ALU_ROL, 1, WIDTH + 1, 0,
               2, 0, 0, 0, 1);
 
         check(
             ALU_ROR,
             1,
-            65,
+            WIDTH + 1,
             0,
-            64'h8000000000000000,
+            {1'b1, {(WIDTH-1){1'b0}}},
             0, 0, 0, 1
         );
 
@@ -812,7 +812,7 @@ module alu_tb;
         // Signed vs unsigned
         check(
             ALU_LTU,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
             0,
@@ -821,7 +821,7 @@ module alu_tb;
 
         check(
             ALU_LTS,
-            64'hFFFFFFFFFFFFFFFF,
+            {WIDTH{1'b1}},
             1,
             0,
             1,
@@ -837,10 +837,10 @@ module alu_tb;
         // 40 operations occupy 0x00 through 0x27.
         // All remaining encodings must be invalid.
 
-        for (integer i = 6'h28; i <= 6'h3F; i = i + 1) begin
+        for (logic [OPCODE_WIDTH:0] i = OPCODE_COUNT; i < OPCODE_ENCODINGS; i = i + 1) begin
 
             check(
-                i[5:0],
+                i[OPCODE_WIDTH-1:0],
                 10,
                 5,
                 0,
@@ -901,7 +901,7 @@ module alu_tb;
 
         op = ALU_ADD;
 
-        A = 64'hFFFFFFFFFFFFFFFF;
+        A = {WIDTH{1'b1}};
         B = 1;
 
         @(posedge clk);
@@ -913,7 +913,7 @@ module alu_tb;
         // Store negative and overflow flags.
         @(negedge clk);
 
-        A = 64'h7FFFFFFFFFFFFFFF;
+        A = {1'b0, {(WIDTH-1){1'b1}}};
         B = 1;
 
         @(posedge clk);

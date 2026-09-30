@@ -4,28 +4,29 @@
 module datapath_tb;
 
     import alu_pkg::*;
+    import cpu_pkg::*;
 
     logic clk = 0;
     always #5 clk = ~clk;
 
     logic rst;
 
-    logic [5:0] rs1;
-    logic [5:0] rs2;
-    logic [5:0] rd;
+    reg_addr_t rs1;
+    reg_addr_t rs2;
+    reg_addr_t rd;
 
-    logic [5:0] alu_op;
+    logic [OPCODE_WIDTH-1:0] alu_op;
     logic carry_in;
 
-    logic [63:0] immediate;
+    data_t immediate;
     logic use_immediate;
 
     logic register_write_enable;
     logic flags_write_enable;
 
-    logic [63:0] operand_a;
-    logic [63:0] operand_b;
-    logic [63:0] result;
+    data_t operand_a;
+    data_t operand_b;
+    data_t result;
 
     logic valid;
 
@@ -70,13 +71,13 @@ module datapath_tb;
     // =========================================================
 
     task automatic execute(
-        input logic [5:0] operation,
-        input logic [5:0] src_a,
-        input logic [5:0] src_b,
-        input logic [5:0] dest,
+        input logic [OPCODE_WIDTH-1:0] operation,
+        input reg_addr_t src_a,
+        input reg_addr_t src_b,
+        input reg_addr_t dest,
 
         input logic imm_enable,
-        input logic [63:0] imm,
+        input data_t imm,
 
         input logic reg_write,
         input logic flag_write,
@@ -115,8 +116,8 @@ module datapath_tb;
     // =========================================================
 
     task automatic expect_reg(
-        input logic [5:0] addr,
-        input logic [63:0] expected
+        input reg_addr_t addr,
+        input data_t expected
     );
 
         begin
@@ -320,17 +321,17 @@ module datapath_tb;
         expect_reg(7, 123);
 
         // =====================================================
-        // Test register R63
+        // Test the highest architectural register
         // =====================================================
 
         execute(
             ALU_PASS_A,
-            7, 0, 63,
+            7, 0, reg_addr_t'(REG_COUNT - 1),
             0, 0,
             1, 0, 0
         );
 
-        expect_reg(63, 123);
+        expect_reg(reg_addr_t'(REG_COUNT - 1), 123);
 
         // =====================================================
         // R0 must remain zero.
@@ -418,7 +419,7 @@ module datapath_tb;
 
         rst = 0;
 
-        expect_reg(63, 0);
+        expect_reg(reg_addr_t'(REG_COUNT - 1), 0);
         expect_reg(7, 0);
 
         // =====================================================

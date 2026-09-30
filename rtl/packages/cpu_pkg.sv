@@ -22,6 +22,7 @@ package cpu_pkg;
     // Architectural widths and memory configuration.
     // ------------------------------------------------------------
     localparam int DATA_WIDTH = 64;
+    localparam int DATA_BYTES = DATA_WIDTH / 8;
     localparam int REG_COUNT = 64;
     localparam int INSTRUCTION_WIDTH = 64;
     localparam int INSTRUCTION_BYTES = INSTRUCTION_WIDTH / 8;
@@ -35,6 +36,8 @@ package cpu_pkg;
     typedef logic [INSTRUCTION_WIDTH-1:0] instruction_t;
     typedef logic [IMMEDIATE_WIDTH-1:0] imm_t;
 
+    typedef logic [OPCODE_WIDTH-1:0] instruction_opcode_t;
+
     localparam reg_addr_t ZERO_REG = '0;
 
     // ------------------------------------------------------------
@@ -43,13 +46,13 @@ package cpu_pkg;
     // The instruction opcode field is still 6 bits wide. These
     // values occupy unused encodings immediately after ALU_GES.
     // ------------------------------------------------------------
-    localparam opcode_t CTRL_JMP  = opcode_t'(6'h28);
-    localparam opcode_t CTRL_BEQ  = opcode_t'(6'h29);
-    localparam opcode_t CTRL_BNE  = opcode_t'(6'h2A);
-    localparam opcode_t CTRL_BLT  = opcode_t'(6'h2B);
-    localparam opcode_t CTRL_BGE  = opcode_t'(6'h2C);
-    localparam opcode_t CTRL_BLTU = opcode_t'(6'h2D);
-    localparam opcode_t CTRL_BGEU = opcode_t'(6'h2E);
+    localparam instruction_opcode_t CTRL_JMP  = instruction_opcode_t'('h28);
+    localparam instruction_opcode_t CTRL_BEQ  = instruction_opcode_t'('h29);
+    localparam instruction_opcode_t CTRL_BNE  = instruction_opcode_t'('h2A);
+    localparam instruction_opcode_t CTRL_BLT  = instruction_opcode_t'('h2B);
+    localparam instruction_opcode_t CTRL_BGE  = instruction_opcode_t'('h2C);
+    localparam instruction_opcode_t CTRL_BLTU = instruction_opcode_t'('h2D);
+    localparam instruction_opcode_t CTRL_BGEU = instruction_opcode_t'('h2E);
 
     // Internal branch-unit condition encoding. This is a control
     // signal between decoder and branch_unit; it is NOT another
@@ -81,35 +84,56 @@ package cpu_pkg;
     localparam int S_BIT = I_BIT + 1;
     localparam int RESERVED_LSB = S_BIT + 1;
     localparam int RESERVED_MSB = INSTRUCTION_WIDTH - 1;
-    localparam int RESERVED_WIDTH = INSTRUCTION_WIDTH - RESERVED_LSB;
+    localparam int USED_INSTRUCTION_BITS = RESERVED_LSB;
+    localparam int RESERVED_WIDTH = INSTRUCTION_WIDTH - USED_INSTRUCTION_BITS;
 
-    // Packed overlay of the 64-bit instruction word. The first
-    // member occupies the most significant bits.
+    // Run once at initialization, including standalone unit-test elaborations.
+    function automatic bit validate_configuration();
+        if (DATA_WIDTH < 64 || DATA_WIDTH % 8 != 0)
+            $fatal(1, "DATA_WIDTH must be at least 64 and divisible by 8");
+        if (INSTRUCTION_WIDTH <= 0 || INSTRUCTION_WIDTH % 8 != 0)
+            $fatal(1, "INSTRUCTION_WIDTH must be positive and divisible by 8");
+        if (IMMEDIATE_WIDTH <= 0 || IMMEDIATE_WIDTH % 8 != 0 ||
+            IMMEDIATE_WIDTH > DATA_WIDTH)
+            $fatal(1, "IMMEDIATE_WIDTH must be positive, divisible by 8, and <= DATA_WIDTH");
+        if (REG_COUNT < 2)
+            $fatal(1, "REG_COUNT must be at least 2 for a nonzero register-address width");
+        if (OPCODE_WIDTH < $clog2('h2F))
+            $fatal(1, "OPCODE_WIDTH cannot represent the existing Stage 6 opcodes");
+        if (USED_INSTRUCTION_BITS > INSTRUCTION_WIDTH)
+            $fatal(1, "Instruction fields exceed INSTRUCTION_WIDTH");
+        if (INSTRUCTION_MEMORY_DEPTH <= 0)
+            $fatal(1, "INSTRUCTION_MEMORY_DEPTH must be positive");
+        return 1'b1;
+    endfunction
+
+    bit configuration_valid = validate_configuration();
+
+    // Packed payload occupies the low USED_INSTRUCTION_BITS of the instruction.
+    // Reserved bits stay outside the struct so RESERVED_WIDTH may legally be zero.
     typedef struct packed {
-        logic [RESERVED_WIDTH-1:0] reserved;
         logic update_status;
         logic immediate_mode;
-        opcode_t opcode;
+        instruction_opcode_t opcode;
         reg_addr_t rd;
         reg_addr_t rs1;
         reg_addr_t rs2;
         imm_t imm32;
     } instruction_fields_t;
 
-    // Sign-extend a normal ALU immediate from 32 to DATA_WIDTH.
+    // Sign-extend a normal ALU immediate from IMMEDIATE_WIDTH to DATA_WIDTH.
     function automatic data_t sign_extend_imm32(input imm_t value);
         return {{(DATA_WIDTH-IMMEDIATE_WIDTH){value[IMMEDIATE_WIDTH-1]}}, value};
     endfunction
 
-    // Zero-extend a Stage-6 absolute branch target. Stage 6 uses
-    // IMM32 as a byte address in the low 4 GiB of the address space.
+    // Zero-extend the IMMEDIATE_WIDTH-bit absolute byte address.
     function automatic data_t zero_extend_target(input imm_t value);
         return {{(DATA_WIDTH-IMMEDIATE_WIDTH){1'b0}}, value};
     endfunction
 
     // Assemble a normal ALU instruction from its fields.
     function automatic instruction_t encode_instruction(
-        input opcode_t opcode,
+        input instruction_opcode_t opcode,
         input reg_addr_t rd, rs1, rs2,
         input logic immediate_mode, update_status,
         input imm_t imm32
@@ -123,7 +147,7 @@ package cpu_pkg;
         fields.immediate_mode = immediate_mode;
         fields.update_status = update_status;
         fields.imm32 = imm32;
-        return fields;
+        return instruction_t'(fields);
     endfunction
 
     // Assemble a conditional branch.
@@ -135,7 +159,7 @@ package cpu_pkg;
     //
     // RD, I, S and reserved bits are deliberately zero.
     function automatic instruction_t encode_branch(
-        input opcode_t opcode,
+        input instruction_opcode_t opcode,
         input reg_addr_t rs1,
         input reg_addr_t rs2,
         input imm_t target
@@ -146,7 +170,7 @@ package cpu_pkg;
         fields.rs1 = rs1;
         fields.rs2 = rs2;
         fields.imm32 = target;
-        return fields;
+        return instruction_t'(fields);
     endfunction
 
     // Assemble an unconditional jump. JMP consumes no registers;

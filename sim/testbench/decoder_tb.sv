@@ -16,7 +16,8 @@ module decoder_tb;
     data_t branch_target;
     logic instruction_valid, illegal_instruction;
     integer tests = 0, errors = 0;
-    integer op_index, bit_index;
+    logic [OPCODE_WIDTH:0] op_index;
+    integer bit_index;
     instruction_fields_t fields;
 
     decoder dut (
@@ -43,7 +44,7 @@ module decoder_tb;
 
     // Every call samples after combinational logic has settled.
     task automatic expect_valid(input string description,
-                                input integer expected_opcode,
+                                input instruction_opcode_t expected_opcode,
                                 input reg_addr_t expected_rd,
                                 input reg_addr_t expected_rs1,
                                 input reg_addr_t expected_rs2,
@@ -85,7 +86,7 @@ module decoder_tb;
 
     // Create arbitrary raw opcode values without illegal enum casts.
     // The package's packed layout is the source of truth.
-    task automatic set_raw(input integer op,
+    task automatic set_raw(input instruction_opcode_t op,
                            input reg_addr_t dest, src1, src2,
                            input logic i, s, input imm_t imm);
         begin
@@ -108,18 +109,18 @@ module decoder_tb;
 
         $display("=== PACKAGE / ENCODER ===");
         check($bits(instruction_t) == INSTRUCTION_WIDTH &&
-              $bits(instruction_fields_t) == INSTRUCTION_WIDTH,
+              $bits(instruction_fields_t) == USED_INSTRUCTION_BITS,
               "instruction widths match");
         check($bits(reg_addr_t) == REG_ADDR_WIDTH &&
               $bits(imm_t) == IMMEDIATE_WIDTH,
               "operand widths match");
-        check(RESERVED_WIDTH > 0 && OPCODE_LSB == RD_MSB + 1,
+        check(RESERVED_WIDTH >= 0 && OPCODE_LSB == RD_MSB + 1,
               "derived instruction layout");
-        instruction = encode_instruction(ALU_ADD, reg_addr_t'(63),
+        instruction = encode_instruction(ALU_ADD, reg_addr_t'(REG_COUNT - 1),
                       reg_addr_t'(1), reg_addr_t'(2), 1'b1, 1'b1, imm_t'(123));
         fields = instruction;
-        check(fields.reserved === '0 && fields.opcode === ALU_ADD &&
-              fields.rd === reg_addr_t'(63) && fields.rs1 === reg_addr_t'(1) &&
+        check((instruction >> USED_INSTRUCTION_BITS) === '0 && fields.opcode === ALU_ADD &&
+              fields.rd === reg_addr_t'(REG_COUNT - 1) && fields.rs1 === reg_addr_t'(1) &&
               fields.rs2 === reg_addr_t'(2) && fields.immediate_mode &&
               fields.update_status && fields.imm32 === imm_t'(123),
               "encoder packed field mapping");
@@ -176,15 +177,15 @@ module decoder_tb;
         expect_valid("R0 destination is legal", int'(ALU_PASS_B),
                      ZERO_REG, ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(1));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b1, imm_t'(32'h80000000));
+                1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
         expect_valid("minimum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b1, imm_t'(32'h80000000));
+                     1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b0, imm_t'(32'h7fffffff));
+                1'b1, 1'b0, (imm_t'('1) >> 1));
         expect_valid("maximum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b0, imm_t'(32'h7fffffff));
+                     1'b1, 1'b0, (imm_t'('1) >> 1));
 
         $display("=== STAGE 6 CONTROL FLOW ===");
         instruction = encode_jump(imm_t'(32));
@@ -223,13 +224,11 @@ module decoder_tb;
         for (bit_index = 0; bit_index < RESERVED_WIDTH; bit_index = bit_index + 1) begin
             set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
                     reg_addr_t'(3), 1'b0, 1'b1, '0);
-            fields = instruction;
-            fields.reserved = RESERVED_WIDTH'(1) << bit_index;
-            instruction = fields;
+            instruction[RESERVED_LSB + bit_index] = 1'b1;
             expect_invalid($sformatf("reserved bit %0d", bit_index));
         end
         for (op_index = int'(CTRL_BGEU)+1;
-             op_index < (1 << OPCODE_WIDTH); op_index = op_index + 1) begin
+             op_index < OPCODE_ENCODINGS; op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
             expect_invalid($sformatf("undefined opcode %0d", op_index));
         end

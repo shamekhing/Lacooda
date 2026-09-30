@@ -80,6 +80,23 @@ module cpu_system_tb;
         $dumpfile("cpu_system.vcd");
         $dumpvars(0, cpu_system_tb);
 
+        // The checked-in image encodes the default layout. Re-encode the same
+        // five instructions only when architectural dimensions change.
+        if (INSTRUCTION_WIDTH != 64 || REG_COUNT != 64 ||
+            IMMEDIATE_WIDTH != 32 || OPCODE_WIDTH != 6) begin
+            #1; // Let the ROM's time-zero initialization finish first.
+            dut.u_fetch.u_imem.memory[0] = encode_instruction(
+                ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(5));
+            dut.u_fetch.u_imem.memory[1] = encode_instruction(
+                ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(5));
+            dut.u_fetch.u_imem.memory[2] = encode_branch(
+                CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(2), imm_t'(4 * INSTRUCTION_BYTES));
+            dut.u_fetch.u_imem.memory[3] = encode_instruction(
+                ALU_PASS_B, reg_addr_t'(3), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(111));
+            dut.u_fetch.u_imem.memory[4] = encode_instruction(
+                ALU_PASS_B, reg_addr_t'(3), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(222));
+        end
+
         // Hold reset through a rising edge and verify the Stage-5 PC
         // reset behavior remains intact.
         @(posedge clk);
@@ -155,7 +172,7 @@ module cpu_system_tb;
             data_t'(4 * INSTRUCTION_BYTES),
             encode_instruction(ALU_PASS_B, reg_addr_t'(3), ZERO_REG, ZERO_REG,
                                1'b1, 1'b0, imm_t'(222)),
-            data_t'(222)
+            sign_extend_imm32(imm_t'(222))
         );
 
         @(posedge clk); // Commit R3=222.
@@ -168,11 +185,12 @@ module cpu_system_tb;
         // the skipped MOVI never wrote R3=111. The architectural result is
         // R3=222 after the target instruction commits.
         #1;
-        assert (dut.u_core.u_datapath.u_register_file.registers[3] === data_t'(222))
-            else $fatal(1, "R3 expected 222, got %0d",
+        assert (dut.u_core.u_datapath.u_register_file.registers[3] === sign_extend_imm32(imm_t'(222)))
+            else $fatal(1, "R3 expected %0d, got %0d", sign_extend_imm32(imm_t'(222)),
                         dut.u_core.u_datapath.u_register_file.registers[3]);
 
-        $display("PASS: branch skipped PC=24 and R3=222");
+        $display("PASS: branch skipped PC=%0d and R3=%0d",
+                 3 * INSTRUCTION_BYTES, sign_extend_imm32(imm_t'(222)));
         $display("PASS: cpu_system_tb");
         $finish;
     end

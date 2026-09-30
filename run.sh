@@ -123,6 +123,8 @@ echo "========== PROGRAM COUNTER TEST =========="
 iverilog -g2012 -Wall \
     -s program_counter_tb \
     -o sim/build/program_counter_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
     rtl/core/program_counter.sv \
     sim/testbench/program_counter_tb.sv
 

@@ -4,10 +4,10 @@ module instruction_fetch (
     input  logic        enable,
 
     input  logic        redirect,
-    input  logic [63:0] target,
+    input  cpu_pkg::data_t target,
 
-    output logic [63:0] pc,
-    output logic [63:0] instruction
+    output cpu_pkg::data_t pc,
+    output cpu_pkg::instruction_t instruction
 );
 
     program_counter u_pc (

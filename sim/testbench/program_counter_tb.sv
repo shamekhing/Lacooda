@@ -1,14 +1,16 @@
 `timescale 1ns/1ps
 
 module program_counter_tb;
+    import cpu_pkg::*;
+    localparam data_t REDIRECT_TARGET = 8 * INSTRUCTION_BYTES;
 
     logic clk = 0;
     logic rst = 1;
     logic enable = 0;
     logic redirect = 0;
 
-    logic [63:0] target = 0;
-    logic [63:0] pc;
+    data_t target = 0;
+    data_t pc;
 
     always #5 clk = ~clk;
 
@@ -21,7 +23,7 @@ module program_counter_tb;
         .pc(pc)
     );
 
-    task automatic check_pc(input logic [63:0] expected);
+    task automatic check_pc(input data_t expected);
         assert (pc === expected)
             else $fatal(1,
                 "PC mismatch: expected %0d, got %0d",
@@ -34,7 +36,7 @@ module program_counter_tb;
         // Reset
         @(posedge clk);
         #1;
-        check_pc(0);
+        check_pc('0);
 
         // First instruction
         @(negedge clk);
@@ -43,12 +45,12 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(8);
+        check_pc(INSTRUCTION_BYTES);
 
         // Second instruction
         @(posedge clk);
         #1;
-        check_pc(16);
+        check_pc(2 * INSTRUCTION_BYTES);
 
         // Hold
         @(negedge clk);
@@ -56,17 +58,17 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(16);
+        check_pc(2 * INSTRUCTION_BYTES);
 
         // Redirect
         @(negedge clk);
         enable = 1;
         redirect = 1;
-        target = 64;
+        target = REDIRECT_TARGET;
 
         @(posedge clk);
         #1;
-        check_pc(64);
+        check_pc(REDIRECT_TARGET);
 
         // Resume sequential execution
         @(negedge clk);
@@ -74,7 +76,7 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(72);
+        check_pc(REDIRECT_TARGET + INSTRUCTION_BYTES);
 
         $display("PASS: program_counter_tb");
         $finish;

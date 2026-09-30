@@ -1,13 +1,15 @@
 `timescale 1ns/1ps
 
 module cpu_system_tb;
+    import cpu_pkg::*;
+    import alu_pkg::*;
 
     logic clk = 0;
     logic rst = 1;
     logic run = 0;
 
-    logic [63:0] pc;
-    logic [63:0] instruction;
+    data_t pc;
+    instruction_t instruction;
 
     logic execution_valid;
     logic illegal_instruction;
@@ -31,9 +33,9 @@ module cpu_system_tb;
     );
 
     task automatic check_instruction(
-        input logic [63:0] expected_pc,
-        input logic [63:0] expected_instruction,
-        input logic [63:0] expected_result
+        input data_t expected_pc,
+        input instruction_t expected_instruction,
+        input data_t expected_result
     );
 
         #1;
@@ -71,7 +73,7 @@ module cpu_system_tb;
         @(posedge clk);
         #1;
 
-        assert (pc === 64'd0)
+        assert (pc === '0)
             else $fatal(1, "Reset failed");
 
         // Start program
@@ -81,9 +83,10 @@ module cpu_system_tb;
 
         // MOVI R1, #50
         check_instruction(
-            64'd0,
-            64'h0160100000000032,
-            64'd50
+            '0,
+            encode_instruction(ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG,
+                               1'b1, 1'b0, imm_t'(50)),
+            data_t'(50)
         );
 
         @(posedge clk); // Commit R1 = 50
@@ -91,9 +94,10 @@ module cpu_system_tb;
 
         // MOVI R2, #75
         check_instruction(
-            64'd8,
-            64'h016020000000004B,
-            64'd75
+            INSTRUCTION_BYTES,
+            encode_instruction(ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG,
+                               1'b1, 1'b0, imm_t'(75)),
+            data_t'(75)
         );
 
         @(posedge clk); // Commit R2 = 75
@@ -101,9 +105,10 @@ module cpu_system_tb;
 
         // ADD R3, R1, R2
         check_instruction(
-            64'd16,
-            64'h0000304200000000,
-            64'd125
+            2 * INSTRUCTION_BYTES,
+            encode_instruction(ALU_ADD, reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2),
+                               1'b0, 1'b0, '0),
+            data_t'(125)
         );
 
         @(posedge clk); // Commit R3 = 125

@@ -18,8 +18,11 @@ package cpu_pkg;
     localparam int DATA_WIDTH = 64;
     localparam int REG_COUNT = 64;
     localparam int INSTRUCTION_WIDTH = 64;
+    localparam int INSTRUCTION_BYTES = INSTRUCTION_WIDTH / 8;
     localparam int IMMEDIATE_WIDTH = 32;
     localparam int REG_ADDR_WIDTH = $clog2(REG_COUNT);
+    localparam int INSTRUCTION_MEMORY_DEPTH = 256;
+    localparam INSTRUCTION_MEMORY_INIT_FILE = "programs/program_0.hex";
 
     typedef logic [DATA_WIDTH-1:0] data_t;
     typedef logic [REG_ADDR_WIDTH-1:0] reg_addr_t;

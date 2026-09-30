@@ -3,8 +3,8 @@ module cpu_system (
     input logic rst,
     input logic run,
 
-    output logic [63:0] pc,
-    output logic [63:0] instruction,
+    output cpu_pkg::data_t pc,
+    output cpu_pkg::instruction_t instruction,
 
     output logic execution_valid,
     output logic illegal_instruction,
@@ -30,7 +30,7 @@ module cpu_system (
         .enable      (fetch_enable),
 
         .redirect    (1'b0),
-        .target      (64'd0),
+        .target      (cpu_pkg::data_t'('0)),
 
         .pc          (pc),
         .instruction (instruction)

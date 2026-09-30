@@ -4,20 +4,20 @@ module program_counter (
     input  logic        enable,
 
     input  logic        redirect,
-    input  logic [63:0] target,
+    input  cpu_pkg::data_t target,
 
-    output logic [63:0] pc
+    output cpu_pkg::data_t pc
 );
 
     always_ff @(posedge clk) begin
         if (rst)
-            pc <= 64'd0;
+            pc <= '0;
 
         else if (enable) begin
             if (redirect)
                 pc <= target;
             else
-                pc <= pc + 64'd8;
+                pc <= pc + cpu_pkg::data_t'(cpu_pkg::INSTRUCTION_BYTES);
         end
     end
 

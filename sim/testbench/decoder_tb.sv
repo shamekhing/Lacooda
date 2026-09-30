@@ -11,6 +11,9 @@ module decoder_tb;
     opcode_t alu_op;
     cpu_pkg::data_t immediate;
     logic use_immediate, register_write_enable, flags_write_enable;
+    logic branch_enable;
+    branch_condition_t branch_condition;
+    data_t branch_target;
     logic instruction_valid, illegal_instruction;
     integer tests = 0, errors = 0;
     integer op_index, bit_index;
@@ -21,6 +24,9 @@ module decoder_tb;
         .alu_op(alu_op), .immediate(immediate), .use_immediate(use_immediate),
         .register_write_enable(register_write_enable),
         .flags_write_enable(flags_write_enable),
+        .branch_enable(branch_enable),
+        .branch_condition(branch_condition),
+        .branch_target(branch_target),
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction)
     );
@@ -49,7 +55,7 @@ module decoder_tb;
             check(instruction_valid === 1'b1 && illegal_instruction === 1'b0,
                   {description, " legal"});
             check(register_write_enable === 1'b1 &&
-                  flags_write_enable === expected_s,
+                  flags_write_enable === expected_s && branch_enable === 1'b0,
                   {description, " write controls"});
             check(rd === expected_rd && rs1 === expected_rs1 && rs2 === expected_rs2,
                   {description, " register addresses"});
@@ -66,7 +72,8 @@ module decoder_tb;
             #1;
             check(instruction_valid === 1'b0 && illegal_instruction === 1'b1,
                   {description, " illegal"});
-            check(register_write_enable === 1'b0 && flags_write_enable === 1'b0,
+            check(register_write_enable === 1'b0 && flags_write_enable === 1'b0 &&
+                  branch_enable === 1'b0,
                   {description, " no writes"});
             check(rd === ZERO_REG && rs1 === ZERO_REG && rs2 === ZERO_REG,
                   {description, " register outputs cleared"});
@@ -179,6 +186,39 @@ module decoder_tb;
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
                      1'b1, 1'b0, imm_t'(32'h7fffffff));
 
+        $display("=== STAGE 6 CONTROL FLOW ===");
+        instruction = encode_jump(imm_t'(32));
+        #1;
+        check(instruction_valid && !illegal_instruction && branch_enable,
+              "JMP legal");
+        check(branch_condition == BR_ALWAYS && branch_target == data_t'(32),
+              "JMP controls");
+        check(!register_write_enable && !flags_write_enable,
+              "JMP does not write register/status");
+
+        instruction = encode_branch(CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(2), imm_t'(64));
+        #1;
+        check(instruction_valid && !illegal_instruction && branch_enable,
+              "BEQ legal");
+        check(rs1 == reg_addr_t'(1) && rs2 == reg_addr_t'(2) && rd == ZERO_REG,
+              "BEQ source registers");
+        check(branch_condition == BR_EQ && branch_target == data_t'(64),
+              "BEQ controls");
+
+        // A branch may not claim an RD, immediate mode, or status update.
+        set_raw(int'(CTRL_BEQ), reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2),
+                1'b0, 1'b0, imm_t'(64));
+        expect_invalid("BEQ nonzero RD");
+        set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
+                1'b1, 1'b0, imm_t'(64));
+        expect_invalid("BEQ I=1");
+        set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
+                1'b0, 1'b1, imm_t'(64));
+        expect_invalid("BEQ S=1");
+        set_raw(int'(CTRL_JMP), ZERO_REG, reg_addr_t'(1), ZERO_REG,
+                1'b0, 1'b0, imm_t'(64));
+        expect_invalid("JMP nonzero RS1");
+
         $display("=== RESERVED BITS / UNDEFINED OPCODES ===");
         for (bit_index = 0; bit_index < RESERVED_WIDTH; bit_index = bit_index + 1) begin
             set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
@@ -188,7 +228,7 @@ module decoder_tb;
             instruction = fields;
             expect_invalid($sformatf("reserved bit %0d", bit_index));
         end
-        for (op_index = int'(ALU_GES)+1;
+        for (op_index = int'(CTRL_BGEU)+1;
              op_index < (1 << OPCODE_WIDTH); op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
             expect_invalid($sformatf("undefined opcode %0d", op_index));
@@ -249,7 +289,7 @@ module decoder_tb;
                      1'b0, 1'b1, '0);
 
         $display("========================================");
-        $display("LACOODA STAGE 4 DECODER TEST SUMMARY");
+        $display("LACOODA STAGE 6 DECODER TEST SUMMARY");
         $display("Total tests : %0d", tests);
         $display("Passed      : %0d", tests-errors);
         $display("Failed      : %0d", errors);

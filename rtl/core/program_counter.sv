@@ -1,3 +1,6 @@
+// Byte-addressed program counter with synchronous, active-high reset.
+// Priority at each rising edge: reset, enabled redirect, enabled increment.
+// When enable is low, the PC holds its value even if redirect is asserted.
 module program_counter (
     input  logic        clk,
     input  logic        rst,
@@ -14,6 +17,7 @@ module program_counter (
             pc <= '0;
 
         else if (enable) begin
+            // Targets are loaded directly; alignment is checked by instruction memory.
             if (redirect)
                 pc <= target;
             else

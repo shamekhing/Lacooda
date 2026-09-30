@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-// LACOODA Stage 4 decoder regression. Compatible with Icarus Verilog:
+// LACOODA Stage 7 decoder regression. Compatible with Icarus Verilog:
 // no integer-to-enum casts, no hardcoded instruction bit positions.
 module decoder_tb;
     import cpu_pkg::*;
@@ -12,6 +12,7 @@ module decoder_tb;
     cpu_pkg::data_t immediate;
     logic use_immediate, register_write_enable, flags_write_enable;
     logic branch_enable;
+    logic memory_read_enable, memory_write_enable;
     branch_condition_t branch_condition;
     data_t branch_target;
     logic instruction_valid, illegal_instruction;
@@ -28,6 +29,8 @@ module decoder_tb;
         .branch_enable(branch_enable),
         .branch_condition(branch_condition),
         .branch_target(branch_target),
+        .memory_read_enable(memory_read_enable),
+        .memory_write_enable(memory_write_enable),
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction)
     );
@@ -56,7 +59,8 @@ module decoder_tb;
             check(instruction_valid === 1'b1 && illegal_instruction === 1'b0,
                   {description, " legal"});
             check(register_write_enable === 1'b1 &&
-                  flags_write_enable === expected_s && branch_enable === 1'b0,
+                  flags_write_enable === expected_s && branch_enable === 1'b0 &&
+                  memory_read_enable === 1'b0 && memory_write_enable === 1'b0,
                   {description, " write controls"});
             check(rd === expected_rd && rs1 === expected_rs1 && rs2 === expected_rs2,
                   {description, " register addresses"});
@@ -74,7 +78,8 @@ module decoder_tb;
             check(instruction_valid === 1'b0 && illegal_instruction === 1'b1,
                   {description, " illegal"});
             check(register_write_enable === 1'b0 && flags_write_enable === 1'b0 &&
-                  branch_enable === 1'b0,
+                  branch_enable === 1'b0 && memory_read_enable === 1'b0 &&
+                  memory_write_enable === 1'b0,
                   {description, " no writes"});
             check(rd === ZERO_REG && rs1 === ZERO_REG && rs2 === ZERO_REG,
                   {description, " register outputs cleared"});
@@ -220,6 +225,56 @@ module decoder_tb;
                 1'b0, 1'b0, imm_t'(64));
         expect_invalid("JMP nonzero RS1");
 
+        $display("=== STAGE 7 MEMORY OPERATIONS ===");
+
+        instruction = encode_load(reg_addr_t'(3), reg_addr_t'(2), imm_t'(8));
+        #1;
+        check(instruction_valid && !illegal_instruction && !branch_enable,
+              "LOAD legal");
+        check(rs1 == reg_addr_t'(2) && rs2 == ZERO_REG && rd == reg_addr_t'(3),
+              "LOAD register fields");
+        check(alu_op == ALU_ADD && use_immediate &&
+              immediate == sign_extend_imm32(imm_t'(8)),
+              "LOAD effective-address controls");
+        check(memory_read_enable && !memory_write_enable &&
+              register_write_enable && !flags_write_enable,
+              "LOAD memory/writeback controls");
+
+        instruction = encode_store(reg_addr_t'(3), reg_addr_t'(2), imm_t'(-8));
+        #1;
+        check(instruction_valid && !illegal_instruction && !branch_enable,
+              "STORE legal");
+        check(rs1 == reg_addr_t'(2) && rs2 == reg_addr_t'(3) && rd == ZERO_REG,
+              "STORE register fields");
+        check(alu_op == ALU_ADD && use_immediate &&
+              immediate == sign_extend_imm32(imm_t'(-8)),
+              "STORE effective-address controls");
+        check(!memory_read_enable && memory_write_enable &&
+              !register_write_enable && !flags_write_enable,
+              "STORE memory controls");
+
+        // LOAD may not use RS2, I, or S.
+        set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), reg_addr_t'(1),
+                1'b0, 1'b0, imm_t'(8));
+        expect_invalid("LOAD nonzero RS2");
+        set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
+                1'b1, 1'b0, imm_t'(8));
+        expect_invalid("LOAD I=1");
+        set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
+                1'b0, 1'b1, imm_t'(8));
+        expect_invalid("LOAD S=1");
+
+        // STORE may not use RD, I, or S.
+        set_raw(MEM_STORE, reg_addr_t'(1), reg_addr_t'(2), reg_addr_t'(3),
+                1'b0, 1'b0, imm_t'(8));
+        expect_invalid("STORE nonzero RD");
+        set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
+                1'b1, 1'b0, imm_t'(8));
+        expect_invalid("STORE I=1");
+        set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
+                1'b0, 1'b1, imm_t'(8));
+        expect_invalid("STORE S=1");
+
         $display("=== RESERVED BITS / UNDEFINED OPCODES ===");
         for (bit_index = 0; bit_index < RESERVED_WIDTH; bit_index = bit_index + 1) begin
             set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
@@ -227,7 +282,7 @@ module decoder_tb;
             instruction[RESERVED_LSB + bit_index] = 1'b1;
             expect_invalid($sformatf("reserved bit %0d", bit_index));
         end
-        for (op_index = int'(CTRL_BGEU)+1;
+        for (op_index = int'(MEM_STORE)+1;
              op_index < OPCODE_ENCODINGS; op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
             expect_invalid($sformatf("undefined opcode %0d", op_index));
@@ -288,7 +343,7 @@ module decoder_tb;
                      1'b0, 1'b1, '0);
 
         $display("========================================");
-        $display("LACOODA STAGE 6 DECODER TEST SUMMARY");
+        $display("LACOODA STAGE 7 DECODER TEST SUMMARY");
         $display("Total tests : %0d", tests);
         $display("Passed      : %0d", tests-errors);
         $display("Failed      : %0d", errors);

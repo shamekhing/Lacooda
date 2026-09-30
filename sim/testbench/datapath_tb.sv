@@ -24,8 +24,13 @@ module datapath_tb;
     logic register_write_enable;
     logic flags_write_enable;
 
+    // Stage 7 LOAD writeback controls/data.
+    data_t memory_read_data;
+    logic writeback_from_memory;
+
     data_t operand_a;
     data_t operand_b;
+    data_t store_data;
     data_t result;
 
     logic valid;
@@ -57,8 +62,12 @@ module datapath_tb;
         .register_write_enable(register_write_enable),
         .flags_write_enable(flags_write_enable),
 
+        .memory_read_data(memory_read_data),
+        .writeback_from_memory(writeback_from_memory),
+
         .operand_a(operand_a),
         .operand_b(operand_b),
+        .store_data(store_data),
         .result(result),
         .valid(valid),
 
@@ -101,6 +110,10 @@ module datapath_tb;
             flags_write_enable = flag_write;
 
             carry_in = cin;
+
+            // Normal execute() calls exercise ALU writeback.
+            memory_read_data = '0;
+            writeback_from_memory = 1'b0;
 
             #1;
 
@@ -218,6 +231,9 @@ module datapath_tb;
 
         register_write_enable = 0;
         flags_write_enable = 0;
+
+        memory_read_data = '0;
+        writeback_from_memory = 0;
 
         #2;
 
@@ -401,6 +417,70 @@ module datapath_tb;
 
         // Z=1, DZ=1
         expect_flags(5'b10001);
+
+        // =====================================================
+        // STAGE 7: STORE DATA PATH
+        //
+        // R6=100 is the base and R1=10 is the value to store.
+        // The ALU must calculate 100+8=108 while store_data must
+        // still expose the raw R1 value instead of the immediate.
+        // =====================================================
+
+        execute(
+            ALU_ADD,
+            6, 1, 0,
+            1, 8,
+            0, 0, 0
+        );
+
+        tests = tests + 1;
+        if (result !== data_t'(108) || store_data !== data_t'(10)) begin
+            errors = errors + 1;
+            $display(
+                "[FAIL] STORE path address=%h data=%h expected_address=%h expected_data=%h",
+                result, store_data, data_t'(108), data_t'(10)
+            );
+        end else begin
+            $display("[PASS] STORE path address=%h data=%h", result, store_data);
+        end
+
+        // =====================================================
+        // STAGE 7: LOAD WRITEBACK PATH
+        //
+        // The ALU still calculates the effective address 108, but
+        // the register-file writeback value must come from memory.
+        // =====================================================
+
+        @(negedge clk);
+        alu_op = ALU_ADD;
+        rs1 = reg_addr_t'(6);
+        rs2 = ZERO_REG;
+        rd  = reg_addr_t'(10);
+        use_immediate = 1'b1;
+        immediate = data_t'(8);
+        register_write_enable = 1'b1;
+        flags_write_enable = 1'b0;
+        carry_in = 1'b0;
+        memory_read_data = data_t'(16'hBEEF);
+        writeback_from_memory = 1'b1;
+
+        #1;
+        tests = tests + 1;
+        if (result !== data_t'(108)) begin
+            errors = errors + 1;
+            $display("[FAIL] LOAD effective address got=%h expected=%h",
+                     result, data_t'(108));
+        end else begin
+            $display("[PASS] LOAD effective address = %h", result);
+        end
+
+        @(posedge clk);
+        #1;
+        writeback_from_memory = 1'b0;
+        register_write_enable = 1'b0;
+        memory_read_data = '0;
+
+        expect_reg(reg_addr_t'(10), data_t'(16'hBEEF));
 
         // =====================================================
         // RESET

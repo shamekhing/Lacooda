@@ -14,6 +14,13 @@ module cpu_core_tb;
     instruction_t instruction;
     logic carry_in;
 
+    // Stage 7 data-memory interface.
+    data_t memory_read_data;
+    logic memory_read_enable;
+    logic memory_write_enable;
+    data_t memory_address;
+    data_t memory_write_data;
+
     logic instruction_valid;
     logic illegal_instruction;
     logic execution_valid;
@@ -36,9 +43,16 @@ module cpu_core_tb;
         .instruction(instruction),
         .carry_in(carry_in),
 
+        .memory_read_data(memory_read_data),
+
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction),
         .execution_valid(execution_valid),
+
+        .memory_read_enable(memory_read_enable),
+        .memory_write_enable(memory_write_enable),
+        .memory_address(memory_address),
+        .memory_write_data(memory_write_data),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
@@ -178,6 +192,7 @@ module cpu_core_tb;
         instruction_enable = 1'b0;
         instruction = '0;
         carry_in = 1'b0;
+        memory_read_data = '0;
 
         repeat (2) @(posedge clk);
         @(negedge clk);
@@ -264,6 +279,96 @@ module cpu_core_tb;
         check_register(reg_addr_t'(4), data_t'(100));
         check_register(reg_addr_t'(5), data_t'(24));
 
+        // --------------------------------------------------------
+        // STAGE 7 LOAD / STORE
+        // --------------------------------------------------------
+
+        // MOVI R10, #(8 * DATA_BYTES) -- aligned base byte address
+        execute(
+            make_instruction(
+                ALU_PASS_B,
+                reg_addr_t'(10),
+                ZERO_REG,
+                ZERO_REG,
+                1'b1,
+                1'b0,
+                imm_t'(8 * DATA_BYTES)
+            ),
+            1'b1,
+            data_t'(8 * DATA_BYTES)
+        );
+
+        // MOVI R11, #777      -- value to store
+        execute(
+            make_instruction(
+                ALU_PASS_B,
+                reg_addr_t'(11),
+                ZERO_REG,
+                ZERO_REG,
+                1'b1,
+                1'b0,
+                imm_t'(777)
+            ),
+            1'b1,
+            data_t'(777)
+        );
+
+        // STORE R11, [R10 + DATA_BYTES]
+        @(negedge clk);
+        instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10), imm_t'(DATA_BYTES));
+        instruction_enable = 1'b1;
+        memory_read_data = '0;
+        #1;
+
+        tests = tests + 1;
+        if (!(instruction_valid && execution_valid && !illegal_instruction &&
+              memory_write_enable && !memory_read_enable &&
+              memory_address == data_t'(9 * DATA_BYTES) &&
+              memory_write_data == data_t'(777))) begin
+            $display(
+                "FAIL: STORE controls addr=%h data=%h read=%b write=%b",
+                memory_address, memory_write_data,
+                memory_read_enable, memory_write_enable
+            );
+            errors = errors + 1;
+        end else begin
+            $display("PASS: STORE addr=%0d data=%0d",
+                     memory_address, memory_write_data);
+        end
+
+        @(posedge clk);
+        #1;
+        instruction_enable = 1'b0;
+
+        // LOAD R12, [R10 + DATA_BYTES]. The core testbench supplies the value
+        // that a Stage-7 combinational data memory would return.
+        @(negedge clk);
+        instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(DATA_BYTES));
+        instruction_enable = 1'b1;
+        memory_read_data = data_t'(777);
+        #1;
+
+        tests = tests + 1;
+        if (!(instruction_valid && execution_valid && !illegal_instruction &&
+              memory_read_enable && !memory_write_enable &&
+              memory_address == data_t'(9 * DATA_BYTES))) begin
+            $display(
+                "FAIL: LOAD controls addr=%h read=%b write=%b",
+                memory_address, memory_read_enable, memory_write_enable
+            );
+            errors = errors + 1;
+        end else begin
+            $display("PASS: LOAD addr=%0d read_data=%0d",
+                     memory_address, memory_read_data);
+        end
+
+        @(posedge clk);
+        #1;
+        instruction_enable = 1'b0;
+        memory_read_data = '0;
+
+        check_register(reg_addr_t'(12), data_t'(777));
+
         // Writing to R0 must not change its value.
         execute(
             make_instruction(
@@ -321,12 +426,12 @@ module cpu_core_tb;
 
         if (errors == 0) begin
             $display(
-                "CPU CORE TEST PASSED: %0d checks",
+                "STAGE 7 CPU CORE TEST PASSED: %0d checks",
                 tests
             );
         end else begin
             $display(
-                "CPU CORE TEST FAILED: %0d errors / %0d checks",
+                "STAGE 7 CPU CORE TEST FAILED: %0d errors / %0d checks",
                 errors,
                 tests
             );

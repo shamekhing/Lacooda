@@ -157,8 +157,24 @@ mv -f branch_unit.vcd sim/waveforms/branch_unit.vcd
 
 
 # ============================================================
-# 8. CPU SYSTEM 
+# 8. DATA MEMORY
+# ============================================================
 
+echo "========== DATA MEMORY TEST =========="
+
+iverilog -g2012 -Wall \
+    -s data_memory_tb \
+    -o sim/build/data_memory_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/memory/data_memory.sv \
+    sim/testbench/data_memory_tb.sv
+
+vvp sim/build/data_memory_sim
+mv -f data_memory.vcd sim/waveforms/data_memory.vcd
+
+# ============================================================
+# 9. CPU SYSTEM
 # ============================================================
 
 echo "========== CPU SYSTEM TEST =========="
@@ -181,6 +197,7 @@ iverilog -g2012 -Wall \
     rtl/core/cpu_core.sv \
     rtl/core/program_counter.sv \
     rtl/memory/instruction_memory.sv \
+    rtl/memory/data_memory.sv \
     rtl/core/instruction_fetch.sv \
     rtl/core/cpu_system.sv \
     sim/testbench/cpu_system_tb.sv
@@ -212,4 +229,5 @@ gtkwave \
     sim/waveforms/cpu_core.vcd \
     sim/waveforms/program_counter.vcd \
     sim/waveforms/branch_unit.vcd \
+    sim/waveforms/data_memory.vcd \
     sim/waveforms/cpu_system.vcd

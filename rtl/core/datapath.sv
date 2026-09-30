@@ -1,19 +1,24 @@
 `timescale 1ns/1ps
 // ============================================================
-// Datapath
+// Datapath — Stage 7
 //
-// Wires the register file, operand-B multiplexer, ALU and status
-// register together for a single-issue integer core.
+// Wires the register file, operand-B multiplexer, ALU, LOAD
+// writeback multiplexer and status register together.
 //
-//   - operand A always comes from register rs1
-//   - operand B is either register rs2 or the sign-extended
-//     immediate, selected by use_immediate
-//   - the ALU result is written back to rd
-//   - ALU flags are latched into the status register
+// Normal ALU instruction:
+//   register(s) -> ALU -> register writeback
 //
-// Register and flag writes are additionally gated by the ALU
-// `valid` output and by reset, so an illegal opcode or an active
-// reset can never modify architectural state.
+// LOAD:
+//   RS1 + signed immediate -> effective address
+//   memory_read_data       -> RD writeback
+//
+// STORE:
+//   RS1 + signed immediate -> effective address
+//   raw RS2 value          -> store_data
+//
+// The raw second register-file output is kept separate from operand_b
+// because STORE needs RS2 as write data while the ALU simultaneously
+// needs the immediate offset as operand B.
 // ============================================================
 
 module datapath #(
@@ -40,9 +45,14 @@ module datapath #(
     input logic register_write_enable,
     input logic flags_write_enable,
 
+    // Stage 7 LOAD writeback input/control
+    input logic [DATA_WIDTH-1:0] memory_read_data,
+    input logic writeback_from_memory,
+
     // Datapath outputs
     output logic [DATA_WIDTH-1:0] operand_a,
     output logic [DATA_WIDTH-1:0] operand_b,
+    output logic [DATA_WIDTH-1:0] store_data,
     output logic [DATA_WIDTH-1:0] result,
     output logic valid,
 
@@ -52,6 +62,7 @@ module datapath #(
 );
 
     logic [DATA_WIDTH-1:0] register_b;
+    logic [DATA_WIDTH-1:0] writeback_data;
 
     logic register_write;
     logic flags_write;
@@ -85,8 +96,11 @@ module datapath #(
 
         .write_enable(register_write),
         .write_addr(rd),
-        .write_data(result)
+        .write_data(writeback_data)
     );
+
+    // STORE always needs the unmodified value read from RS2.
+    assign store_data = register_b;
 
     // =========================================================
     // OPERAND B MULTIPLEXER
@@ -112,6 +126,15 @@ module datapath #(
         .flags(alu_flags),
         .valid(valid)
     );
+
+    // =========================================================
+    // WRITEBACK MULTIPLEXER
+    // =========================================================
+    // Normal ALU instructions write the ALU result. LOAD writes the
+    // combinational data-memory read value instead. The effective
+    // address remains visible on result for LOAD/STORE.
+    assign writeback_data =
+        writeback_from_memory ? memory_read_data : result;
 
     // =========================================================
     // STATUS REGISTER

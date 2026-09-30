@@ -1,11 +1,11 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// Stage 7 data-memory regression
+// Data-memory bus-slave regression
 //
-// Verifies byte-address indexing, combinational reads, synchronous
-// writes, disabled reads, and rejection of misaligned/out-of-range
-// accesses.
+// Verifies the local memory's valid/ready protocol, byte-address
+// indexing, combinational LOAD response, synchronous STORE commit,
+// and the preserved invalid-address behavior.
 // ============================================================
 
 module data_memory_tb;
@@ -14,10 +14,11 @@ module data_memory_tb;
     logic clk = 1'b0;
     always #5 clk = ~clk;
 
-    logic read_enable;
-    logic write_enable;
+    logic bus_valid;
+    logic bus_write;
     data_t address;
     data_t write_data;
+    logic bus_ready;
     data_t read_data;
 
     integer tests = 0;
@@ -25,10 +26,11 @@ module data_memory_tb;
 
     data_memory dut (
         .clk(clk),
-        .read_enable(read_enable),
-        .write_enable(write_enable),
+        .bus_valid(bus_valid),
+        .bus_write(bus_write),
         .address(address),
         .write_data(write_data),
+        .bus_ready(bus_ready),
         .read_data(read_data)
     );
 
@@ -48,68 +50,88 @@ module data_memory_tb;
         $dumpfile("data_memory.vcd");
         $dumpvars(0, data_memory_tb);
 
-        read_enable = 1'b0;
-        write_enable = 1'b0;
+        bus_valid = 1'b0;
+        bus_write = 1'b0;
         address = '0;
         write_data = '0;
 
         #1;
-        check(read_data === '0, "disabled read returns zero");
+        check(bus_ready === 1'b0, "idle slave does not report a completed transfer");
+        check(read_data === '0, "idle read data is zero");
 
-        // Write one complete DATA_WIDTH word at byte address DATA_BYTES.
+        // STORE one complete DATA_WIDTH word at byte address DATA_BYTES.
         @(negedge clk);
+        bus_valid = 1'b1;
+        bus_write = 1'b1;
         address = data_t'(DATA_BYTES);
         write_data = data_t'(64'h1122_3344_5566_7788);
-        write_enable = 1'b1;
+        #1;
+        check(bus_ready === 1'b1, "local memory accepts STORE immediately");
+
         @(posedge clk);
         #1;
-        write_enable = 1'b0;
+        bus_valid = 1'b0;
+        bus_write = 1'b0;
 
-        read_enable = 1'b1;
+        // LOAD the word back.
+        @(negedge clk);
+        bus_valid = 1'b1;
+        bus_write = 1'b0;
+        address = data_t'(DATA_BYTES);
         #1;
+        check(bus_ready === 1'b1, "local memory accepts LOAD immediately");
         check(read_data === data_t'(64'h1122_3344_5566_7788),
-              "aligned write/read round trip");
+              "aligned STORE/LOAD round trip");
 
         // Adjacent word remains independent.
         address = data_t'(2 * DATA_BYTES);
         #1;
         check(read_data === '0, "adjacent word unchanged");
 
-        // Misaligned read is rejected.
+        // Misaligned LOAD completes with zero rather than deadlocking.
         address = data_t'(DATA_BYTES + 1);
         #1;
-        check(read_data === '0, "misaligned read returns zero");
+        check(bus_ready === 1'b1, "misaligned LOAD still completes");
+        check(read_data === '0, "misaligned LOAD returns zero");
 
-        // Misaligned write is ignored.
+        // Misaligned STORE completes but is ignored.
         @(negedge clk);
-        read_enable = 1'b0;
-        write_enable = 1'b1;
+        bus_write = 1'b1;
         address = data_t'(1);
         write_data = data_t'('1);
+        #1;
+        check(bus_ready === 1'b1, "misaligned STORE still completes");
         @(posedge clk);
         #1;
-        write_enable = 1'b0;
-        read_enable = 1'b1;
+
+        // Verify memory word zero was not modified.
+        @(negedge clk);
+        bus_write = 1'b0;
         address = data_t'(0);
         #1;
-        check(read_data === '0, "misaligned write ignored");
+        check(read_data === '0, "misaligned STORE is ignored");
 
-        // First address immediately beyond the configured memory is invalid.
+        // First address immediately beyond configured memory is invalid.
         address = data_t'(DATA_MEMORY_DEPTH * DATA_BYTES);
         #1;
-        check(read_data === '0, "out-of-range read returns zero");
+        check(bus_ready === 1'b1, "out-of-range LOAD still completes");
+        check(read_data === '0, "out-of-range LOAD returns zero");
+
+        bus_valid = 1'b0;
+        #1;
+        check(bus_ready === 1'b0, "ready drops after request is removed");
 
         $display("========================================");
-        $display("LACOODA STAGE 7 DATA MEMORY TEST SUMMARY");
+        $display("LACOODA DATA MEMORY BUS TEST SUMMARY");
         $display("Total tests : %0d", tests);
         $display("Passed      : %0d", tests-errors);
         $display("Failed      : %0d", errors);
         $display("========================================");
 
         if (errors != 0)
-            $fatal(1, "DATA MEMORY TEST FAILED");
+            $fatal(1, "DATA MEMORY BUS TEST FAILED");
 
-        $display("ALL DATA MEMORY TESTS PASSED");
+        $display("ALL DATA MEMORY BUS TESTS PASSED");
         $finish;
     end
 endmodule

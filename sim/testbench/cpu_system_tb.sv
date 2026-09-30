@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA Stage 7 full-system regression
+// LACOODA CPU-bus full-system regression
 //
 // Program under test (default 64-bit configuration):
 //   0x00  MOVI  R1, 100
@@ -12,8 +12,8 @@
 //   0x28  MOVI  R4, 111         -> must be skipped
 //   0x30  MOVI  R4, 222         -> branch target
 //
-// This keeps the Stage-6 branch proof and adds an end-to-end Stage-7
-// STORE -> data memory -> LOAD -> register writeback proof.
+// This preserves the Stage-7 end-to-end proof through the wrapped CPU
+// and the new valid/ready data-bus boundary.
 // ============================================================
 
 module cpu_system_tb;
@@ -84,23 +84,23 @@ module cpu_system_tb;
         if (DATA_WIDTH != 64 || INSTRUCTION_WIDTH != 64 || REG_COUNT != 64 ||
             IMMEDIATE_WIDTH != 32 || OPCODE_WIDTH != 6) begin
             #1; // Let the ROM's time-zero initialization finish first.
-            dut.u_fetch.u_imem.memory[0] = encode_instruction(
+            dut.u_cpu.u_fetch.u_imem.memory[0] = encode_instruction(
                 ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG,
                 1'b1, 1'b0, imm_t'(100));
-            dut.u_fetch.u_imem.memory[1] = encode_instruction(
+            dut.u_cpu.u_fetch.u_imem.memory[1] = encode_instruction(
                 ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG,
                 1'b1, 1'b0, imm_t'(8 * DATA_BYTES));
-            dut.u_fetch.u_imem.memory[2] = encode_store(
+            dut.u_cpu.u_fetch.u_imem.memory[2] = encode_store(
                 reg_addr_t'(1), reg_addr_t'(2), imm_t'(DATA_BYTES));
-            dut.u_fetch.u_imem.memory[3] = encode_load(
+            dut.u_cpu.u_fetch.u_imem.memory[3] = encode_load(
                 reg_addr_t'(3), reg_addr_t'(2), imm_t'(DATA_BYTES));
-            dut.u_fetch.u_imem.memory[4] = encode_branch(
+            dut.u_cpu.u_fetch.u_imem.memory[4] = encode_branch(
                 CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(3),
                 imm_t'(6 * INSTRUCTION_BYTES));
-            dut.u_fetch.u_imem.memory[5] = encode_instruction(
+            dut.u_cpu.u_fetch.u_imem.memory[5] = encode_instruction(
                 ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG,
                 1'b1, 1'b0, imm_t'(111));
-            dut.u_fetch.u_imem.memory[6] = encode_instruction(
+            dut.u_cpu.u_fetch.u_imem.memory[6] = encode_instruction(
                 ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG,
                 1'b1, 1'b0, imm_t'(222));
         end
@@ -148,12 +148,13 @@ module cpu_system_tb;
             encode_store(reg_addr_t'(1), reg_addr_t'(2), imm_t'(DATA_BYTES)),
             data_t'(9 * DATA_BYTES)
         );
-        assert (dut.memory_write_enable === 1'b1 &&
-                dut.memory_read_enable === 1'b0)
-            else $fatal(1, "STORE memory controls wrong");
-        assert (dut.memory_write_data === data_t'(100))
+        assert (dut.bus_valid === 1'b1 &&
+                dut.bus_write === 1'b1 &&
+                dut.bus_ready === 1'b1)
+            else $fatal(1, "STORE bus handshake wrong");
+        assert (dut.bus_write_data === data_t'(100))
             else $fatal(1, "STORE data expected 100, got %0d",
-                        dut.memory_write_data);
+                        dut.bus_write_data);
 
         @(posedge clk); // Commit data-memory write.
         @(negedge clk);
@@ -166,12 +167,13 @@ module cpu_system_tb;
             encode_load(reg_addr_t'(3), reg_addr_t'(2), imm_t'(DATA_BYTES)),
             data_t'(9 * DATA_BYTES)
         );
-        assert (dut.memory_read_enable === 1'b1 &&
-                dut.memory_write_enable === 1'b0)
-            else $fatal(1, "LOAD memory controls wrong");
-        assert (dut.memory_read_data === data_t'(100))
+        assert (dut.bus_valid === 1'b1 &&
+                dut.bus_write === 1'b0 &&
+                dut.bus_ready === 1'b1)
+            else $fatal(1, "LOAD bus handshake wrong");
+        assert (dut.bus_read_data === data_t'(100))
             else $fatal(1, "LOAD data expected 100, got %0d",
-                        dut.memory_read_data);
+                        dut.bus_read_data);
 
         @(posedge clk); // Commit LOAD writeback R3=100.
         @(negedge clk);
@@ -213,11 +215,11 @@ module cpu_system_tb;
         #1;
 
         // Final architectural checks.
-        assert (dut.u_core.u_datapath.u_register_file.registers[1] === data_t'(100))
+        assert (dut.u_cpu.u_core.u_datapath.u_register_file.registers[1] === data_t'(100))
             else $fatal(1, "R1 wrong");
-        assert (dut.u_core.u_datapath.u_register_file.registers[3] === data_t'(100))
+        assert (dut.u_cpu.u_core.u_datapath.u_register_file.registers[3] === data_t'(100))
             else $fatal(1, "R3 LOAD result wrong");
-        assert (dut.u_core.u_datapath.u_register_file.registers[4] === data_t'(222))
+        assert (dut.u_cpu.u_core.u_datapath.u_register_file.registers[4] === data_t'(222))
             else $fatal(1, "R4 branch result wrong");
         assert (dut.u_dmem.memory[9] === data_t'(100))
             else $fatal(1, "Data memory word 9 expected 100, got %0d",
@@ -225,10 +227,10 @@ module cpu_system_tb;
 
         $display("PASS: STORE wrote memory word 9 = %0d", dut.u_dmem.memory[9]);
         $display("PASS: LOAD wrote R3 = %0d",
-                 dut.u_core.u_datapath.u_register_file.registers[3]);
+                 dut.u_cpu.u_core.u_datapath.u_register_file.registers[3]);
         $display("PASS: BEQ skipped MOVI R4,111 and R4 = %0d",
-                 dut.u_core.u_datapath.u_register_file.registers[4]);
-        $display("PASS: LACOODA Stage 7 cpu_system_tb");
+                 dut.u_cpu.u_core.u_datapath.u_register_file.registers[4]);
+        $display("PASS: LACOODA wrapped CPU + local bus memory cpu_system_tb");
         $finish;
     end
 

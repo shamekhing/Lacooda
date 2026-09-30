@@ -120,7 +120,38 @@ vvp sim/build/cpu_core_sim
 mv -f cpu_core.vcd sim/waveforms/cpu_core.vcd
 
 # ============================================================
-# 6. PROGRAM COUNTER
+# 6. CPU WRAPPER / BUS STALLING
+# ============================================================
+
+echo "========== CPU WRAPPER / BUS TEST =========="
+
+iverilog -g2012 -Wall \
+    -s cpu_tb \
+    -o sim/build/cpu_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/alu/arithmetic.sv \
+    rtl/alu/logic_unit.sv \
+    rtl/alu/shifter.sv \
+    rtl/alu/comparator.sv \
+    rtl/alu/alu.sv \
+    rtl/core/register_file.sv \
+    rtl/core/status_register.sv \
+    rtl/core/datapath.sv \
+    rtl/core/decoder.sv \
+    rtl/core/branch_unit.sv \
+    rtl/core/cpu_core.sv \
+    rtl/core/program_counter.sv \
+    rtl/memory/instruction_memory.sv \
+    rtl/core/instruction_fetch.sv \
+    rtl/core/cpu.sv \
+    sim/testbench/cpu_tb.sv
+
+vvp sim/build/cpu_sim
+mv -f cpu.vcd sim/waveforms/cpu.vcd
+
+# ============================================================
+# 7. PROGRAM COUNTER
 # ============================================================
 
 echo "========== PROGRAM COUNTER TEST =========="
@@ -139,7 +170,7 @@ mv -f program_counter.vcd sim/waveforms/program_counter.vcd
 
 
 # ============================================================
-# 7. BRANCH UNIT
+# 8. BRANCH UNIT
 # ============================================================
 
 echo "========== BRANCH UNIT TEST =========="
@@ -157,7 +188,7 @@ mv -f branch_unit.vcd sim/waveforms/branch_unit.vcd
 
 
 # ============================================================
-# 8. DATA MEMORY
+# 9. DATA MEMORY
 # ============================================================
 
 echo "========== DATA MEMORY TEST =========="
@@ -174,7 +205,7 @@ vvp sim/build/data_memory_sim
 mv -f data_memory.vcd sim/waveforms/data_memory.vcd
 
 # ============================================================
-# 9. CPU SYSTEM
+# 10. CPU SYSTEM
 # ============================================================
 
 echo "========== CPU SYSTEM TEST =========="
@@ -199,6 +230,7 @@ iverilog -g2012 -Wall \
     rtl/memory/instruction_memory.sv \
     rtl/memory/data_memory.sv \
     rtl/core/instruction_fetch.sv \
+    rtl/core/cpu.sv \
     rtl/core/cpu_system.sv \
     sim/testbench/cpu_system_tb.sv
 
@@ -227,6 +259,7 @@ gtkwave \
     sim/waveforms/datapath.vcd \
     sim/waveforms/decoder_tb.vcd \
     sim/waveforms/cpu_core.vcd \
+    sim/waveforms/cpu.vcd \
     sim/waveforms/program_counter.vcd \
     sim/waveforms/branch_unit.vcd \
     sim/waveforms/data_memory.vcd \

@@ -14,12 +14,13 @@ module cpu_core_tb;
     instruction_t instruction;
     logic carry_in;
 
-    // Stage 7 data-memory interface.
-    data_t memory_read_data;
-    logic memory_read_enable;
-    logic memory_write_enable;
-    data_t memory_address;
-    data_t memory_write_data;
+    // Data-bus handshake interface.
+    logic bus_ready;
+    data_t bus_read_data;
+    logic bus_valid;
+    logic bus_write;
+    data_t bus_address;
+    data_t bus_write_data;
 
     logic instruction_valid;
     logic illegal_instruction;
@@ -43,16 +44,17 @@ module cpu_core_tb;
         .instruction(instruction),
         .carry_in(carry_in),
 
-        .memory_read_data(memory_read_data),
+        .bus_ready(bus_ready),
+        .bus_read_data(bus_read_data),
 
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction),
         .execution_valid(execution_valid),
 
-        .memory_read_enable(memory_read_enable),
-        .memory_write_enable(memory_write_enable),
-        .memory_address(memory_address),
-        .memory_write_data(memory_write_data),
+        .bus_valid(bus_valid),
+        .bus_write(bus_write),
+        .bus_address(bus_address),
+        .bus_write_data(bus_write_data),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
@@ -192,7 +194,8 @@ module cpu_core_tb;
         instruction_enable = 1'b0;
         instruction = '0;
         carry_in = 1'b0;
-        memory_read_data = '0;
+        bus_ready = 1'b1;
+        bus_read_data = '0;
 
         repeat (2) @(posedge clk);
         @(negedge clk);
@@ -317,55 +320,79 @@ module cpu_core_tb;
         @(negedge clk);
         instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10), imm_t'(DATA_BYTES));
         instruction_enable = 1'b1;
-        memory_read_data = '0;
+        bus_read_data = '0;
         #1;
 
         tests = tests + 1;
         if (!(instruction_valid && execution_valid && !illegal_instruction &&
-              memory_write_enable && !memory_read_enable &&
-              memory_address == data_t'(9 * DATA_BYTES) &&
-              memory_write_data == data_t'(777))) begin
+              bus_valid && bus_write && bus_ready &&
+              bus_address == data_t'(9 * DATA_BYTES) &&
+              bus_write_data == data_t'(777))) begin
             $display(
-                "FAIL: STORE controls addr=%h data=%h read=%b write=%b",
-                memory_address, memory_write_data,
-                memory_read_enable, memory_write_enable
+                "FAIL: STORE bus addr=%h data=%h valid=%b write=%b ready=%b",
+                bus_address, bus_write_data, bus_valid, bus_write, bus_ready
             );
             errors = errors + 1;
         end else begin
             $display("PASS: STORE addr=%0d data=%0d",
-                     memory_address, memory_write_data);
+                     bus_address, bus_write_data);
         end
 
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;
 
-        // LOAD R12, [R10 + DATA_BYTES]. The core testbench supplies the value
-        // that a Stage-7 combinational data memory would return.
+        // LOAD R12, [R10 + DATA_BYTES]. First hold bus_ready low to prove
+        // that a valid memory instruction does not retire or write RD early.
         @(negedge clk);
         instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(DATA_BYTES));
         instruction_enable = 1'b1;
-        memory_read_data = data_t'(777);
+        bus_ready = 1'b0;
+        bus_read_data = data_t'(777);
         #1;
 
         tests = tests + 1;
-        if (!(instruction_valid && execution_valid && !illegal_instruction &&
-              memory_read_enable && !memory_write_enable &&
-              memory_address == data_t'(9 * DATA_BYTES))) begin
+        if (!(instruction_valid && !execution_valid && !illegal_instruction &&
+              bus_valid && !bus_write && !bus_ready &&
+              bus_address == data_t'(9 * DATA_BYTES))) begin
             $display(
-                "FAIL: LOAD controls addr=%h read=%b write=%b",
-                memory_address, memory_read_enable, memory_write_enable
+                "FAIL: waiting LOAD bus addr=%h valid=%b write=%b ready=%b exec=%b",
+                bus_address, bus_valid, bus_write, bus_ready, execution_valid
             );
             errors = errors + 1;
         end else begin
-            $display("PASS: LOAD addr=%0d read_data=%0d",
-                     memory_address, memory_read_data);
+            $display("PASS: LOAD waits while bus_ready=0");
+        end
+
+        // A rising edge while ready is low must not write the destination.
+        @(posedge clk);
+        #1;
+        tests = tests + 1;
+        if (dut.u_datapath.u_register_file.registers[12] !== data_t'(0)) begin
+            $display("FAIL: stalled LOAD wrote R12 before bus handshake");
+            errors = errors + 1;
+        end else begin
+            $display("PASS: stalled LOAD did not write R12");
+        end
+
+        // Complete the same held request.
+        @(negedge clk);
+        bus_ready = 1'b1;
+        #1;
+
+        tests = tests + 1;
+        if (!(bus_valid && !bus_write && bus_ready && execution_valid)) begin
+            $display("FAIL: LOAD did not complete when bus_ready asserted");
+            errors = errors + 1;
+        end else begin
+            $display("PASS: LOAD completes on valid/ready handshake");
         end
 
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;
-        memory_read_data = '0;
+        bus_ready = 1'b1;
+        bus_read_data = '0;
 
         check_register(reg_addr_t'(12), data_t'(777));
 
@@ -426,12 +453,12 @@ module cpu_core_tb;
 
         if (errors == 0) begin
             $display(
-                "STAGE 7 CPU CORE TEST PASSED: %0d checks",
+                "CPU CORE BUS TEST PASSED: %0d checks",
                 tests
             );
         end else begin
             $display(
-                "STAGE 7 CPU CORE TEST FAILED: %0d errors / %0d checks",
+                "CPU CORE BUS TEST FAILED: %0d errors / %0d checks",
                 errors,
                 tests
             );

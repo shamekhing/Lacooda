@@ -1,15 +1,16 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA CPU system — Stage 7
+// LACOODA minimal system wrapper
 //
-// Connects:
-//   instruction fetch <-> cpu_core control flow
-//   cpu_core          <-> simple Stage-7 data memory
+// cpu.sv is now the CPU boundary. This module is deliberately outside
+// that boundary and represents the smallest possible SoC around it:
 //
-// The Stage-7 data memory has combinational reads and synchronous
-// writes. A later bus substage can replace this fixed-latency connection
-// with a valid/ready interface without changing LOAD/STORE semantics.
+//      CPU bus master <-> local data-memory bus slave
+//
+// Future address decoding, DDR3, MMIO, GPU, timers, input devices, etc.
+// belong on this side of the CPU bus and can replace/extend this wrapper
+// without changing the CPU's LOAD/STORE semantics.
 // ============================================================
 
 module cpu_system (
@@ -26,78 +27,41 @@ module cpu_system (
     output cpu_pkg::data_t result
 );
 
-    logic instruction_valid;
-    logic fetch_enable;
+    // CPU data-bus master signals.
+    logic bus_valid;
+    logic bus_write;
+    logic bus_ready;
+    cpu_pkg::data_t bus_address;
+    cpu_pkg::data_t bus_write_data;
+    cpu_pkg::data_t bus_read_data;
 
-    cpu_pkg::data_t operand_a;
-    cpu_pkg::data_t operand_b;
-
-    alu_pkg::flags_t alu_flags;
-    alu_pkg::flags_t status_flags;
-
-    // Stage 6 feedback from cpu_core to instruction_fetch/PC.
-    logic redirect;
-    cpu_pkg::data_t redirect_target;
-
-    // Stage 7 CPU <-> local data-memory signals.
-    logic memory_read_enable;
-    logic memory_write_enable;
-    cpu_pkg::data_t memory_address;
-    cpu_pkg::data_t memory_write_data;
-    cpu_pkg::data_t memory_read_data;
-
-    // run=0 freezes the PC and prevents instruction execution.
-    assign fetch_enable = run && !rst;
-
-    instruction_fetch u_fetch (
-        .clk         (clk),
-        .rst         (rst),
-        .enable      (fetch_enable),
-        .redirect    (redirect),
-        .target      (redirect_target),
-        .pc          (pc),
-        .instruction (instruction)
-    );
-
-    cpu_core u_core (
+    cpu u_cpu (
         .clk                 (clk),
         .rst                 (rst),
+        .run                 (run),
 
-        .instruction_enable  (fetch_enable),
+        .bus_valid           (bus_valid),
+        .bus_write           (bus_write),
+        .bus_address         (bus_address),
+        .bus_write_data      (bus_write_data),
+        .bus_ready           (bus_ready),
+        .bus_read_data       (bus_read_data),
+
+        .pc                  (pc),
         .instruction         (instruction),
-
-        // ADC/SBC receive a fixed carry input here, not the saved status C flag.
-        .carry_in            (1'b0),
-
-        .memory_read_data    (memory_read_data),
-
-        .instruction_valid   (instruction_valid),
-        .illegal_instruction (illegal_instruction),
         .execution_valid     (execution_valid),
-
-        .redirect            (redirect),
-        .redirect_target     (redirect_target),
-
-        .memory_read_enable  (memory_read_enable),
-        .memory_write_enable (memory_write_enable),
-        .memory_address      (memory_address),
-        .memory_write_data   (memory_write_data),
-
-        .operand_a           (operand_a),
-        .operand_b           (operand_b),
-        .result              (result),
-
-        .alu_flags           (alu_flags),
-        .status_flags        (status_flags)
+        .illegal_instruction (illegal_instruction),
+        .result              (result)
     );
 
     data_memory u_dmem (
-        .clk          (clk),
-        .read_enable  (memory_read_enable),
-        .write_enable (memory_write_enable),
-        .address      (memory_address),
-        .write_data   (memory_write_data),
-        .read_data    (memory_read_data)
+        .clk       (clk),
+        .bus_valid (bus_valid),
+        .bus_write (bus_write),
+        .address   (bus_address),
+        .write_data(bus_write_data),
+        .bus_ready (bus_ready),
+        .read_data (bus_read_data)
     );
 
 endmodule

@@ -1,7 +1,11 @@
 
 #!/bin/bash
+# Run from the repository root so source paths and program ROM loading resolve.
+# Stop on the first failing compiler, simulation, or waveform move.
 set -e
 
+# Compile packages before their users; -g2012 enables SystemVerilog constructs.
+# Each test selects its own top module and writes a separate simulation binary.
 mkdir -p sim/build sim/waveforms
 
 # ============================================================
@@ -107,6 +111,7 @@ iverilog -g2012 -Wall \
     rtl/core/status_register.sv \
     rtl/core/datapath.sv \
     rtl/core/decoder.sv \
+    rtl/core/branch_unit.sv \
     rtl/core/cpu_core.sv \
     sim/testbench/cpu_core_tb.sv
 
@@ -134,7 +139,26 @@ mv -f program_counter.vcd sim/waveforms/program_counter.vcd
 
 
 # ============================================================
-# 7. CPU SYSTEM 
+# 7. BRANCH UNIT
+# ============================================================
+
+echo "========== BRANCH UNIT TEST =========="
+
+iverilog -g2012 -Wall \
+    -s branch_unit_tb \
+    -o sim/build/branch_unit_sim \
+    rtl/packages/alu_pkg.sv \
+    rtl/packages/cpu_pkg.sv \
+    rtl/core/branch_unit.sv \
+    sim/testbench/branch_unit_tb.sv
+
+vvp sim/build/branch_unit_sim
+mv -f branch_unit.vcd sim/waveforms/branch_unit.vcd
+
+
+# ============================================================
+# 8. CPU SYSTEM 
+
 # ============================================================
 
 echo "========== CPU SYSTEM TEST =========="
@@ -153,6 +177,7 @@ iverilog -g2012 -Wall \
     rtl/core/status_register.sv \
     rtl/core/datapath.sv \
     rtl/core/decoder.sv \
+    rtl/core/branch_unit.sv \
     rtl/core/cpu_core.sv \
     rtl/core/program_counter.sv \
     rtl/memory/instruction_memory.sv \
@@ -170,6 +195,7 @@ mv -f cpu_system.vcd sim/waveforms/cpu_system.vcd
 
 echo "========== ALL TESTS PASSED =========="
 
+# Use --no-gui for the same regression without launching the waveform viewer.
 if [[ "${1:-}" == "--no-gui" ]]; then
     exit 0
 fi
@@ -185,4 +211,5 @@ gtkwave \
     sim/waveforms/decoder_tb.vcd \
     sim/waveforms/cpu_core.vcd \
     sim/waveforms/program_counter.vcd \
+    sim/waveforms/branch_unit.vcd \
     sim/waveforms/cpu_system.vcd

@@ -30,6 +30,7 @@ module arithmetic #(
 
     import alu_pkg::*;
 
+    // One extra bit preserves carry/borrow; a double-width product supports MULH.
     logic [WIDTH:0] temp;
     logic [2*WIDTH-1:0] product;
 
@@ -70,6 +71,7 @@ module arithmetic #(
             end
 
             ALU_SUB, ALU_SBC: begin
+                // C means no borrow: SBC subtracts an extra one when carry_in is zero.
                 rhs = B + ((op == ALU_SBC) ? !carry_in : 1'b0);
 
                 temp = {1'b0, A} - {1'b0, B}
@@ -95,6 +97,7 @@ module arithmetic #(
                 result  = product[2*WIDTH-1:WIDTH];
             end
 
+            // Division/modulo by zero leave the default result of zero and raise DZ.
             ALU_DIVU: begin
                 if (B == '0)
                     div_zero = 1'b1;
@@ -136,6 +139,8 @@ module arithmetic #(
                 end
             end
 
+            // The most-negative signed value has no positive WIDTH-bit counterpart.
+            // NEG and ABS retain that bit pattern and report signed overflow.
             ALU_NEG: begin
                 result = -A;
                 carry  = (A == '0);

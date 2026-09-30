@@ -1,3 +1,6 @@
+// Fetch couples the byte-addressed PC to a combinational instruction ROM.
+// There is no instruction pipeline register: the output follows the current PC.
+// enable controls PC updates; the memory remains readable while paused.
 module instruction_fetch (
     input  logic        clk,
     input  logic        rst,

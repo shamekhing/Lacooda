@@ -11,7 +11,7 @@
 module register_file #(
     parameter int DATA_WIDTH = cpu_pkg::DATA_WIDTH,
     parameter int ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH,
-    parameter int REG_COUNT  = (1 << ADDR_WIDTH)
+    parameter int REG_COUNT  = cpu_pkg::REG_COUNT
 ) (
     input  logic                  clk,
     input  logic                  rst,

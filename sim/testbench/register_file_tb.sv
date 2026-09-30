@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 module register_file_tb;
-    localparam int DATA_WIDTH = 64;
-    localparam int ADDR_WIDTH = 6;
+    localparam int DATA_WIDTH = cpu_pkg::DATA_WIDTH;
+    localparam int ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH;
     logic clk = 0;
     logic rst = 0;
     logic [ADDR_WIDTH-1:0] read_addr_a = 0, read_addr_b = 0;
@@ -19,7 +19,7 @@ module register_file_tb;
     );
     always #5 clk = ~clk;
 
-    task automatic check(input logic [63:0] expected_a, expected_b, input string description);
+    task automatic check(input logic [DATA_WIDTH-1:0] expected_a, expected_b, input string description);
         begin
             #1;
             tests = tests + 1;
@@ -31,7 +31,7 @@ module register_file_tb;
         end
     endtask
 
-    task automatic write_reg(input logic [5:0] address, input logic [63:0] value);
+    task automatic write_reg(input logic [ADDR_WIDTH-1:0] address, input logic [DATA_WIDTH-1:0] value);
         begin
             @(negedge clk);
             write_enable = 1;
@@ -50,24 +50,24 @@ module register_file_tb;
         // Assert reset after time zero so its edge is unambiguous.
         #1 rst = 1;
         read_addr_a = 6'd1;
-        read_addr_b = 6'd63;
+        read_addr_b = ADDR_WIDTH'(cpu_pkg::REG_COUNT - 1);
         check(0, 0, "asynchronous reset clears registers");
         @(negedge clk);
         rst = 0;
 
         write_reg(6'd1, 64'd10);
         write_reg(6'd2, 64'd20);
-        write_reg(6'd63, 64'hDEADBEEFCAFEBABE);
+        write_reg(ADDR_WIDTH'(cpu_pkg::REG_COUNT - 1), 64'hDEADBEEFCAFEBABE);
         read_addr_a = 6'd1;
         read_addr_b = 6'd2;
         check(10, 20, "two independent asynchronous reads");
-        read_addr_a = 6'd63;
+        read_addr_a = ADDR_WIDTH'(cpu_pkg::REG_COUNT - 1);
         read_addr_b = 6'd1;
         check(64'hDEADBEEFCAFEBABE, 10, "highest register address");
 
         write_reg(6'd0, 64'hFFFFFFFFFFFFFFFF);
         read_addr_a = 6'd0;
-        read_addr_b = 6'd63;
+        read_addr_b = ADDR_WIDTH'(cpu_pkg::REG_COUNT - 1);
         check(0, 64'hDEADBEEFCAFEBABE, "R0 ignores writes");
 
         // Inputs change but storage must not change before a rising edge.
@@ -90,7 +90,7 @@ module register_file_tb;
         @(negedge clk);
         rst = 1;
         read_addr_a = 6'd1;
-        read_addr_b = 6'd63;
+        read_addr_b = ADDR_WIDTH'(cpu_pkg::REG_COUNT - 1);
         check(0, 0, "asynchronous reset after writes");
         rst = 0;
         $display("TESTS=%0d PASSED=%0d FAILED=%0d", tests, tests-errors, errors);

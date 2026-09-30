@@ -11,9 +11,13 @@ module decoder_tb;
     opcode_t alu_op;
     cpu_pkg::data_t immediate;
     logic use_immediate, register_write_enable, flags_write_enable;
+    logic branch_enable;
+    branch_condition_t branch_condition;
+    data_t branch_target;
     logic instruction_valid, illegal_instruction;
     integer tests = 0, errors = 0;
-    integer op_index, bit_index;
+    logic [OPCODE_WIDTH:0] op_index;
+    integer bit_index;
     instruction_fields_t fields;
 
     decoder dut (
@@ -21,6 +25,9 @@ module decoder_tb;
         .alu_op(alu_op), .immediate(immediate), .use_immediate(use_immediate),
         .register_write_enable(register_write_enable),
         .flags_write_enable(flags_write_enable),
+        .branch_enable(branch_enable),
+        .branch_condition(branch_condition),
+        .branch_target(branch_target),
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction)
     );
@@ -37,7 +44,7 @@ module decoder_tb;
 
     // Every call samples after combinational logic has settled.
     task automatic expect_valid(input string description,
-                                input integer expected_opcode,
+                                input instruction_opcode_t expected_opcode,
                                 input reg_addr_t expected_rd,
                                 input reg_addr_t expected_rs1,
                                 input reg_addr_t expected_rs2,
@@ -49,7 +56,7 @@ module decoder_tb;
             check(instruction_valid === 1'b1 && illegal_instruction === 1'b0,
                   {description, " legal"});
             check(register_write_enable === 1'b1 &&
-                  flags_write_enable === expected_s,
+                  flags_write_enable === expected_s && branch_enable === 1'b0,
                   {description, " write controls"});
             check(rd === expected_rd && rs1 === expected_rs1 && rs2 === expected_rs2,
                   {description, " register addresses"});
@@ -66,7 +73,8 @@ module decoder_tb;
             #1;
             check(instruction_valid === 1'b0 && illegal_instruction === 1'b1,
                   {description, " illegal"});
-            check(register_write_enable === 1'b0 && flags_write_enable === 1'b0,
+            check(register_write_enable === 1'b0 && flags_write_enable === 1'b0 &&
+                  branch_enable === 1'b0,
                   {description, " no writes"});
             check(rd === ZERO_REG && rs1 === ZERO_REG && rs2 === ZERO_REG,
                   {description, " register outputs cleared"});
@@ -78,7 +86,7 @@ module decoder_tb;
 
     // Create arbitrary raw opcode values without illegal enum casts.
     // The package's packed layout is the source of truth.
-    task automatic set_raw(input integer op,
+    task automatic set_raw(input instruction_opcode_t op,
                            input reg_addr_t dest, src1, src2,
                            input logic i, s, input imm_t imm);
         begin
@@ -101,18 +109,18 @@ module decoder_tb;
 
         $display("=== PACKAGE / ENCODER ===");
         check($bits(instruction_t) == INSTRUCTION_WIDTH &&
-              $bits(instruction_fields_t) == INSTRUCTION_WIDTH,
+              $bits(instruction_fields_t) == USED_INSTRUCTION_BITS,
               "instruction widths match");
         check($bits(reg_addr_t) == REG_ADDR_WIDTH &&
               $bits(imm_t) == IMMEDIATE_WIDTH,
               "operand widths match");
-        check(RESERVED_WIDTH > 0 && OPCODE_LSB == RD_MSB + 1,
+        check(RESERVED_WIDTH >= 0 && OPCODE_LSB == RD_MSB + 1,
               "derived instruction layout");
-        instruction = encode_instruction(ALU_ADD, reg_addr_t'(63),
+        instruction = encode_instruction(ALU_ADD, reg_addr_t'(REG_COUNT - 1),
                       reg_addr_t'(1), reg_addr_t'(2), 1'b1, 1'b1, imm_t'(123));
         fields = instruction;
-        check(fields.reserved === '0 && fields.opcode === ALU_ADD &&
-              fields.rd === reg_addr_t'(63) && fields.rs1 === reg_addr_t'(1) &&
+        check((instruction >> USED_INSTRUCTION_BITS) === '0 && fields.opcode === ALU_ADD &&
+              fields.rd === reg_addr_t'(REG_COUNT - 1) && fields.rs1 === reg_addr_t'(1) &&
               fields.rs2 === reg_addr_t'(2) && fields.immediate_mode &&
               fields.update_status && fields.imm32 === imm_t'(123),
               "encoder packed field mapping");
@@ -169,27 +177,58 @@ module decoder_tb;
         expect_valid("R0 destination is legal", int'(ALU_PASS_B),
                      ZERO_REG, ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(1));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b1, imm_t'(32'h80000000));
+                1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
         expect_valid("minimum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b1, imm_t'(32'h80000000));
+                     1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b0, imm_t'(32'h7fffffff));
+                1'b1, 1'b0, (imm_t'('1) >> 1));
         expect_valid("maximum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b0, imm_t'(32'h7fffffff));
+                     1'b1, 1'b0, (imm_t'('1) >> 1));
+
+        $display("=== STAGE 6 CONTROL FLOW ===");
+        instruction = encode_jump(imm_t'(32));
+        #1;
+        check(instruction_valid && !illegal_instruction && branch_enable,
+              "JMP legal");
+        check(branch_condition == BR_ALWAYS && branch_target == data_t'(32),
+              "JMP controls");
+        check(!register_write_enable && !flags_write_enable,
+              "JMP does not write register/status");
+
+        instruction = encode_branch(CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(2), imm_t'(64));
+        #1;
+        check(instruction_valid && !illegal_instruction && branch_enable,
+              "BEQ legal");
+        check(rs1 == reg_addr_t'(1) && rs2 == reg_addr_t'(2) && rd == ZERO_REG,
+              "BEQ source registers");
+        check(branch_condition == BR_EQ && branch_target == data_t'(64),
+              "BEQ controls");
+
+        // A branch may not claim an RD, immediate mode, or status update.
+        set_raw(int'(CTRL_BEQ), reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2),
+                1'b0, 1'b0, imm_t'(64));
+        expect_invalid("BEQ nonzero RD");
+        set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
+                1'b1, 1'b0, imm_t'(64));
+        expect_invalid("BEQ I=1");
+        set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
+                1'b0, 1'b1, imm_t'(64));
+        expect_invalid("BEQ S=1");
+        set_raw(int'(CTRL_JMP), ZERO_REG, reg_addr_t'(1), ZERO_REG,
+                1'b0, 1'b0, imm_t'(64));
+        expect_invalid("JMP nonzero RS1");
 
         $display("=== RESERVED BITS / UNDEFINED OPCODES ===");
         for (bit_index = 0; bit_index < RESERVED_WIDTH; bit_index = bit_index + 1) begin
             set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
                     reg_addr_t'(3), 1'b0, 1'b1, '0);
-            fields = instruction;
-            fields.reserved = RESERVED_WIDTH'(1) << bit_index;
-            instruction = fields;
+            instruction[RESERVED_LSB + bit_index] = 1'b1;
             expect_invalid($sformatf("reserved bit %0d", bit_index));
         end
-        for (op_index = int'(ALU_GES)+1;
-             op_index < (1 << OPCODE_WIDTH); op_index = op_index + 1) begin
+        for (op_index = int'(CTRL_BGEU)+1;
+             op_index < OPCODE_ENCODINGS; op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
             expect_invalid($sformatf("undefined opcode %0d", op_index));
         end
@@ -249,7 +288,7 @@ module decoder_tb;
                      1'b0, 1'b1, '0);
 
         $display("========================================");
-        $display("LACOODA STAGE 4 DECODER TEST SUMMARY");
+        $display("LACOODA STAGE 6 DECODER TEST SUMMARY");
         $display("Total tests : %0d", tests);
         $display("Passed      : %0d", tests-errors);
         $display("Failed      : %0d", errors);

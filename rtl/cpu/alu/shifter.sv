@@ -8,15 +8,15 @@
 // ============================================================
 
 module shifter #(
-    parameter int WIDTH = cpu_pkg::DATA_WIDTH
+    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  alu_pkg::opcode_t op,
+    input  opcode_pkg::opcode_t op,
 
     output logic [WIDTH-1:0] result
 );
 
-    import alu_pkg::*;
+    import opcode_pkg::*;
 
     localparam int SHIFT_BITS = $clog2(WIDTH);
 

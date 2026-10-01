@@ -27,6 +27,7 @@ run_test() {
 }
 
 run_test "ALU TEST" alu_tb alu_sim alu.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
@@ -38,12 +39,14 @@ run_test "ALU TEST" alu_tb alu_sim alu.vcd \
     sim/testbench/cpu/alu_tb.sv
 
 run_test "REGISTER FILE TEST" register_file_tb register_file_sim register_file.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/core/register_file.sv \
     sim/testbench/cpu/register_file_tb.sv
 
 run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
@@ -57,12 +60,14 @@ run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
     sim/testbench/cpu/datapath_tb.sv
 
 run_test "DECODER TEST" decoder_tb decoder_sim decoder_tb.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/core/decoder.sv \
     sim/testbench/cpu/decoder_tb.sv
 
 run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
@@ -79,31 +84,36 @@ run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
     sim/testbench/cpu/cpu_core_tb.sv
 
 run_test "PROGRAM COUNTER TEST" program_counter_tb program_counter_sim program_counter.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/fetch/program_counter.sv \
     sim/testbench/cpu/program_counter_tb.sv
 
 run_test "BRANCH UNIT TEST" branch_unit_tb branch_unit_sim branch_unit.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/core/branch_unit.sv \
     sim/testbench/cpu/branch_unit_tb.sv
 
 run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch_sim instruction_fetch.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/fetch/program_counter.sv \
     rtl/cpu/fetch/instruction_fetch.sv \
     sim/testbench/cpu/instruction_fetch_tb.sv
 
-run_test "DATA MEMORY TEST" data_memory_tb data_memory_sim data_memory.vcd \
+run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/memory/data_memory.sv \
     sim/testbench/memory/data_memory_tb.sv
 
-run_test "DATA-BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
+run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/packages/bus_pkg.sv \
@@ -112,6 +122,7 @@ run_test "DATA-BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim b
     sim/testbench/bus/bus_interconnect_tb.sv
 
 run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
@@ -131,6 +142,7 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     sim/testbench/cpu/cpu_tb.sv
 
 run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
+    rtl/packages/opcode_pkg.sv \
     rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/packages/bus_pkg.sv \

@@ -24,8 +24,8 @@ module decoder (
     output cpu_pkg::reg_addr_t rs2,
     output cpu_pkg::reg_addr_t rd,
 
-    output alu_pkg::opcode_t alu_op,
-    output cpu_pkg::data_t immediate,
+    output opcode_pkg::opcode_t alu_op,
+    output cpu_pkg::reg_t immediate,
     output logic use_immediate,
 
     output logic register_write_enable,
@@ -34,7 +34,7 @@ module decoder (
     // Stage 6 control-flow outputs.
     output logic branch_enable,
     output cpu_pkg::branch_condition_t branch_condition,
-    output cpu_pkg::data_t branch_target,
+    output cpu_pkg::reg_t branch_target,
 
     // Stage 7 memory controls.
     output logic memory_read_enable,
@@ -45,7 +45,7 @@ module decoder (
 );
 
     import cpu_pkg::*;
-    import alu_pkg::*;
+    import opcode_pkg::*;
 
     instruction_fields_t fields;
 
@@ -60,58 +60,24 @@ module decoder (
     logic store_op;
 
     // ------------------------------------------------------------
-    // Opcode classification.
-    // ------------------------------------------------------------
-    function automatic logic is_valid_alu_opcode(input instruction_opcode_t op);
-        return (op <= ALU_GES);
-    endfunction
-
-    function automatic logic is_unary_opcode(input instruction_opcode_t op);
-        return (op == ALU_NEG || op == ALU_ABS || op == ALU_NOT);
-    endfunction
-
-    function automatic logic is_mov_op(input instruction_opcode_t op);
-        return (op == ALU_PASS_A);
-    endfunction
-
-    function automatic logic is_movi_op(input instruction_opcode_t op);
-        return (op == ALU_PASS_B);
-    endfunction
-
-    function automatic logic is_branch_opcode(input instruction_opcode_t op);
-        return (
-            op == CTRL_JMP  ||
-            op == CTRL_BEQ  ||
-            op == CTRL_BNE  ||
-            op == CTRL_BLT  ||
-            op == CTRL_BGE  ||
-            op == CTRL_BLTU ||
-            op == CTRL_BGEU
-        );
-    endfunction
-
-    function automatic logic is_memory_opcode(input instruction_opcode_t op);
-        return (op == MEM_LOAD || op == MEM_STORE);
-    endfunction
-
     // Packed struct overlay: no hardcoded instruction bit slicing here.
+    // Opcode classification is provided by the opcode_pkg helpers.
+    // ------------------------------------------------------------
     assign fields = instruction;
 
     // ------------------------------------------------------------
     // Validate opcode and operand format.
     // ------------------------------------------------------------
     always_comb begin
-        branch_op = is_branch_opcode(fields.opcode);
-        memory_op = is_memory_opcode(fields.opcode);
+        branch_op       = opcode_pkg::is_branch_opcode(fields.opcode);
+        memory_op       = opcode_pkg::is_memory_opcode(fields.opcode);
+        opcode_valid    = opcode_pkg::is_valid_opcode(fields.opcode);
+        unary_op        = opcode_pkg::is_unary_opcode(fields.opcode);
+        mov_op          = opcode_pkg::is_mov_op(fields.opcode);
+        movi_op         = opcode_pkg::is_movi_op(fields.opcode);
+
         load_op   = (fields.opcode == MEM_LOAD);
         store_op  = (fields.opcode == MEM_STORE);
-
-        opcode_valid = is_valid_alu_opcode(fields.opcode) || branch_op || memory_op;
-
-        unary_op = is_unary_opcode(fields.opcode);
-        mov_op   = is_mov_op(fields.opcode);
-        movi_op  = is_movi_op(fields.opcode);
-
         format_valid = opcode_valid;
 
         // Every currently defined instruction requires reserved bits 0.
@@ -119,7 +85,7 @@ module decoder (
             format_valid = 1'b0;
 
         // Non-power-of-two register counts leave unused address encodings.
-        if (fields.rd >= REG_COUNT || fields.rs1 >= REG_COUNT || fields.rs2 >= REG_COUNT)
+        if (fields.rd >= REG_FILE_COUNT || fields.rs1 >= REG_FILE_COUNT || fields.rs2 >= REG_FILE_COUNT)
             format_valid = 1'b0;
 
         if (branch_op) begin

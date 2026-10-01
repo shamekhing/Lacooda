@@ -1,11 +1,11 @@
-
 `timescale 1ns/1ps
 
 module alu_tb;
 
     import alu_pkg::*;
+    import opcode_pkg::*;
 
-    localparam int WIDTH = cpu_pkg::DATA_WIDTH;
+    localparam int WIDTH = cpu_pkg::REG_FILE_WIDTH;
 
     logic clk = 0;
     logic rst;
@@ -21,7 +21,7 @@ module alu_tb;
     alu_pkg::flags_t flags;
     alu_pkg::flags_t stored_flags;
 
-    integer tests  = 0;
+    integer tests = 0;
     integer errors = 0;
 
     // =========================================================
@@ -42,7 +42,7 @@ module alu_tb;
     // DUT: STATUS REGISTER
     // =========================================================
 
-    status_register u_status (
+    status_register u_status_register (
         .clk(clk),
         .rst(rst),
         .write_enable(write_enable),
@@ -834,10 +834,10 @@ module alu_tb;
 
         $display("\n=== RESERVED OPCODES ===");
 
-        // 40 operations occupy 0x00 through 0x27.
-        // All remaining encodings must be invalid.
+        // 40 ALU operations occupy 0x00 through 0x27.
+        // Every other encoding must be invalid for the ALU.
 
-        for (logic [OPCODE_WIDTH:0] i = OPCODE_COUNT; i < OPCODE_ENCODINGS; i = i + 1) begin
+        for (logic [OPCODE_WIDTH:0] i = ALU_OPCODE_COUNT; i < OPCODE_ENCODINGS; i = i + 1) begin
 
             check(
                 i[OPCODE_WIDTH-1:0],

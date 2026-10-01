@@ -18,11 +18,11 @@ module cpu_system (
     input logic rst,
     input logic run,
 
-    output cpu_pkg::data_t pc,
+    output cpu_pkg::reg_t pc,
     output cpu_pkg::instruction_t instruction,
     output logic execution_valid,
     output logic illegal_instruction,
-    output cpu_pkg::data_t result
+    output cpu_pkg::reg_t result
 );
 
     // --------------------------------------------------------
@@ -30,7 +30,7 @@ module cpu_system (
     // --------------------------------------------------------
     logic ibus_valid;
     logic ibus_ready;
-    cpu_pkg::data_t ibus_address;
+    cpu_pkg::reg_t ibus_address;
     cpu_pkg::instruction_t ibus_read_data;
 
     // --------------------------------------------------------
@@ -39,19 +39,19 @@ module cpu_system (
     logic dbus_valid;
     logic dbus_write;
     logic dbus_ready;
-    cpu_pkg::data_t dbus_address;
-    cpu_pkg::data_t dbus_write_data;
-    cpu_pkg::data_t dbus_read_data;
+    cpu_pkg::reg_t dbus_address;
+    cpu_pkg::data_memory_t dbus_write_data;
+    cpu_pkg::data_memory_t dbus_read_data;
 
     // --------------------------------------------------------
     // Interconnect -> local data-memory slave side.
     // --------------------------------------------------------
-    logic data_memory_valid;
-    logic data_memory_write;
-    logic data_memory_ready;
-    cpu_pkg::data_t data_memory_address;
-    cpu_pkg::data_t data_memory_write_data;
-    cpu_pkg::data_t data_memory_read_data;
+    logic slave_valid;
+    logic slave_write;
+    logic slave_ready;
+    cpu_pkg::reg_t slave_address;
+    cpu_pkg::data_memory_t slave_write_data;
+    cpu_pkg::data_memory_t slave_read_data;
 
     cpu u_cpu (
         .clk                 (clk),
@@ -77,37 +77,37 @@ module cpu_system (
         .result              (result)
     );
 
-    instruction_memory u_imem (
-        .bus_valid (ibus_valid),
-        .address   (ibus_address),
-        .bus_ready (ibus_ready),
-        .read_data (ibus_read_data)
+    instruction_memory u_instruction_memory (
+        .slave_valid     (ibus_valid),
+        .slave_address   (ibus_address),
+        .slave_ready     (ibus_ready),
+        .slave_read_data (ibus_read_data)
     );
 
-    bus_interconnect u_bus (
-        .master_valid          (dbus_valid),
-        .master_write          (dbus_write),
-        .master_address        (dbus_address),
-        .master_write_data     (dbus_write_data),
-        .master_ready          (dbus_ready),
-        .master_read_data      (dbus_read_data),
+    bus_interconnect u_bus_interconnect (
+        .dbus_valid       (dbus_valid),
+        .dbus_write       (dbus_write),
+        .dbus_address     (dbus_address),
+        .dbus_write_data  (dbus_write_data),
+        .dbus_ready       (dbus_ready),
+        .dbus_read_data   (dbus_read_data),
 
-        .data_memory_valid     (data_memory_valid),
-        .data_memory_write     (data_memory_write),
-        .data_memory_address   (data_memory_address),
-        .data_memory_write_data(data_memory_write_data),
-        .data_memory_ready     (data_memory_ready),
-        .data_memory_read_data (data_memory_read_data)
+        .slave_valid      (slave_valid),
+        .slave_write      (slave_write),
+        .slave_address    (slave_address),
+        .slave_write_data (slave_write_data),
+        .slave_ready      (slave_ready),
+        .slave_read_data  (slave_read_data)
     );
 
-    data_memory u_dmem (
-        .clk        (clk),
-        .bus_valid  (data_memory_valid),
-        .bus_write  (data_memory_write),
-        .address    (data_memory_address),
-        .write_data (data_memory_write_data),
-        .bus_ready  (data_memory_ready),
-        .read_data  (data_memory_read_data)
+    data_memory u_data_memory (
+        .clk               (clk),
+        .slave_valid       (slave_valid),
+        .slave_write       (slave_write),
+        .slave_address     (slave_address),
+        .slave_write_data  (slave_write_data),
+        .slave_ready       (slave_ready),
+        .slave_read_data   (slave_read_data)
     );
 
 endmodule

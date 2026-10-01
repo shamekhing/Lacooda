@@ -16,57 +16,62 @@
 
 package cpu_pkg;
 
-    import alu_pkg::*;
+    import opcode_pkg::*;
+
+    // ============================================================
+    // Independent parameter groups.
+    //
+    // There is no global CPU word width: the register file, the
+    // instruction memory and the data memory each own their width, depth
+    // and types. The CPU datapath word is the register word (reg_t).
+    // ============================================================
 
     // ------------------------------------------------------------
-    // Architectural widths and memory configuration.
+    // Data memory group.
     // ------------------------------------------------------------
-    localparam int DATA_WIDTH = 64;
-    localparam int DATA_BYTES = DATA_WIDTH / 8;
-    localparam int REG_COUNT = 64;
-    localparam int INSTRUCTION_WIDTH = 64;
-    localparam int INSTRUCTION_BYTES = INSTRUCTION_WIDTH / 8;
-    localparam int IMMEDIATE_WIDTH = 32;
-    localparam int REG_ADDR_WIDTH = $clog2(REG_COUNT);
-    localparam int INSTRUCTION_MEMORY_DEPTH = 256;
-    localparam int DATA_MEMORY_DEPTH = 256;
+    localparam int DATA_MEMORY_WIDTH = 64;
+    localparam int DATA_MEMORY_BYTES = DATA_MEMORY_WIDTH / 8;
+    localparam int DATA_MEMORY_COUNT = 256;
+
+    typedef logic [DATA_MEMORY_WIDTH-1:0] data_memory_t;
+
+    // ------------------------------------------------------------
+    // Register file group.
+    //
+    // This group also defines the CPU datapath word: ALU operands,
+    // immediates, effective addresses and bus addresses are all reg_t.
+    // ------------------------------------------------------------
+    localparam int REG_FILE_WIDTH = 64;
+    localparam int REG_FILE_BYTES = REG_FILE_WIDTH / 8;
+    localparam int REG_FILE_COUNT = 64;
+    localparam int REG_FILE_ADDR_WIDTH = $clog2(REG_FILE_COUNT);
+    
+    typedef logic [REG_FILE_WIDTH-1:0] reg_t;
+    typedef logic [REG_FILE_ADDR_WIDTH-1:0] reg_addr_t;
+
+    // R0 is architecturally hardwired to zero.
+    localparam reg_addr_t ZERO_REG = '0;
+    
+    // ------------------------------------------------------------
+    // Instruction memory group.
+    // ------------------------------------------------------------
     localparam INSTRUCTION_MEMORY_INIT_FILE = "programs/program_0.hex";
 
-    typedef logic [DATA_WIDTH-1:0] data_t;
-    typedef logic [REG_ADDR_WIDTH-1:0] reg_addr_t;
-    typedef logic [INSTRUCTION_WIDTH-1:0] instruction_t;
-    typedef logic [IMMEDIATE_WIDTH-1:0] imm_t;
+    localparam int INSTRUCTION_MEMORY_WIDTH = 64;
+    localparam int INSTRUCTION_MEMORY_BYTES = INSTRUCTION_MEMORY_WIDTH / 8;
+    localparam int INSTRUCTION_MEMORY_COUNT = 256;
 
+    typedef logic [INSTRUCTION_MEMORY_WIDTH-1:0] instruction_t;
+    
     // Raw opcode field type. This intentionally covers both ALU opcodes
     // and non-ALU instruction opcodes such as branches and LOAD/STORE.
+    // Every opcode constant comes from opcode_pkg, which is imported above.
     typedef logic [OPCODE_WIDTH-1:0] instruction_opcode_t;
 
-    localparam reg_addr_t ZERO_REG = '0;
+    localparam int IMMEDIATE_WIDTH = 32;
+    typedef logic [IMMEDIATE_WIDTH-1:0] imm_t;
 
-    // ------------------------------------------------------------
-    // Stage 6 control-flow opcodes.
-    // ------------------------------------------------------------
-    localparam instruction_opcode_t CTRL_JMP  = instruction_opcode_t'('h28);
-    localparam instruction_opcode_t CTRL_BEQ  = instruction_opcode_t'('h29);
-    localparam instruction_opcode_t CTRL_BNE  = instruction_opcode_t'('h2A);
-    localparam instruction_opcode_t CTRL_BLT  = instruction_opcode_t'('h2B);
-    localparam instruction_opcode_t CTRL_BGE  = instruction_opcode_t'('h2C);
-    localparam instruction_opcode_t CTRL_BLTU = instruction_opcode_t'('h2D);
-    localparam instruction_opcode_t CTRL_BGEU = instruction_opcode_t'('h2E);
 
-    // ------------------------------------------------------------
-    // Stage 7 memory opcodes.
-    //
-    // Both instructions use a signed IMMEDIATE_WIDTH byte offset:
-    //
-    //   LOAD  rd, [rs1 + imm]
-    //   STORE rs2, [rs1 + imm]
-    //
-    // The I and S instruction bits remain zero. LOAD/STORE have their
-    // own fixed format, so they do not need the normal ALU I-bit mode.
-    // ------------------------------------------------------------
-    localparam instruction_opcode_t MEM_LOAD  = instruction_opcode_t'('h2F);
-    localparam instruction_opcode_t MEM_STORE = instruction_opcode_t'('h30);
 
     // Internal branch-unit condition encoding. This is a control
     // signal between decoder and branch_unit; it is NOT another
@@ -87,39 +92,53 @@ package cpu_pkg;
     localparam int IMM_LSB = 0;
     localparam int IMM_MSB = IMM_LSB + IMMEDIATE_WIDTH - 1;
     localparam int RS2_LSB = IMM_MSB + 1;
-    localparam int RS2_MSB = RS2_LSB + REG_ADDR_WIDTH - 1;
+    localparam int RS2_MSB = RS2_LSB + REG_FILE_ADDR_WIDTH - 1;
     localparam int RS1_LSB = RS2_MSB + 1;
-    localparam int RS1_MSB = RS1_LSB + REG_ADDR_WIDTH - 1;
+    localparam int RS1_MSB = RS1_LSB + REG_FILE_ADDR_WIDTH - 1;
     localparam int RD_LSB = RS1_MSB + 1;
-    localparam int RD_MSB = RD_LSB + REG_ADDR_WIDTH - 1;
+    localparam int RD_MSB = RD_LSB + REG_FILE_ADDR_WIDTH - 1;
     localparam int OPCODE_LSB = RD_MSB + 1;
     localparam int OPCODE_MSB = OPCODE_LSB + OPCODE_WIDTH - 1;
     localparam int I_BIT = OPCODE_MSB + 1;
     localparam int S_BIT = I_BIT + 1;
     localparam int RESERVED_LSB = S_BIT + 1;
-    localparam int RESERVED_MSB = INSTRUCTION_WIDTH - 1;
+    localparam int RESERVED_MSB = INSTRUCTION_MEMORY_WIDTH - 1;
     localparam int USED_INSTRUCTION_BITS = RESERVED_LSB;
-    localparam int RESERVED_WIDTH = INSTRUCTION_WIDTH - USED_INSTRUCTION_BITS;
+    localparam int RESERVED_WIDTH = INSTRUCTION_MEMORY_WIDTH - USED_INSTRUCTION_BITS;
 
     // Run once at initialization, including standalone unit-test elaborations.
     function automatic bit validate_configuration();
-        if (DATA_WIDTH < 64 || DATA_WIDTH % 8 != 0)
-            $fatal(1, "DATA_WIDTH must be at least 64 and divisible by 8");
-        if (INSTRUCTION_WIDTH <= 0 || INSTRUCTION_WIDTH % 8 != 0)
-            $fatal(1, "INSTRUCTION_WIDTH must be positive and divisible by 8");
+        // Register-file group (also the CPU datapath word).
+        if (REG_FILE_WIDTH < 64 || REG_FILE_WIDTH % 8 != 0)
+            $fatal(1, "REG_FILE_WIDTH must be at least 64 and divisible by 8");
         if (IMMEDIATE_WIDTH <= 0 || IMMEDIATE_WIDTH % 8 != 0 ||
-            IMMEDIATE_WIDTH > DATA_WIDTH)
-            $fatal(1, "IMMEDIATE_WIDTH must be positive, divisible by 8, and <= DATA_WIDTH");
-        if (REG_COUNT < 2)
-            $fatal(1, "REG_COUNT must be at least 2 for a nonzero register-address width");
+            IMMEDIATE_WIDTH > REG_FILE_WIDTH)
+            $fatal(1, "IMMEDIATE_WIDTH must be positive, divisible by 8, and <= REG_FILE_WIDTH");
+        if (REG_FILE_COUNT < 2)
+            $fatal(1, "REG_FILE_COUNT must be at least 2 for a nonzero register-address width");
+
+        // Instruction-memory group.
+        if (INSTRUCTION_MEMORY_WIDTH <= 0 || INSTRUCTION_MEMORY_WIDTH % 8 != 0)
+            $fatal(1, "INSTRUCTION_MEMORY_WIDTH must be positive and divisible by 8");
+        if (INSTRUCTION_MEMORY_COUNT <= 0)
+            $fatal(1, "INSTRUCTION_MEMORY_COUNT must be positive");
+
+        // Data-memory group.
+        if (DATA_MEMORY_WIDTH <= 0 || DATA_MEMORY_WIDTH % 8 != 0)
+            $fatal(1, "DATA_MEMORY_WIDTH must be positive and divisible by 8");
+        if (DATA_MEMORY_COUNT <= 0)
+            $fatal(1, "DATA_MEMORY_COUNT must be positive");
+        // The D-BUS carries the datapath word into and out of the data
+        // memory, so the two words must match even though the groups are
+        // declared independently.
+        if (DATA_MEMORY_WIDTH != REG_FILE_WIDTH)
+            $fatal(1, "DATA_MEMORY_WIDTH must equal REG_FILE_WIDTH (the datapath/D-BUS word)");
+
+        // Instruction encoding.
         if (OPCODE_WIDTH < $clog2('h31))
             $fatal(1, "OPCODE_WIDTH cannot represent the existing Stage 7 opcodes");
-        if (USED_INSTRUCTION_BITS > INSTRUCTION_WIDTH)
-            $fatal(1, "Instruction fields exceed INSTRUCTION_WIDTH");
-        if (INSTRUCTION_MEMORY_DEPTH <= 0)
-            $fatal(1, "INSTRUCTION_MEMORY_DEPTH must be positive");
-        if (DATA_MEMORY_DEPTH <= 0)
-            $fatal(1, "DATA_MEMORY_DEPTH must be positive");
+        if (USED_INSTRUCTION_BITS > INSTRUCTION_MEMORY_WIDTH)
+            $fatal(1, "Instruction fields exceed INSTRUCTION_MEMORY_WIDTH");
         return 1'b1;
     endfunction
 
@@ -137,14 +156,14 @@ package cpu_pkg;
         imm_t imm32;
     } instruction_fields_t;
 
-    // Sign-extend an immediate from IMMEDIATE_WIDTH to DATA_WIDTH.
-    function automatic data_t sign_extend_imm32(input imm_t value);
-        return {{(DATA_WIDTH-IMMEDIATE_WIDTH){value[IMMEDIATE_WIDTH-1]}}, value};
+    // Sign-extend an immediate from IMMEDIATE_WIDTH to the datapath word.
+    function automatic reg_t sign_extend_imm32(input imm_t value);
+        return {{(REG_FILE_WIDTH-IMMEDIATE_WIDTH){value[IMMEDIATE_WIDTH-1]}}, value};
     endfunction
 
     // Zero-extend the IMMEDIATE_WIDTH-bit absolute branch/jump byte address.
-    function automatic data_t zero_extend_target(input imm_t value);
-        return {{(DATA_WIDTH-IMMEDIATE_WIDTH){1'b0}}, value};
+    function automatic reg_t zero_extend_target(input imm_t value);
+        return {{(REG_FILE_WIDTH-IMMEDIATE_WIDTH){1'b0}}, value};
     endfunction
 
     // Assemble a normal ALU instruction from its fields.

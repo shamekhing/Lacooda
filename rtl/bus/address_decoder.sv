@@ -9,12 +9,12 @@
 // ============================================================
 
 module address_decoder (
-    input  cpu_pkg::data_t address,
-    output logic data_memory_select
+    input  cpu_pkg::reg_t address,
+    output logic slave_select
 );
 
     always_comb begin
-        data_memory_select =
+        slave_select =
             (address >= bus_pkg::DATA_MEMORY_BASE) &&
             (address <  bus_pkg::DATA_MEMORY_LIMIT);
     end

@@ -14,14 +14,14 @@ module instruction_fetch_tb;
     logic run = 1'b0;
     logic retire = 1'b0;
     logic redirect = 1'b0;
-    data_t redirect_target = '0;
+    reg_t redirect_target = '0;
 
     logic ibus_valid;
-    data_t ibus_address;
+    reg_t ibus_address;
     logic ibus_ready = 1'b0;
     instruction_t ibus_read_data = '0;
 
-    data_t pc;
+    reg_t pc;
     instruction_t instruction;
     logic instruction_available;
 
@@ -70,7 +70,7 @@ module instruction_fetch_tb;
         run = 1'b1;
         @(posedge clk);
         #1;
-        check(ibus_valid && ibus_address === data_t'(0),
+        check(ibus_valid && ibus_address === reg_t'(0),
               "run starts I-BUS request at current PC");
 
         // Started request survives pause and keeps address stable.
@@ -78,7 +78,7 @@ module instruction_fetch_tb;
         run = 1'b0;
         @(posedge clk);
         #1;
-        check(ibus_valid && ibus_address === data_t'(0),
+        check(ibus_valid && ibus_address === reg_t'(0),
               "waiting I-BUS request is held across pause");
 
         // Accept instruction.
@@ -90,7 +90,7 @@ module instruction_fetch_tb;
         ibus_ready = 1'b0;
         check(instruction_available && instruction === instruction_t'('h1234),
               "I-BUS handshake fills instruction buffer");
-        check(pc === data_t'(0),
+        check(pc === reg_t'(0),
               "fetch handshake alone does not advance PC");
 
         // Retire sequentially while paused. No new fetch should start.
@@ -99,7 +99,7 @@ module instruction_fetch_tb;
         @(posedge clk);
         #1;
         retire = 1'b0;
-        check(pc === data_t'(INSTRUCTION_BYTES),
+        check(pc === reg_t'(INSTRUCTION_MEMORY_BYTES),
               "sequential retirement advances PC");
         check(!instruction_available && !ibus_valid,
               "paused retirement leaves fetch idle");
@@ -109,7 +109,7 @@ module instruction_fetch_tb;
         run = 1'b1;
         @(posedge clk);
         #1;
-        check(ibus_valid && ibus_address === data_t'(INSTRUCTION_BYTES),
+        check(ibus_valid && ibus_address === reg_t'(INSTRUCTION_MEMORY_BYTES),
               "resume fetches sequential PC");
 
         @(negedge clk);
@@ -123,15 +123,15 @@ module instruction_fetch_tb;
 
         @(negedge clk);
         redirect = 1'b1;
-        redirect_target = data_t'(8 * INSTRUCTION_BYTES);
+        redirect_target = reg_t'(8 * INSTRUCTION_MEMORY_BYTES);
         retire = 1'b1;
         @(posedge clk);
         #1;
         retire = 1'b0;
         redirect = 1'b0;
-        check(pc === data_t'(8 * INSTRUCTION_BYTES),
+        check(pc === reg_t'(8 * INSTRUCTION_MEMORY_BYTES),
               "redirect retirement loads target PC");
-        check(ibus_valid && ibus_address === data_t'(8 * INSTRUCTION_BYTES),
+        check(ibus_valid && ibus_address === reg_t'(8 * INSTRUCTION_MEMORY_BYTES),
               "run starts target fetch immediately after redirect");
 
         $display("========================================");

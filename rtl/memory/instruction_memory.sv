@@ -14,43 +14,45 @@
 //
 // Timing:
 //   - this local ROM inserts no wait states
-//   - bus_ready follows bus_valid
-//   - read_data is combinational
+//   - slave_ready follows slave_valid
+//   - slave_read_data is combinational
 // ============================================================
 
 module instruction_memory #(
-    parameter int DEPTH = cpu_pkg::INSTRUCTION_MEMORY_DEPTH,
-    parameter INIT_FILE = cpu_pkg::INSTRUCTION_MEMORY_INIT_FILE
+    // Defaults come from the instruction-memory parameter group.
+    parameter int INSTRUCTION_MEMORY_WIDTH = cpu_pkg::INSTRUCTION_MEMORY_WIDTH,
+    parameter int INSTRUCTION_MEMORY_COUNT = cpu_pkg::INSTRUCTION_MEMORY_COUNT,
+    parameter INSTRUCTION_MEMORY_INIT_FILE = cpu_pkg::INSTRUCTION_MEMORY_INIT_FILE
 ) (
-    input  logic                  bus_valid,
-    input  cpu_pkg::data_t        address,
-    output logic                  bus_ready,
-    output cpu_pkg::instruction_t read_data
+    input  logic                  slave_valid,
+    input  cpu_pkg::reg_t        slave_address,
+    output logic                  slave_ready,
+    output cpu_pkg::instruction_t slave_read_data
 );
 
-    cpu_pkg::instruction_t memory [0:DEPTH-1];
+    logic [INSTRUCTION_MEMORY_WIDTH-1:0] memory [0:INSTRUCTION_MEMORY_COUNT-1];
     logic address_valid;
 
     initial begin
-        for (int i = 0; i < DEPTH; i++)
+        for (int i = 0; i < INSTRUCTION_MEMORY_COUNT; i++)
             memory[i] = '0;
 
-        $readmemh(INIT_FILE, memory);
+        $readmemh(INSTRUCTION_MEMORY_INIT_FILE, memory);
     end
 
-    assign bus_ready = bus_valid;
+    assign slave_ready = slave_valid;
 
     always_comb begin
         address_valid =
-            (address % cpu_pkg::INSTRUCTION_BYTES == 0) &&
-            ((address / cpu_pkg::INSTRUCTION_BYTES) < DEPTH);
+            (slave_address % cpu_pkg::INSTRUCTION_MEMORY_BYTES == 0) &&
+            ((slave_address / cpu_pkg::INSTRUCTION_MEMORY_BYTES) < INSTRUCTION_MEMORY_COUNT);
     end
 
     always_comb begin
-        read_data = '0;
+        slave_read_data = '0;
 
-        if (bus_valid && address_valid)
-            read_data = memory[address / cpu_pkg::INSTRUCTION_BYTES];
+        if (slave_valid && address_valid)
+            slave_read_data = memory[slave_address / cpu_pkg::INSTRUCTION_MEMORY_BYTES];
     end
 
 endmodule

@@ -1,10 +1,10 @@
-
 `timescale 1ns/1ps
 
 module cpu_core_tb;
 
     import cpu_pkg::*;
     import alu_pkg::*;
+    import opcode_pkg::*;
 
     logic clk = 1'b0;
     always #5 clk = ~clk;
@@ -15,20 +15,20 @@ module cpu_core_tb;
     logic carry_in;
 
     // Data-bus handshake interface.
-    logic bus_ready;
-    data_t bus_read_data;
-    logic bus_valid;
-    logic bus_write;
-    data_t bus_address;
-    data_t bus_write_data;
+    logic dbus_ready;
+    reg_t dbus_read_data;
+    logic dbus_valid;
+    logic dbus_write;
+    reg_t dbus_address;
+    reg_t dbus_write_data;
 
     logic instruction_valid;
     logic illegal_instruction;
     logic execution_valid;
 
-    data_t operand_a;
-    data_t operand_b;
-    data_t result;
+    reg_t operand_a;
+    reg_t operand_b;
+    reg_t result;
 
     flags_t alu_flags;
     flags_t status_flags;
@@ -40,7 +40,7 @@ module cpu_core_tb;
     // field can actually encode. For example, with IMMEDIATE_WIDTH=8,
     // imm_t'(777) encodes 8'h09, so the architectural MOVI value is 9.
     localparam imm_t STORE_TEST_IMM = imm_t'(777);
-    localparam data_t STORE_TEST_VALUE = sign_extend_imm32(STORE_TEST_IMM);
+    localparam reg_t STORE_TEST_VALUE = sign_extend_imm32(STORE_TEST_IMM);
 
     cpu_core dut (
         .clk(clk),
@@ -50,17 +50,17 @@ module cpu_core_tb;
         .instruction(instruction),
         .carry_in(carry_in),
 
-        .bus_ready(bus_ready),
-        .bus_read_data(bus_read_data),
+        .dbus_ready(dbus_ready),
+        .dbus_read_data(dbus_read_data),
 
         .instruction_valid(instruction_valid),
         .illegal_instruction(illegal_instruction),
         .execution_valid(execution_valid),
 
-        .bus_valid(bus_valid),
-        .bus_write(bus_write),
-        .bus_address(bus_address),
-        .bus_write_data(bus_write_data),
+        .dbus_valid(dbus_valid),
+        .dbus_write(dbus_write),
+        .dbus_address(dbus_address),
+        .dbus_write_data(dbus_write_data),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
@@ -98,7 +98,7 @@ module cpu_core_tb;
     task automatic execute(
         input instruction_t word,
         input logic expected_valid,
-        input data_t expected_result
+        input reg_t expected_result
     );
         @(negedge clk);
 
@@ -155,7 +155,7 @@ module cpu_core_tb;
     // instruction_enable stays low, so this does not write back.
     task automatic check_register(
         input reg_addr_t address,
-        input data_t expected
+        input reg_t expected
     );
         @(negedge clk);
 
@@ -200,8 +200,8 @@ module cpu_core_tb;
         instruction_enable = 1'b0;
         instruction = '0;
         carry_in = 1'b0;
-        bus_ready = 1'b1;
-        bus_read_data = '0;
+        dbus_ready = 1'b1;
+        dbus_read_data = '0;
 
         repeat (2) @(posedge clk);
         @(negedge clk);
@@ -219,7 +219,7 @@ module cpu_core_tb;
                 imm_t'(25)
             ),
             1'b1,
-            data_t'(25)
+            reg_t'(25)
         );
 
         // MOVI R2, #100
@@ -234,7 +234,7 @@ module cpu_core_tb;
                 imm_t'(100)
             ),
             1'b1,
-            data_t'(100)
+            reg_t'(100)
         );
 
         // ADD R3, R1, R2 => 125
@@ -249,7 +249,7 @@ module cpu_core_tb;
                 imm_t'(0)
             ),
             1'b1,
-            data_t'(125)
+            reg_t'(125)
         );
 
         // SUB R4, R3, R1 => 100
@@ -264,7 +264,7 @@ module cpu_core_tb;
                 imm_t'(0)
             ),
             1'b1,
-            data_t'(100)
+            reg_t'(100)
         );
 
         // ADD R5, R1, #-1 => 24
@@ -279,20 +279,20 @@ module cpu_core_tb;
                 imm_t'(-1)
             ),
             1'b1,
-            data_t'(24)
+            reg_t'(24)
         );
 
-        check_register(reg_addr_t'(1), data_t'(25));
-        check_register(reg_addr_t'(2), data_t'(100));
-        check_register(reg_addr_t'(3), data_t'(125));
-        check_register(reg_addr_t'(4), data_t'(100));
-        check_register(reg_addr_t'(5), data_t'(24));
+        check_register(reg_addr_t'(1), reg_t'(25));
+        check_register(reg_addr_t'(2), reg_t'(100));
+        check_register(reg_addr_t'(3), reg_t'(125));
+        check_register(reg_addr_t'(4), reg_t'(100));
+        check_register(reg_addr_t'(5), reg_t'(24));
 
         // --------------------------------------------------------
         // STAGE 7 LOAD / STORE
         // --------------------------------------------------------
 
-        // MOVI R10, #(8 * DATA_BYTES) -- aligned base byte address
+        // MOVI R10, #(8 * REG_FILE_BYTES) -- aligned base byte address
         execute(
             make_instruction(
                 ALU_PASS_B,
@@ -301,10 +301,10 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(8 * DATA_BYTES)
+                imm_t'(8 * REG_FILE_BYTES)
             ),
             1'b1,
-            data_t'(8 * DATA_BYTES)
+            reg_t'(8 * REG_FILE_BYTES)
         );
 
         // MOVI R11, #STORE_TEST_IMM -- value to store after encoding
@@ -322,59 +322,59 @@ module cpu_core_tb;
             STORE_TEST_VALUE
         );
 
-        // STORE R11, [R10 + DATA_BYTES]
+        // STORE R11, [R10 + REG_FILE_BYTES]
         @(negedge clk);
-        instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10), imm_t'(DATA_BYTES));
+        instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10), imm_t'(REG_FILE_BYTES));
         instruction_enable = 1'b1;
-        bus_read_data = '0;
+        dbus_read_data = '0;
         #1;
 
         tests = tests + 1;
         if (!(instruction_valid && execution_valid && !illegal_instruction &&
-              bus_valid && bus_write && bus_ready &&
-              bus_address == data_t'(9 * DATA_BYTES) &&
-              bus_write_data == STORE_TEST_VALUE)) begin
+              dbus_valid && dbus_write && dbus_ready &&
+              dbus_address == reg_t'(9 * REG_FILE_BYTES) &&
+              dbus_write_data == STORE_TEST_VALUE)) begin
             $display(
                 "FAIL: STORE bus addr=%h data=%h valid=%b write=%b ready=%b",
-                bus_address, bus_write_data, bus_valid, bus_write, bus_ready
+                dbus_address, dbus_write_data, dbus_valid, dbus_write, dbus_ready
             );
             errors = errors + 1;
         end else begin
             $display("PASS: STORE addr=%0d data=%0d",
-                     bus_address, bus_write_data);
+                     dbus_address, dbus_write_data);
         end
 
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;
 
-        // LOAD R12, [R10 + DATA_BYTES]. First hold bus_ready low to prove
+        // LOAD R12, [R10 + REG_FILE_BYTES]. First hold dbus_ready low to prove
         // that a valid memory instruction does not retire or write RD early.
         @(negedge clk);
-        instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(DATA_BYTES));
+        instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(REG_FILE_BYTES));
         instruction_enable = 1'b1;
-        bus_ready = 1'b0;
-        bus_read_data = STORE_TEST_VALUE;
+        dbus_ready = 1'b0;
+        dbus_read_data = STORE_TEST_VALUE;
         #1;
 
         tests = tests + 1;
         if (!(instruction_valid && !execution_valid && !illegal_instruction &&
-              bus_valid && !bus_write && !bus_ready &&
-              bus_address == data_t'(9 * DATA_BYTES))) begin
+              dbus_valid && !dbus_write && !dbus_ready &&
+              dbus_address == reg_t'(9 * REG_FILE_BYTES))) begin
             $display(
                 "FAIL: waiting LOAD bus addr=%h valid=%b write=%b ready=%b exec=%b",
-                bus_address, bus_valid, bus_write, bus_ready, execution_valid
+                dbus_address, dbus_valid, dbus_write, dbus_ready, execution_valid
             );
             errors = errors + 1;
         end else begin
-            $display("PASS: LOAD waits while bus_ready=0");
+            $display("PASS: LOAD waits while dbus_ready=0");
         end
 
         // A rising edge while ready is low must not write the destination.
         @(posedge clk);
         #1;
         tests = tests + 1;
-        if (dut.u_datapath.u_register_file.registers[12] !== data_t'(0)) begin
+        if (dut.u_datapath.u_register_file.registers[12] !== reg_t'(0)) begin
             $display("FAIL: stalled LOAD wrote R12 before bus handshake");
             errors = errors + 1;
         end else begin
@@ -383,12 +383,12 @@ module cpu_core_tb;
 
         // Complete the same held request.
         @(negedge clk);
-        bus_ready = 1'b1;
+        dbus_ready = 1'b1;
         #1;
 
         tests = tests + 1;
-        if (!(bus_valid && !bus_write && bus_ready && execution_valid)) begin
-            $display("FAIL: LOAD did not complete when bus_ready asserted");
+        if (!(dbus_valid && !dbus_write && dbus_ready && execution_valid)) begin
+            $display("FAIL: LOAD did not complete when dbus_ready asserted");
             errors = errors + 1;
         end else begin
             $display("PASS: LOAD completes on valid/ready handshake");
@@ -397,8 +397,8 @@ module cpu_core_tb;
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;
-        bus_ready = 1'b1;
-        bus_read_data = '0;
+        dbus_ready = 1'b1;
+        dbus_read_data = '0;
 
         check_register(reg_addr_t'(12), STORE_TEST_VALUE);
 
@@ -414,10 +414,10 @@ module cpu_core_tb;
                 imm_t'(99)
             ),
             1'b1,
-            data_t'(99)
+            reg_t'(99)
         );
 
-        check_register(ZERO_REG, data_t'(0));
+        check_register(ZERO_REG, reg_t'(0));
 
         // An illegal encoding must not overwrite R3.
         // Register mode with a nonzero immediate is invalid.
@@ -435,7 +435,7 @@ module cpu_core_tb;
             '0
         );
 
-        check_register(reg_addr_t'(3), data_t'(125));
+        check_register(reg_addr_t'(3), reg_t'(125));
 
         // Verify that the illegal instruction did not update flags.
         tests = tests + 1;

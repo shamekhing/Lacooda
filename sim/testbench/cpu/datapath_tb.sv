@@ -1,9 +1,9 @@
-
 `timescale 1ns/1ps
 
 module datapath_tb;
 
     import alu_pkg::*;
+    import opcode_pkg::*;
     import cpu_pkg::*;
 
     logic clk = 0;
@@ -18,20 +18,20 @@ module datapath_tb;
     logic [OPCODE_WIDTH-1:0] alu_op;
     logic carry_in;
 
-    data_t immediate;
+    reg_t immediate;
     logic use_immediate;
 
     logic register_write_enable;
     logic flags_write_enable;
 
     // Stage 7 LOAD writeback controls/data.
-    data_t memory_read_data;
+    reg_t memory_read_data;
     logic writeback_from_memory;
 
-    data_t operand_a;
-    data_t operand_b;
-    data_t store_data;
-    data_t result;
+    reg_t operand_a;
+    reg_t operand_b;
+    reg_t store_data;
+    reg_t result;
 
     logic valid;
 
@@ -86,7 +86,7 @@ module datapath_tb;
         input reg_addr_t dest,
 
         input logic imm_enable,
-        input data_t imm,
+        input reg_t imm,
 
         input logic reg_write,
         input logic flag_write,
@@ -128,9 +128,9 @@ module datapath_tb;
     // CHECK REGISTER VALUE
     // =========================================================
 
-    task automatic expect_reg(
+    task automatic check_reg(
         input reg_addr_t addr,
-        input data_t expected
+        input reg_t expected
     );
 
         begin
@@ -175,7 +175,7 @@ module datapath_tb;
     // CHECK STATUS FLAGS
     // =========================================================
 
-    task automatic expect_flags(
+    task automatic check_flags(
         input logic [4:0] expected
     );
 
@@ -250,7 +250,7 @@ module datapath_tb;
             1, 0, 0
         );
 
-        expect_reg(1, 10);
+        check_reg(1, 10);
 
         // =====================================================
         // MOVI R2, #20
@@ -263,7 +263,7 @@ module datapath_tb;
             1, 0, 0
         );
 
-        expect_reg(2, 20);
+        check_reg(2, 20);
 
         // =====================================================
         // ADD R3, R1, R2
@@ -276,8 +276,8 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(3, 30);
-        expect_flags(5'b00000);
+        check_reg(3, 30);
+        check_flags(5'b00000);
 
         // =====================================================
         // MOV R4, R3
@@ -290,7 +290,7 @@ module datapath_tb;
             1, 0, 0
         );
 
-        expect_reg(4, 30);
+        check_reg(4, 30);
 
         // =====================================================
         // SUB R5, R1, R1
@@ -303,10 +303,10 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(5, 0);
+        check_reg(5, 0);
 
         // Z=1, C=1
-        expect_flags(5'b10100);
+        check_flags(5'b10100);
 
         // =====================================================
         // MOVI R6, #100
@@ -320,8 +320,8 @@ module datapath_tb;
             1, 0, 0
         );
 
-        expect_reg(6, 100);
-        expect_flags(5'b10100);
+        check_reg(6, 100);
+        check_flags(5'b10100);
 
         // =====================================================
         // ADDI R7, R6, #23
@@ -334,7 +334,7 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(7, 123);
+        check_reg(7, 123);
 
         // =====================================================
         // Test the highest architectural register
@@ -342,12 +342,12 @@ module datapath_tb;
 
         execute(
             ALU_PASS_A,
-            7, 0, reg_addr_t'(REG_COUNT - 1),
+            7, 0, reg_addr_t'(REG_FILE_COUNT - 1),
             0, 0,
             1, 0, 0
         );
 
-        expect_reg(reg_addr_t'(REG_COUNT - 1), 123);
+        check_reg(reg_addr_t'(REG_FILE_COUNT - 1), 123);
 
         // =====================================================
         // R0 must remain zero.
@@ -360,7 +360,7 @@ module datapath_tb;
             1, 0, 0
         );
 
-        expect_reg(0, 0);
+        check_reg(0, 0);
 
         // =====================================================
         // Comparison: R8 = (R1 == R1)
@@ -373,7 +373,7 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(8, 1);
+        check_reg(8, 1);
 
         // =====================================================
         // Disabled register write
@@ -386,7 +386,7 @@ module datapath_tb;
             0, 0, 0
         );
 
-        expect_reg(8, 1);
+        check_reg(8, 1);
 
         // =====================================================
         // Invalid opcode must not modify registers or flags.
@@ -399,8 +399,8 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(8, 1);
-        expect_flags(5'b00000);
+        check_reg(8, 1);
+        check_flags(5'b00000);
 
         // =====================================================
         // Division by zero
@@ -413,10 +413,10 @@ module datapath_tb;
             1, 1, 0
         );
 
-        expect_reg(9, 0);
+        check_reg(9, 0);
 
         // Z=1, DZ=1
-        expect_flags(5'b10001);
+        check_flags(5'b10001);
 
         // =====================================================
         // STAGE 7: STORE DATA PATH
@@ -434,11 +434,11 @@ module datapath_tb;
         );
 
         tests = tests + 1;
-        if (result !== data_t'(108) || store_data !== data_t'(10)) begin
+        if (result !== reg_t'(108) || store_data !== reg_t'(10)) begin
             errors = errors + 1;
             $display(
                 "[FAIL] STORE path address=%h data=%h expected_address=%h expected_data=%h",
-                result, store_data, data_t'(108), data_t'(10)
+                result, store_data, reg_t'(108), reg_t'(10)
             );
         end else begin
             $display("[PASS] STORE path address=%h data=%h", result, store_data);
@@ -457,19 +457,19 @@ module datapath_tb;
         rs2 = ZERO_REG;
         rd  = reg_addr_t'(10);
         use_immediate = 1'b1;
-        immediate = data_t'(8);
+        immediate = reg_t'(8);
         register_write_enable = 1'b1;
         flags_write_enable = 1'b0;
         carry_in = 1'b0;
-        memory_read_data = data_t'(16'hBEEF);
+        memory_read_data = reg_t'(16'hBEEF);
         writeback_from_memory = 1'b1;
 
         #1;
         tests = tests + 1;
-        if (result !== data_t'(108)) begin
+        if (result !== reg_t'(108)) begin
             errors = errors + 1;
             $display("[FAIL] LOAD effective address got=%h expected=%h",
-                     result, data_t'(108));
+                     result, reg_t'(108));
         end else begin
             $display("[PASS] LOAD effective address = %h", result);
         end
@@ -480,7 +480,7 @@ module datapath_tb;
         register_write_enable = 1'b0;
         memory_read_data = '0;
 
-        expect_reg(reg_addr_t'(10), data_t'(16'hBEEF));
+        check_reg(reg_addr_t'(10), reg_t'(16'hBEEF));
 
         // =====================================================
         // RESET
@@ -495,12 +495,12 @@ module datapath_tb;
 
         #1;
 
-        expect_flags(5'b00000);
+        check_flags(5'b00000);
 
         rst = 0;
 
-        expect_reg(reg_addr_t'(REG_COUNT - 1), 0);
-        expect_reg(7, 0);
+        check_reg(reg_addr_t'(REG_FILE_COUNT - 1), 0);
+        check_reg(7, 0);
 
         // =====================================================
         // SUMMARY

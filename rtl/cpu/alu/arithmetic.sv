@@ -16,10 +16,10 @@
 // ============================================================
 
 module arithmetic #(
-    parameter int WIDTH = cpu_pkg::DATA_WIDTH
+    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  alu_pkg::opcode_t op,
+    input  opcode_pkg::opcode_t op,
     input  logic carry_in,
 
     output logic [WIDTH-1:0] result,
@@ -28,7 +28,7 @@ module arithmetic #(
     output logic div_zero
 );
 
-    import alu_pkg::*;
+    import opcode_pkg::*;
 
     // One extra bit preserves carry/borrow; a double-width product supports MULH.
     logic [WIDTH:0] temp;

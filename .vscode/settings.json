@@ -1,6 +1,7 @@
 {
   "systemverilog.includeIndexing": ["**/*.sv", "**/*.svh"],
   "systemverilog.libraryIndexing": [
+    "rtl/packages/opcode_pkg.sv",
     "rtl/packages/alu_pkg.sv",
     "rtl/packages/cpu_pkg.sv",
     "rtl/packages/bus_pkg.sv"

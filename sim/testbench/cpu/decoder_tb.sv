@@ -4,19 +4,20 @@
 // no integer-to-enum casts, no hardcoded instruction bit positions.
 module decoder_tb;
     import cpu_pkg::*;
-    import alu_pkg::*;
+    import opcode_pkg::*;
 
     instruction_t instruction;
     reg_addr_t rs1, rs2, rd;
     opcode_t alu_op;
-    cpu_pkg::data_t immediate;
+    cpu_pkg::reg_t immediate;
     logic use_immediate, register_write_enable, flags_write_enable;
     logic branch_enable;
     logic memory_read_enable, memory_write_enable;
     branch_condition_t branch_condition;
-    data_t branch_target;
+    reg_t branch_target;
     logic instruction_valid, illegal_instruction;
-    integer tests = 0, errors = 0;
+    integer tests = 0;
+    integer errors = 0;
     logic [OPCODE_WIDTH:0] op_index;
     integer bit_index;
     instruction_fields_t fields;
@@ -46,7 +47,7 @@ module decoder_tb;
     endtask
 
     // Every call samples after combinational logic has settled.
-    task automatic expect_valid(input string description,
+    task automatic check_valid(input string description,
                                 input instruction_opcode_t expected_opcode,
                                 input reg_addr_t expected_rd,
                                 input reg_addr_t expected_rs1,
@@ -72,7 +73,7 @@ module decoder_tb;
         end
     endtask
 
-    task automatic expect_invalid(input string description);
+    task automatic check_invalid(input string description);
         begin
             #1;
             check(instruction_valid === 1'b0 && illegal_instruction === 1'b1,
@@ -113,48 +114,48 @@ module decoder_tb;
         instruction = '0;
 
         $display("=== PACKAGE / ENCODER ===");
-        check($bits(instruction_t) == INSTRUCTION_WIDTH &&
+        check($bits(instruction_t) == INSTRUCTION_MEMORY_WIDTH &&
               $bits(instruction_fields_t) == USED_INSTRUCTION_BITS,
               "instruction widths match");
-        check($bits(reg_addr_t) == REG_ADDR_WIDTH &&
+        check($bits(reg_addr_t) == REG_FILE_ADDR_WIDTH &&
               $bits(imm_t) == IMMEDIATE_WIDTH,
               "operand widths match");
         check(RESERVED_WIDTH >= 0 && OPCODE_LSB == RD_MSB + 1,
               "derived instruction layout");
-        instruction = encode_instruction(ALU_ADD, reg_addr_t'(REG_COUNT - 1),
+        instruction = encode_instruction(ALU_ADD, reg_addr_t'(REG_FILE_COUNT - 1),
                       reg_addr_t'(1), reg_addr_t'(2), 1'b1, 1'b1, imm_t'(123));
         fields = instruction;
         check((instruction >> USED_INSTRUCTION_BITS) === '0 && fields.opcode === ALU_ADD &&
-              fields.rd === reg_addr_t'(REG_COUNT - 1) && fields.rs1 === reg_addr_t'(1) &&
+              fields.rd === reg_addr_t'(REG_FILE_COUNT - 1) && fields.rs1 === reg_addr_t'(1) &&
               fields.rs2 === reg_addr_t'(2) && fields.immediate_mode &&
               fields.update_status && fields.imm32 === imm_t'(123),
               "encoder packed field mapping");
         // The previous encoder example is intentionally invalid: I=1 and RS2!=0.
-        expect_invalid("encoder preserves raw invalid combination");
+        check_invalid("encoder preserves raw invalid combination");
 
         $display("=== ALL 40 OPCODES, REGISTER FORMAT ===");
         for (op_index = 0; op_index <= int'(ALU_GES); op_index = op_index + 1) begin
             if (op_index == int'(ALU_PASS_B)) begin
                 set_raw(op_index, reg_addr_t'(10), ZERO_REG, ZERO_REG,
                         1'b1, 1'b0, imm_t'(42));
-                expect_valid($sformatf("MOVI %0d", op_index), op_index,
+                check_valid($sformatf("MOVI %0d", op_index), op_index,
                              reg_addr_t'(10), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(42));
             end else if (op_index == int'(ALU_PASS_A)) begin
                 set_raw(op_index, reg_addr_t'(10), reg_addr_t'(11), ZERO_REG,
                         1'b0, 1'b0, '0);
-                expect_valid($sformatf("MOV %0d", op_index), op_index,
+                check_valid($sformatf("MOV %0d", op_index), op_index,
                              reg_addr_t'(10), reg_addr_t'(11), ZERO_REG, 1'b0, 1'b0, '0);
             end else if (op_index == int'(ALU_NEG) ||
                          op_index == int'(ALU_ABS) ||
                          op_index == int'(ALU_NOT)) begin
                 set_raw(op_index, reg_addr_t'(10), reg_addr_t'(11), ZERO_REG,
                         1'b0, 1'b1, '0);
-                expect_valid($sformatf("unary %0d", op_index), op_index,
+                check_valid($sformatf("unary %0d", op_index), op_index,
                              reg_addr_t'(10), reg_addr_t'(11), ZERO_REG, 1'b0, 1'b1, '0);
             end else begin
                 set_raw(op_index, reg_addr_t'(10), reg_addr_t'(11), reg_addr_t'(12),
                         1'b0, 1'b1, '0);
-                expect_valid($sformatf("binary %0d", op_index), op_index,
+                check_valid($sformatf("binary %0d", op_index), op_index,
                              reg_addr_t'(10), reg_addr_t'(11), reg_addr_t'(12), 1'b0, 1'b1, '0);
             end
         end
@@ -166,29 +167,29 @@ module decoder_tb;
                 op_index != int'(ALU_PASS_B)) begin
                 set_raw(op_index, reg_addr_t'(13), reg_addr_t'(14), ZERO_REG,
                         1'b1, 1'b0, imm_t'(-1));
-                expect_valid($sformatf("immediate %0d", op_index), op_index,
+                check_valid($sformatf("immediate %0d", op_index), op_index,
                              reg_addr_t'(13), reg_addr_t'(14), ZERO_REG,
                              1'b1, 1'b0, imm_t'(-1));
             end
         end
 
         $display("=== REGISTER AND IMMEDIATE BOUNDARIES ===");
-        set_raw(int'(ALU_ADD), reg_addr_t'(REG_COUNT-1), ZERO_REG,
-                reg_addr_t'(REG_COUNT-1), 1'b0, 1'b1, '0);
-        expect_valid("R0/Rlast", int'(ALU_ADD), reg_addr_t'(REG_COUNT-1),
-                     ZERO_REG, reg_addr_t'(REG_COUNT-1), 1'b0, 1'b1, '0);
+        set_raw(int'(ALU_ADD), reg_addr_t'(REG_FILE_COUNT-1), ZERO_REG,
+                reg_addr_t'(REG_FILE_COUNT-1), 1'b0, 1'b1, '0);
+        check_valid("R0/Rlast", int'(ALU_ADD), reg_addr_t'(REG_FILE_COUNT-1),
+                     ZERO_REG, reg_addr_t'(REG_FILE_COUNT-1), 1'b0, 1'b1, '0);
         set_raw(int'(ALU_PASS_B), ZERO_REG, ZERO_REG, ZERO_REG,
                 1'b1, 1'b0, imm_t'(1));
-        expect_valid("R0 destination is legal", int'(ALU_PASS_B),
+        check_valid("R0 destination is legal", int'(ALU_PASS_B),
                      ZERO_REG, ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(1));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
                 1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
-        expect_valid("minimum signed immediate", int'(ALU_ADD),
+        check_valid("minimum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
                      1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
                 1'b1, 1'b0, (imm_t'('1) >> 1));
-        expect_valid("maximum signed immediate", int'(ALU_ADD),
+        check_valid("maximum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
                      1'b1, 1'b0, (imm_t'('1) >> 1));
 
@@ -197,7 +198,7 @@ module decoder_tb;
         #1;
         check(instruction_valid && !illegal_instruction && branch_enable,
               "JMP legal");
-        check(branch_condition == BR_ALWAYS && branch_target == data_t'(32),
+        check(branch_condition == BR_ALWAYS && branch_target == reg_t'(32),
               "JMP controls");
         check(!register_write_enable && !flags_write_enable,
               "JMP does not write register/status");
@@ -208,22 +209,22 @@ module decoder_tb;
               "BEQ legal");
         check(rs1 == reg_addr_t'(1) && rs2 == reg_addr_t'(2) && rd == ZERO_REG,
               "BEQ source registers");
-        check(branch_condition == BR_EQ && branch_target == data_t'(64),
+        check(branch_condition == BR_EQ && branch_target == reg_t'(64),
               "BEQ controls");
 
         // A branch may not claim an RD, immediate mode, or status update.
         set_raw(int'(CTRL_BEQ), reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2),
                 1'b0, 1'b0, imm_t'(64));
-        expect_invalid("BEQ nonzero RD");
+        check_invalid("BEQ nonzero RD");
         set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
                 1'b1, 1'b0, imm_t'(64));
-        expect_invalid("BEQ I=1");
+        check_invalid("BEQ I=1");
         set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
                 1'b0, 1'b1, imm_t'(64));
-        expect_invalid("BEQ S=1");
+        check_invalid("BEQ S=1");
         set_raw(int'(CTRL_JMP), ZERO_REG, reg_addr_t'(1), ZERO_REG,
                 1'b0, 1'b0, imm_t'(64));
-        expect_invalid("JMP nonzero RS1");
+        check_invalid("JMP nonzero RS1");
 
         $display("=== STAGE 7 MEMORY OPERATIONS ===");
 
@@ -256,89 +257,89 @@ module decoder_tb;
         // LOAD may not use RS2, I, or S.
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), reg_addr_t'(1),
                 1'b0, 1'b0, imm_t'(8));
-        expect_invalid("LOAD nonzero RS2");
+        check_invalid("LOAD nonzero RS2");
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
                 1'b1, 1'b0, imm_t'(8));
-        expect_invalid("LOAD I=1");
+        check_invalid("LOAD I=1");
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
                 1'b0, 1'b1, imm_t'(8));
-        expect_invalid("LOAD S=1");
+        check_invalid("LOAD S=1");
 
         // STORE may not use RD, I, or S.
         set_raw(MEM_STORE, reg_addr_t'(1), reg_addr_t'(2), reg_addr_t'(3),
                 1'b0, 1'b0, imm_t'(8));
-        expect_invalid("STORE nonzero RD");
+        check_invalid("STORE nonzero RD");
         set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
                 1'b1, 1'b0, imm_t'(8));
-        expect_invalid("STORE I=1");
+        check_invalid("STORE I=1");
         set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
                 1'b0, 1'b1, imm_t'(8));
-        expect_invalid("STORE S=1");
+        check_invalid("STORE S=1");
 
         $display("=== RESERVED BITS / UNDEFINED OPCODES ===");
         for (bit_index = 0; bit_index < RESERVED_WIDTH; bit_index = bit_index + 1) begin
             set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
                     reg_addr_t'(3), 1'b0, 1'b1, '0);
             instruction[RESERVED_LSB + bit_index] = 1'b1;
-            expect_invalid($sformatf("reserved bit %0d", bit_index));
+            check_invalid($sformatf("reserved bit %0d", bit_index));
         end
         for (op_index = int'(MEM_STORE)+1;
              op_index < OPCODE_ENCODINGS; op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
-            expect_invalid($sformatf("undefined opcode %0d", op_index));
+            check_invalid($sformatf("undefined opcode %0d", op_index));
         end
 
         $display("=== INVALID OPERAND FORMATS ===");
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
                 reg_addr_t'(3), 1'b0, 1'b1, imm_t'(1));
-        expect_invalid("register mode nonzero immediate");
+        check_invalid("register mode nonzero immediate");
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
                 reg_addr_t'(3), 1'b1, 1'b1, imm_t'(1));
-        expect_invalid("immediate mode nonzero RS2");
+        check_invalid("immediate mode nonzero RS2");
         for (op_index = int'(ALU_NEG); op_index <= int'(ALU_NOT);
              op_index = op_index + 1) begin
             if (op_index == int'(ALU_NEG) || op_index == int'(ALU_ABS) ||
                 op_index == int'(ALU_NOT)) begin
                 set_raw(op_index, reg_addr_t'(1), reg_addr_t'(2),
                         reg_addr_t'(3), 1'b0, 1'b1, '0);
-                expect_invalid($sformatf("unary %0d nonzero RS2", op_index));
+                check_invalid($sformatf("unary %0d nonzero RS2", op_index));
                 set_raw(op_index, reg_addr_t'(1), reg_addr_t'(2),
                         ZERO_REG, 1'b1, 1'b1, '0);
-                expect_invalid($sformatf("unary %0d immediate mode", op_index));
+                check_invalid($sformatf("unary %0d immediate mode", op_index));
                 set_raw(op_index, reg_addr_t'(1), reg_addr_t'(2),
                         ZERO_REG, 1'b0, 1'b1, imm_t'(1));
-                expect_invalid($sformatf("unary %0d nonzero IMM32", op_index));
+                check_invalid($sformatf("unary %0d nonzero IMM32", op_index));
             end
         end
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
                 ZERO_REG, 1'b0, 1'b1, '0);
-        expect_invalid("MOV S=1");
+        check_invalid("MOV S=1");
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
                 reg_addr_t'(3), 1'b0, 1'b0, '0);
-        expect_invalid("MOV nonzero RS2");
+        check_invalid("MOV nonzero RS2");
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
                 ZERO_REG, 1'b1, 1'b0, '0);
-        expect_invalid("MOV I=1");
+        check_invalid("MOV I=1");
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
                 ZERO_REG, 1'b0, 1'b0, imm_t'(1));
-        expect_invalid("MOV nonzero IMM32");
+        check_invalid("MOV nonzero IMM32");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
                 ZERO_REG, 1'b1, 1'b1, imm_t'(42));
-        expect_invalid("MOVI S=1");
+        check_invalid("MOVI S=1");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), reg_addr_t'(2),
                 ZERO_REG, 1'b1, 1'b0, imm_t'(42));
-        expect_invalid("MOVI nonzero RS1");
+        check_invalid("MOVI nonzero RS1");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
                 reg_addr_t'(3), 1'b1, 1'b0, imm_t'(42));
-        expect_invalid("MOVI nonzero RS2");
+        check_invalid("MOVI nonzero RS2");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
                 ZERO_REG, 1'b0, 1'b0, '0);
-        expect_invalid("MOVI I=0");
+        check_invalid("MOVI I=0");
 
         $display("=== RECOVERY AFTER INVALID ===");
         set_raw(int'(ALU_ADD), reg_addr_t'(4), reg_addr_t'(5),
                 reg_addr_t'(6), 1'b0, 1'b1, '0);
-        expect_valid("valid after invalid", int'(ALU_ADD),
+        check_valid("valid after invalid", int'(ALU_ADD),
                      reg_addr_t'(4), reg_addr_t'(5), reg_addr_t'(6),
                      1'b0, 1'b1, '0);
 

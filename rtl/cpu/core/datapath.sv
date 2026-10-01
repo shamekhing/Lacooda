@@ -22,23 +22,23 @@
 // ============================================================
 
 module datapath #(
-    parameter int DATA_WIDTH = cpu_pkg::DATA_WIDTH,
-    parameter int REG_ADDR_WIDTH = cpu_pkg::REG_ADDR_WIDTH
+    parameter int REG_FILE_WIDTH = cpu_pkg::REG_FILE_WIDTH,
+    parameter int REG_FILE_ADDR_WIDTH = cpu_pkg::REG_FILE_ADDR_WIDTH
 ) (
     input logic clk,
     input logic rst,
 
     // Register addresses
-    input logic [REG_ADDR_WIDTH-1:0] rs1,
-    input logic [REG_ADDR_WIDTH-1:0] rs2,
-    input logic [REG_ADDR_WIDTH-1:0] rd,
+    input logic [REG_FILE_ADDR_WIDTH-1:0] rs1,
+    input logic [REG_FILE_ADDR_WIDTH-1:0] rs2,
+    input logic [REG_FILE_ADDR_WIDTH-1:0] rd,
 
     // ALU control
-    input alu_pkg::opcode_t alu_op,
+    input opcode_pkg::opcode_t alu_op,
     input logic carry_in,
 
     // Immediate operand
-    input logic [DATA_WIDTH-1:0] immediate,
+    input logic [REG_FILE_WIDTH-1:0] immediate,
     input logic use_immediate,
 
     // Write controls
@@ -46,14 +46,14 @@ module datapath #(
     input logic flags_write_enable,
 
     // Stage 7 LOAD writeback input/control
-    input logic [DATA_WIDTH-1:0] memory_read_data,
+    input cpu_pkg::data_memory_t memory_read_data,
     input logic writeback_from_memory,
 
     // Datapath outputs
-    output logic [DATA_WIDTH-1:0] operand_a,
-    output logic [DATA_WIDTH-1:0] operand_b,
-    output logic [DATA_WIDTH-1:0] store_data,
-    output logic [DATA_WIDTH-1:0] result,
+    output logic [REG_FILE_WIDTH-1:0] operand_a,
+    output logic [REG_FILE_WIDTH-1:0] operand_b,
+    output logic [REG_FILE_WIDTH-1:0] store_data,
+    output logic [REG_FILE_WIDTH-1:0] result,
     output logic valid,
 
     // Flags
@@ -61,8 +61,8 @@ module datapath #(
     output alu_pkg::flags_t status_flags
 );
 
-    logic [DATA_WIDTH-1:0] register_b;
-    logic [DATA_WIDTH-1:0] writeback_data;
+    logic [REG_FILE_WIDTH-1:0] register_b;
+    cpu_pkg::reg_t writeback_data;
 
     logic register_write;
     logic flags_write;
@@ -82,8 +82,8 @@ module datapath #(
     // =========================================================
 
     register_file #(
-        .DATA_WIDTH(DATA_WIDTH),
-        .ADDR_WIDTH(REG_ADDR_WIDTH)
+        .REG_FILE_WIDTH(REG_FILE_WIDTH),
+        .REG_FILE_ADDR_WIDTH(REG_FILE_ADDR_WIDTH)
     ) u_register_file (
         .clk(clk),
         .rst(rst),
@@ -114,7 +114,7 @@ module datapath #(
     // =========================================================
 
     alu #(
-        .WIDTH(DATA_WIDTH)
+        .WIDTH(REG_FILE_WIDTH)
     ) u_alu (
         .A(operand_a),
         .B(operand_b),
@@ -140,7 +140,7 @@ module datapath #(
     // STATUS REGISTER
     // =========================================================
 
-    status_register u_status (
+    status_register u_status_register (
         .clk(clk),
         .rst(rst),
 

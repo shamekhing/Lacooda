@@ -32,7 +32,7 @@ module cpu (
     // Instruction-bus master interface (read-only).
     // --------------------------------------------------------
     output logic                  ibus_valid,
-    output cpu_pkg::data_t        ibus_address,
+    output cpu_pkg::reg_t        ibus_address,
     input  logic                  ibus_ready,
     input  cpu_pkg::instruction_t ibus_read_data,
 
@@ -43,32 +43,32 @@ module cpu (
     // --------------------------------------------------------
     output logic           dbus_valid,
     output logic           dbus_write,
-    output cpu_pkg::data_t dbus_address,
-    output cpu_pkg::data_t dbus_write_data,
+    output cpu_pkg::reg_t dbus_address,
+    output cpu_pkg::data_memory_t dbus_write_data,
     input  logic           dbus_ready,
-    input  cpu_pkg::data_t dbus_read_data,
+    input  cpu_pkg::data_memory_t dbus_read_data,
 
     // Observation outputs retained for simulation/debug.
-    output cpu_pkg::data_t        pc,
+    output cpu_pkg::reg_t        pc,
     output cpu_pkg::instruction_t instruction,
     output logic                  execution_valid,
     output logic                  illegal_instruction,
-    output cpu_pkg::data_t        result
+    output cpu_pkg::reg_t        result
 );
 
     logic instruction_available;
-    logic decoded_instruction_valid;
+    logic instruction_valid;
     logic core_enable;
     logic retire;
 
-    cpu_pkg::data_t operand_a;
-    cpu_pkg::data_t operand_b;
+    cpu_pkg::reg_t operand_a;
+    cpu_pkg::reg_t operand_b;
 
     alu_pkg::flags_t alu_flags;
     alu_pkg::flags_t status_flags;
 
     logic redirect;
-    cpu_pkg::data_t redirect_target;
+    cpu_pkg::reg_t redirect_target;
 
     // A buffered instruction is already inside the CPU and is therefore
     // allowed to finish regardless of a later run deassertion. This also
@@ -86,7 +86,7 @@ module cpu (
     // --------------------------------------------------------
     // FETCH / I-BUS
     // --------------------------------------------------------
-    instruction_fetch u_fetch (
+    instruction_fetch u_instruction_fetch (
         .clk                   (clk),
         .rst                   (rst),
         .run                   (run),
@@ -105,7 +105,7 @@ module cpu (
     // --------------------------------------------------------
     // EXECUTION CORE / D-BUS
     // --------------------------------------------------------
-    cpu_core u_core (
+    cpu_core u_cpu_core (
         .clk                 (clk),
         .rst                 (rst),
 
@@ -115,20 +115,20 @@ module cpu (
         // ADC/SBC retain the existing fixed carry input behavior.
         .carry_in            (1'b0),
 
-        .bus_ready           (dbus_ready),
-        .bus_read_data       (dbus_read_data),
+        .dbus_ready           (dbus_ready),
+        .dbus_read_data       (dbus_read_data),
 
-        .instruction_valid   (decoded_instruction_valid),
+        .instruction_valid   (instruction_valid),
         .illegal_instruction (illegal_instruction),
         .execution_valid     (execution_valid),
 
         .redirect            (redirect),
         .redirect_target     (redirect_target),
 
-        .bus_valid           (dbus_valid),
-        .bus_write           (dbus_write),
-        .bus_address         (dbus_address),
-        .bus_write_data      (dbus_write_data),
+        .dbus_valid           (dbus_valid),
+        .dbus_write           (dbus_write),
+        .dbus_address         (dbus_address),
+        .dbus_write_data      (dbus_write_data),
 
         .operand_a           (operand_a),
         .operand_b           (operand_b),

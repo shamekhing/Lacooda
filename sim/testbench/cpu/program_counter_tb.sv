@@ -2,15 +2,15 @@
 
 module program_counter_tb;
     import cpu_pkg::*;
-    localparam data_t REDIRECT_TARGET = 8 * INSTRUCTION_BYTES;
+    localparam reg_t REDIRECT_TARGET = 8 * INSTRUCTION_MEMORY_BYTES;
 
     logic clk = 0;
     logic rst = 1;
     logic enable = 0;
     logic redirect = 0;
 
-    data_t target = 0;
-    data_t pc;
+    reg_t target = 0;
+    reg_t pc;
 
     always #5 clk = ~clk;
 
@@ -23,7 +23,7 @@ module program_counter_tb;
         .pc(pc)
     );
 
-    task automatic check_pc(input data_t expected);
+    task automatic check_pc(input reg_t expected);
         assert (pc === expected)
             else $fatal(1,
                 "PC mismatch: expected %0d, got %0d",
@@ -45,12 +45,12 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(INSTRUCTION_BYTES);
+        check_pc(INSTRUCTION_MEMORY_BYTES);
 
         // Second instruction
         @(posedge clk);
         #1;
-        check_pc(2 * INSTRUCTION_BYTES);
+        check_pc(2 * INSTRUCTION_MEMORY_BYTES);
 
         // Hold
         @(negedge clk);
@@ -58,7 +58,7 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(2 * INSTRUCTION_BYTES);
+        check_pc(2 * INSTRUCTION_MEMORY_BYTES);
 
         // Redirect
         @(negedge clk);
@@ -76,7 +76,7 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(REDIRECT_TARGET + INSTRUCTION_BYTES);
+        check_pc(REDIRECT_TARGET + INSTRUCTION_MEMORY_BYTES);
 
         $display("PASS: program_counter_tb");
         $finish;

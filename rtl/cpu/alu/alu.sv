@@ -9,7 +9,7 @@
 //
 // Ports:
 //   A, B     : WIDTH-bit operands (B is also the shift amount)
-//   op       : alu_pkg::opcode_t, valid encodings are 0x00..0x27
+//   op       : opcode_pkg::opcode_t, valid ALU encodings are 0x00..0x27
 //   carry_in : carry/borrow input for ADC / SBC
 //   result   : selected WIDTH-bit result
 //   flags    : alu_pkg::flags_t (Z/N/C/V/DZ)
@@ -20,10 +20,10 @@
 // ============================================================
 
 module alu #(
-    parameter int WIDTH = cpu_pkg::DATA_WIDTH
+    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
 )(
     input  logic [WIDTH-1:0] A, B,
-    input  alu_pkg::opcode_t op,
+    input  opcode_pkg::opcode_t op,
     input  logic carry_in,
 
     output logic [WIDTH-1:0] result,
@@ -32,6 +32,7 @@ module alu #(
 );
 
     import alu_pkg::*;
+    import opcode_pkg::*;
 
     // Result produced by each functional sub-unit.
     logic [WIDTH-1:0] arithmetic_result;
@@ -62,7 +63,7 @@ module alu #(
     );
 
     // Bitwise logic: AND/OR/XOR/NOT/NAND/NOR/XNOR/PASS_A/PASS_B.
-    logic_unit #(.WIDTH(WIDTH)) u_logic (
+    logic_unit #(.WIDTH(WIDTH)) u_logic_unit (
         .A(A),
         .B(B),
         .op(op),

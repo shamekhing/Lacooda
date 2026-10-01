@@ -14,18 +14,19 @@ package bus_pkg;
 
     import cpu_pkg::*;
 
-    // Stage-7 local data RAM occupies the first DATA_MEMORY_DEPTH words
+    // local data RAM occupies the first DATA_MEMORY_COUNT words
     // of the data address space. Future MMIO/DDR regions can be added here
     // without changing the CPU interface or instruction set.
-    localparam data_t DATA_MEMORY_BASE = data_t'(0);
+    localparam reg_t DATA_MEMORY_BASE = reg_t'(0);
 
     // Perform the size calculation at the architectural data/address width.
     // Using SystemVerilog `int` here would make the multiplication 32-bit
     // signed arithmetic and could wrap a valid large memory map back to zero.
-    localparam data_t DATA_MEMORY_SIZE_BYTES =
-        data_t'(DATA_MEMORY_DEPTH) * data_t'(DATA_BYTES);
+    // The region is sized from the data memory's own parameter group.
+    localparam reg_t DATA_MEMORY_SIZE_BYTES =
+        reg_t'(DATA_MEMORY_COUNT) * reg_t'(DATA_MEMORY_BYTES);
 
-    localparam data_t DATA_MEMORY_LIMIT =
+    localparam reg_t DATA_MEMORY_LIMIT =
         DATA_MEMORY_BASE + DATA_MEMORY_SIZE_BYTES;
 
 endpackage

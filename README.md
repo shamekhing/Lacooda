@@ -1,22 +1,20 @@
 # Build a CPU by Hand with SystemVerilog
 
-## The LACOODA Development Journey --- From Wires and ALU Logic to a Bus-Wrapped CPU
+## The Development Journey 
 
 **Project:** LACOODA\
 **Language:** SystemVerilog\
-**Target direction:** Sipeed Tang Primer 20K / Gowin GW2A-LV18\
+**Target direction:** FPGA(N/A)\
 **CPU datapath:** 64-bit by default\
-**Instruction word:** 64-bit in the CPU described in this manual\
+**Instruction word:** 64-bit by default\
 **Register file:** 64 × 64-bit by default\
-**Purpose:** A hands-on learning manual reconstructed from the actual
-LACOODA development journey.
+**Purpose:** A hands-on learning manual reconstructed from my stupid questions to AI.
 
 ------------------------------------------------------------------------
 
 # Preface
 
-This is not a SystemVerilog syntax reference with a toy counter at the
-end.
+This is not a SystemVerilog tutorial nor a standard README but mostly my learning journey to build game from hardware from scratch.
 
 The goal is to learn SystemVerilog by building a processor, discovering
 the places where a software-programming mental model stops working, and
@@ -24,7 +22,7 @@ then progressively turning a collection of arithmetic modules into a CPU
 with instructions, state, program flow, memory, a handshake bus, and a
 clean system boundary.
 
-The processor is **LACOODA**.
+The processor is **LACOODA**. from the 3 hump lacooda ygo card but it is a long story so i will save you the details.
 
 The order matters. We do not begin with a complete CPU diagram and
 pretend every block is already obvious. We begin with the exact

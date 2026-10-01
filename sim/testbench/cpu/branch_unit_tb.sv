@@ -13,12 +13,12 @@ module branch_unit_tb;
 
     logic enable;
     branch_condition_t condition;
-    data_t lhs;
-    data_t rhs;
-    data_t target;
+    reg_t lhs;
+    reg_t rhs;
+    reg_t target;
 
     logic redirect;
-    data_t redirect_target;
+    reg_t redirect_target;
 
     integer tests = 0;
     integer errors = 0;
@@ -60,31 +60,31 @@ module branch_unit_tb;
         $dumpvars(0, branch_unit_tb);
 
         enable = 1'b1;
-        target = data_t'(64);
+        target = reg_t'(64);
         lhs = '0;
         rhs = '0;
 
         condition = BR_ALWAYS;
         check_branch("JMP always redirects", 1'b1);
 
-        lhs = data_t'(10);
-        rhs = data_t'(10);
+        lhs = reg_t'(10);
+        rhs = reg_t'(10);
         condition = BR_EQ;
         check_branch("BEQ taken", 1'b1);
 
-        rhs = data_t'(11);
+        rhs = reg_t'(11);
         check_branch("BEQ not taken", 1'b0);
 
         condition = BR_NE;
         check_branch("BNE taken", 1'b1);
 
-        rhs = data_t'(10);
+        rhs = reg_t'(10);
         check_branch("BNE not taken", 1'b0);
 
         // Same raw lhs value (-1 / all ones) produces different signed
         // and unsigned ordering relative to +1.
-        lhs = data_t'(-1);
-        rhs = data_t'(1);
+        lhs = reg_t'(-1);
+        rhs = reg_t'(1);
 
         condition = BR_LT;
         check_branch("BLT signed -1 < 1", 1'b1);

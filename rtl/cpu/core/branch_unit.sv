@@ -12,7 +12,7 @@
 //
 // The program counter then loads redirect_target on the next rising
 // clock edge. If redirect is 0, the existing program_counter advances
-// normally by INSTRUCTION_BYTES.
+// normally by INSTRUCTION_MEMORY_BYTES.
 //
 // Signed and unsigned comparisons are intentionally separate.
 // ============================================================
@@ -20,12 +20,12 @@
 module branch_unit (
     input  logic                       enable,
     input  cpu_pkg::branch_condition_t condition,
-    input  cpu_pkg::data_t             lhs,
-    input  cpu_pkg::data_t             rhs,
-    input  cpu_pkg::data_t             target,
+    input  cpu_pkg::reg_t             lhs,
+    input  cpu_pkg::reg_t             rhs,
+    input  cpu_pkg::reg_t             target,
 
     output logic                       redirect,
-    output cpu_pkg::data_t             redirect_target
+    output cpu_pkg::reg_t             redirect_target
 );
 
     import cpu_pkg::*;

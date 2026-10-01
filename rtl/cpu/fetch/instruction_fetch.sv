@@ -28,16 +28,16 @@ module instruction_fetch (
     // Current buffered instruction retirement from the CPU core.
     input  logic retire,
     input  logic redirect,
-    input  cpu_pkg::data_t redirect_target,
+    input  cpu_pkg::reg_t redirect_target,
 
     // Instruction-bus master request/response.
     output logic                  ibus_valid,
-    output cpu_pkg::data_t        ibus_address,
+    output cpu_pkg::reg_t        ibus_address,
     input  logic                  ibus_ready,
     input  cpu_pkg::instruction_t ibus_read_data,
 
     // Buffered instruction presented to the CPU core.
-    output cpu_pkg::data_t        pc,
+    output cpu_pkg::reg_t        pc,
     output cpu_pkg::instruction_t instruction,
     output logic                  instruction_available
 );

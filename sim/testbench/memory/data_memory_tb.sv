@@ -3,9 +3,9 @@
 // ============================================================
 // Data-memory bus-slave regression
 //
-// Verifies the local memory's valid/ready protocol, byte-address
+// Verifies the local memory's valid/ready protocol, byte-slave_address
 // indexing, combinational LOAD response, synchronous STORE commit,
-// and the preserved invalid-address behavior.
+// and the preserved invalid-slave_address behavior.
 // ============================================================
 
 module data_memory_tb;
@@ -14,24 +14,24 @@ module data_memory_tb;
     logic clk = 1'b0;
     always #5 clk = ~clk;
 
-    logic bus_valid;
-    logic bus_write;
-    data_t address;
-    data_t write_data;
-    logic bus_ready;
-    data_t read_data;
+    logic slave_valid;
+    logic slave_write;
+    reg_t slave_address;
+    reg_t slave_write_data;
+    logic slave_ready;
+    reg_t slave_read_data;
 
     integer tests = 0;
     integer errors = 0;
 
     data_memory dut (
         .clk(clk),
-        .bus_valid(bus_valid),
-        .bus_write(bus_write),
-        .address(address),
-        .write_data(write_data),
-        .bus_ready(bus_ready),
-        .read_data(read_data)
+        .slave_valid(slave_valid),
+        .slave_write(slave_write),
+        .slave_address(slave_address),
+        .slave_write_data(slave_write_data),
+        .slave_ready(slave_ready),
+        .slave_read_data(slave_read_data)
     );
 
     task automatic check(input logic condition, input string description);
@@ -50,76 +50,76 @@ module data_memory_tb;
         $dumpfile("data_memory.vcd");
         $dumpvars(0, data_memory_tb);
 
-        bus_valid = 1'b0;
-        bus_write = 1'b0;
-        address = '0;
-        write_data = '0;
+        slave_valid = 1'b0;
+        slave_write = 1'b0;
+        slave_address = '0;
+        slave_write_data = '0;
 
         #1;
-        check(bus_ready === 1'b0, "idle slave does not report a completed transfer");
-        check(read_data === '0, "idle read data is zero");
+        check(slave_ready === 1'b0, "idle slave does not report a completed transfer");
+        check(slave_read_data === '0, "idle read data is zero");
 
-        // STORE one complete DATA_WIDTH word at byte address DATA_BYTES.
+        // STORE one complete REG_FILE_WIDTH word at byte address REG_FILE_BYTES.
         @(negedge clk);
-        bus_valid = 1'b1;
-        bus_write = 1'b1;
-        address = data_t'(DATA_BYTES);
-        write_data = data_t'(64'h1122_3344_5566_7788);
+        slave_valid = 1'b1;
+        slave_write = 1'b1;
+        slave_address = reg_t'(REG_FILE_BYTES);
+        slave_write_data = reg_t'(64'h1122_3344_5566_7788);
         #1;
-        check(bus_ready === 1'b1, "local memory accepts STORE immediately");
+        check(slave_ready === 1'b1, "local memory accepts STORE immediately");
 
         @(posedge clk);
         #1;
-        bus_valid = 1'b0;
-        bus_write = 1'b0;
+        slave_valid = 1'b0;
+        slave_write = 1'b0;
 
         // LOAD the word back.
         @(negedge clk);
-        bus_valid = 1'b1;
-        bus_write = 1'b0;
-        address = data_t'(DATA_BYTES);
+        slave_valid = 1'b1;
+        slave_write = 1'b0;
+        slave_address = reg_t'(REG_FILE_BYTES);
         #1;
-        check(bus_ready === 1'b1, "local memory accepts LOAD immediately");
-        check(read_data === data_t'(64'h1122_3344_5566_7788),
+        check(slave_ready === 1'b1, "local memory accepts LOAD immediately");
+        check(slave_read_data === reg_t'(64'h1122_3344_5566_7788),
               "aligned STORE/LOAD round trip");
 
         // Adjacent word remains independent.
-        address = data_t'(2 * DATA_BYTES);
+        slave_address = reg_t'(2 * REG_FILE_BYTES);
         #1;
-        check(read_data === '0, "adjacent word unchanged");
+        check(slave_read_data === '0, "adjacent word unchanged");
 
         // Misaligned LOAD completes with zero rather than deadlocking.
-        address = data_t'(DATA_BYTES + 1);
+        slave_address = reg_t'(REG_FILE_BYTES + 1);
         #1;
-        check(bus_ready === 1'b1, "misaligned LOAD still completes");
-        check(read_data === '0, "misaligned LOAD returns zero");
+        check(slave_ready === 1'b1, "misaligned LOAD still completes");
+        check(slave_read_data === '0, "misaligned LOAD returns zero");
 
         // Misaligned STORE completes but is ignored.
         @(negedge clk);
-        bus_write = 1'b1;
-        address = data_t'(1);
-        write_data = data_t'('1);
+        slave_write = 1'b1;
+        slave_address = reg_t'(1);
+        slave_write_data = reg_t'('1);
         #1;
-        check(bus_ready === 1'b1, "misaligned STORE still completes");
+        check(slave_ready === 1'b1, "misaligned STORE still completes");
         @(posedge clk);
         #1;
 
         // Verify memory word zero was not modified.
         @(negedge clk);
-        bus_write = 1'b0;
-        address = data_t'(0);
+        slave_write = 1'b0;
+        slave_address = reg_t'(0);
         #1;
-        check(read_data === '0, "misaligned STORE is ignored");
+        check(slave_read_data === '0, "misaligned STORE is ignored");
 
-        // First address immediately beyond configured memory is invalid.
-        address = data_t'(DATA_MEMORY_DEPTH * DATA_BYTES);
+        // First slave_address immediately beyond configured memory is invalid.
+        slave_address = reg_t'(DATA_MEMORY_COUNT * DATA_MEMORY_BYTES);
         #1;
-        check(bus_ready === 1'b1, "out-of-range LOAD still completes");
-        check(read_data === '0, "out-of-range LOAD returns zero");
+        check(slave_ready === 1'b1, "out-of-range LOAD still completes");
+        check(slave_read_data === '0, "out-of-range LOAD returns zero");
 
-        bus_valid = 1'b0;
+        slave_valid = 1'b0;
         #1;
-        check(bus_ready === 1'b0, "ready drops after request is removed");
+        check(slave_ready === 1'b0, "ready drops after request is removed");
 
         $display("========================================");
         $display("LACOODA DATA MEMORY BUS TEST SUMMARY");

@@ -27,7 +27,16 @@
 **/pnr/*.rpt
 **/pnr/*.html
 **/pnr/*.xml
+**/pnr/*.txt
+
+# PnR-generated orchestration (rewritten from the project config each run)
+**/pnr/cmd.do
+**/pnr/device.cfg
 **/temp/*
+**/gwsyn.log
+
+# Gowin IDE per-user project state (window/flow state, machine specific)
+*.gprj.user
 
 # ============================================================
 # Waveform and simulation files

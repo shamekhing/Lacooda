@@ -3,13 +3,31 @@
 # Simulation outputs
 # ============================================================
 
-sim/build/*
-sim/waveforms/*
-/*_sim
+**/sim/build/*
+**/sim/waveforms/*
+*_sim
 
 # Preserve the directories in Git
-!sim/build/.gitkeep
-!sim/waveforms/.gitkeep
+!**/sim/build/.gitkeep
+!**/sim/waveforms/.gitkeep
+
+# ============================================================
+# Gowin IDE generated outputs
+# ============================================================
+
+**/gwsynthesis/*.log
+**/gwsynthesis/*.vg
+**/gwsynthesis/*_syn_resource.html
+**/gwsynthesis/*_syn.rpt.html
+**/gwsynthesis/*_syn_rsc.xml
+**/pnr/*.log
+**/pnr/*.fs
+**/pnr/*.bin
+**/pnr/*.bit
+**/pnr/*.rpt
+**/pnr/*.html
+**/pnr/*.xml
+**/temp/*
 
 # ============================================================
 # Waveform and simulation files

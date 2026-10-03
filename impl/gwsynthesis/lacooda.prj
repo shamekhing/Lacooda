@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gowin-synthesis-project>
+<Project>
+    <Version>beta</Version>
+    <Device id="GW2A-18C" package="PBGA256" speed="8" partNumber="GW2A-LV18PG256C8/I7"/>
+    <FileList>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/packages/opcode_pkg.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/packages/cpu_pkg.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/packages/bus_pkg.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/bus/address_decoder.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/bus/bus_interconnect.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/alu/alu.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/alu/arithmetic.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/alu/comparator.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/alu/logic_unit.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/alu/shifter.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/branch_unit.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/cpu_core.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/datapath.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/decoder.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/register_file.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/core/status_register.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/cpu.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/fetch/instruction_fetch.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/cpu/fetch/program_counter.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/memory/data_memory.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/memory/instruction_memory.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/soc/cpu_system.sv" type="verilog"/>
+        <File path="/home/ifonlyloop/Documents/code/sysverilog/lacooda/src/rtl/soc/fpga_top.sv" type="verilog"/>
+    </FileList>
+    <OptionList>
+        <Option type="disable_insert_pad" value="0"/>
+        <Option type="global_freq" value="100.000"/>
+        <Option type="looplimit" value="2000"/>
+        <Option type="output_file" value="/home/ifonlyloop/Documents/code/sysverilog/lacooda/impl/gwsynthesis/lacooda.vg"/>
+        <Option type="print_all_synthesis_warning" value="0"/>
+        <Option type="ram_rw_check" value="0"/>
+        <Option type="vcc" value="1.0"/>
+        <Option type="verilog_language" value="sysv-2017"/>
+        <Option type="vhdl_language" value="vhdl-1993"/>
+    </OptionList>
+</Project>

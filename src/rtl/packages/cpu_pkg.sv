@@ -33,7 +33,7 @@ package cpu_pkg;
     // ------------------------------------------------------------
 
     `ifndef LACOODA_WORD_WIDTH
-        `define LACOODA_WORD_WIDTH 64
+        `define LACOODA_WORD_WIDTH 32
     `endif
 
     localparam int WORD_WIDTH = `LACOODA_WORD_WIDTH;
@@ -70,8 +70,11 @@ package cpu_pkg;
     localparam int DATA_MEMORY_COUNT = 256;
     // Program image. Word-size-dependent (branch targets are byte
     // addresses), so each global word has its own image.
+    // Path is resolved by the tool flow relative to the repository root
+    // (iverilog regressions and GowinSynthesis both run from there), so the
+    // "src/" prefix matches where the images actually live.
     localparam PROGRAM_FILE =
-        (WORD_WIDTH == 32) ? "programs/genesis_32.hex" : "programs/genesis_64.hex";
+        (WORD_WIDTH == 32) ? "src/programs/genesis_32.hex" : "src/programs/genesis_64.hex";
 
     // ------------------------------------------------------------
     // Architectural STATUS: a dedicated 32-bit register, independent

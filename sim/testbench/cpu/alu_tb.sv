@@ -2,10 +2,10 @@
 
 module alu_tb;
 
-    import alu_pkg::*;
+    import cpu_pkg::*;
     import opcode_pkg::*;
 
-    localparam int WIDTH = cpu_pkg::REG_FILE_WIDTH;
+    localparam int WIDTH = cpu_pkg::WORD_WIDTH;
 
     logic clk = 0;
     logic rst;
@@ -18,8 +18,8 @@ module alu_tb;
     logic [WIDTH-1:0] result;
     logic valid;
 
-    alu_pkg::flags_t flags;
-    alu_pkg::flags_t stored_flags;
+    cpu_pkg::flags_t flags;
+    cpu_pkg::status_t status;
 
     integer tests = 0;
     integer errors = 0;
@@ -28,9 +28,9 @@ module alu_tb;
     // DUT: ALU
     // =========================================================
 
-    alu #(.WIDTH(WIDTH)) dut (
-        .A(A),
-        .B(B),
+    alu dut (
+        .operand_a(A),
+        .operand_b(B),
         .op(op),
         .carry_in(carry_in),
         .result(result),
@@ -47,7 +47,7 @@ module alu_tb;
         .rst(rst),
         .write_enable(write_enable),
         .flags_in(flags),
-        .flags_out(stored_flags)
+        .status(status)
     );
 
     always #5 clk = ~clk;
@@ -57,7 +57,7 @@ module alu_tb;
     // =========================================================
 
     task automatic check(
-        input logic [OPCODE_WIDTH-1:0] operation,
+        input logic [OPCODE_WIDTH-1:0] opcode,
         input logic [WIDTH-1:0] a,
         input logic [WIDTH-1:0] b,
         input logic cin,
@@ -75,7 +75,7 @@ module alu_tb;
 
         begin
 
-            op       = operation;
+            op       = opcode;
             A        = a;
             B        = b;
             carry_in = cin;
@@ -162,13 +162,13 @@ module alu_tb;
 
             tests = tests + 1;
 
-            if (stored_flags !== expected) begin
+            if (status !== cpu_pkg::status_t'(expected)) begin
 
                 errors = errors + 1;
 
                 $display(
                     "[FAIL] STATUS got=%b expected=%b",
-                    stored_flags,
+                    status,
                     expected
                 );
 
@@ -176,7 +176,7 @@ module alu_tb;
 
                 $display(
                     "[PASS] STATUS=%b",
-                    stored_flags
+                    status
                 );
 
             end
@@ -190,6 +190,9 @@ module alu_tb;
     // =========================================================
 
     initial begin
+
+        if ($bits(status) != cpu_pkg::STATUS_WIDTH)
+            $fatal(1, "Architectural STATUS width does not match STATUS_WIDTH");
 
         $dumpfile("alu.vcd");
         $dumpvars(0, alu_tb);
@@ -837,7 +840,7 @@ module alu_tb;
         // 40 ALU operations occupy 0x00 through 0x27.
         // Every other encoding must be invalid for the ALU.
 
-        for (logic [OPCODE_WIDTH:0] i = ALU_OPCODE_COUNT; i < OPCODE_ENCODINGS; i = i + 1) begin
+        for (logic [OPCODE_WIDTH:0] i = ALU_OPCODE_COUNT; i < OPCODE_COUNT; i = i + 1) begin
 
             check(
                 i[OPCODE_WIDTH-1:0],
@@ -871,7 +874,7 @@ module alu_tb;
         @(posedge clk);
         #1;
 
-        check_status(5'b10000);
+        check_status(5'b00001);
 
         // Disable writes; previous flags must remain.
         @(negedge clk);
@@ -884,7 +887,7 @@ module alu_tb;
         @(posedge clk);
         #1;
 
-        check_status(5'b10000);
+        check_status(5'b00001);
 
         // Enable writes again.
         @(negedge clk);
@@ -908,7 +911,7 @@ module alu_tb;
         #1;
 
         // Z=1, C=1
-        check_status(5'b10100);
+        check_status(5'b00101);
 
         // Store negative and overflow flags.
         @(negedge clk);

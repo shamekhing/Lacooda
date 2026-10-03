@@ -7,6 +7,9 @@
 // and a controllable data-bus slave. This proves that the CPU itself contains
 // neither instruction memory nor data memory and that BOTH master interfaces
 // obey the valid/ready hold-until-ready contract.
+//
+// Program image: every instruction that uses an immediate is stored as a
+// pair — the instruction word followed by its immediate word.
 // ============================================================
 
 module cpu_tb;
@@ -19,28 +22,20 @@ module cpu_tb;
     logic rst = 1'b1;
     logic run = 1'b0;
 
-    // Instruction bus.
-    logic ibus_valid;
-    reg_t ibus_address;
-    logic ibus_ready;
-    instruction_t ibus_read_data;
+    // Typed CPU bus interfaces.
+    bus_pkg::bus_req_t i_req;
+    bus_pkg::bus_rsp_t i_rsp;
     logic ibus_allow;
+    bus_pkg::bus_req_t d_req;
+    bus_pkg::bus_rsp_t d_rsp;
 
-    // Data bus.
-    logic dbus_valid;
-    logic dbus_write;
-    reg_t dbus_address;
-    reg_t dbus_write_data;
-    logic dbus_ready;
-    reg_t dbus_read_data;
-
-    reg_t pc;
+    word_t pc;
     instruction_t instruction;
     logic execution_valid;
     logic illegal_instruction;
-    reg_t result;
+    word_t result;
 
-    instruction_t program_words [0:6];
+    instruction_t program_words [0:13];
 
     integer tests = 0;
     integer errors = 0;
@@ -50,35 +45,28 @@ module cpu_tb;
         .rst(rst),
         .run(run),
 
-        .ibus_valid(ibus_valid),
-        .ibus_address(ibus_address),
-        .ibus_ready(ibus_ready),
-        .ibus_read_data(ibus_read_data),
-
-        .dbus_valid(dbus_valid),
-        .dbus_write(dbus_write),
-        .dbus_address(dbus_address),
-        .dbus_write_data(dbus_write_data),
-        .dbus_ready(dbus_ready),
-        .dbus_read_data(dbus_read_data),
+        .instr_req(i_req),
+        .instr_rsp(i_rsp),
+        .data_req(d_req),
+        .data_rsp(d_rsp),
 
         .pc(pc),
         .instruction(instruction),
-        .execution_valid(execution_valid),
-        .illegal_instruction(illegal_instruction),
-        .result(result)
+        .retire_valid(execution_valid),
+        .illegal_instr(illegal_instruction),
+        .alu_result(result)
     );
 
     // Controllable instruction-bus slave used only by this testbench.
     // It can insert arbitrary fetch wait states through ibus_allow.
     always_comb begin
-        ibus_ready = ibus_valid && ibus_allow;
-        ibus_read_data = '0;
+        i_rsp.ready = i_req.valid && ibus_allow;
+        i_rsp.rdata = '0;
 
-        if (ibus_valid &&
-            ibus_address % INSTRUCTION_MEMORY_BYTES == 0 &&
-            (ibus_address / INSTRUCTION_MEMORY_BYTES) < 7)
-            ibus_read_data = program_words[ibus_address / INSTRUCTION_MEMORY_BYTES];
+        if (i_req.valid &&
+            i_req.addr % WORD_BYTES == 0 &&
+            (i_req.addr / WORD_BYTES) < 14)
+            i_rsp.rdata = program_words[i_req.addr / WORD_BYTES];
     end
 
     task automatic check(input logic condition, input string description);
@@ -94,7 +82,7 @@ module cpu_tb;
     endtask
 
     // Wait until the CPU has buffered the instruction at expected_pc.
-    task automatic wait_for_buffered_pc(input reg_t expected_pc);
+    task automatic wait_for_buffered_pc(input word_t expected_pc);
         begin
             while (!(dut.u_instruction_fetch.instruction_available && pc === expected_pc)) begin
                 @(posedge clk);
@@ -107,34 +95,41 @@ module cpu_tb;
         $dumpfile("cpu.vcd");
         $dumpvars(0, cpu_tb);
 
+        // 0: MOVI R1, 100                (instruction + immediate)
         program_words[0] = encode_instruction(
-            ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG,
-            1'b1, 1'b0, imm_t'(100));
-        program_words[1] = encode_instruction(
-            ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG,
-            1'b1, 1'b0, imm_t'(8 * REG_FILE_BYTES));
-        program_words[2] = encode_store(
-            reg_addr_t'(1), reg_addr_t'(2), imm_t'(REG_FILE_BYTES));
-        program_words[3] = encode_load(
-            reg_addr_t'(3), reg_addr_t'(2), imm_t'(REG_FILE_BYTES));
-        program_words[4] = encode_branch(
-            CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(3),
-            imm_t'(6 * INSTRUCTION_MEMORY_BYTES));
-        program_words[5] = encode_instruction(
-            ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG,
-            1'b1, 1'b0, imm_t'(111));
-        program_words[6] = encode_instruction(
-            ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG,
-            1'b1, 1'b0, imm_t'(222));
+            ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[1] = word_t'(100);
+        // 2: MOVI R2, base byte address
+        program_words[2] = encode_instruction(
+            ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[3] = word_t'(8 * WORD_BYTES);
+        // 4: STORE R1, [R2 + WORD_BYTES]
+        program_words[4] = encode_store(reg_addr_t'(1), reg_addr_t'(2));
+        program_words[5] = word_t'(WORD_BYTES);
+        // 6: LOAD R3, [R2 + WORD_BYTES]
+        program_words[6] = encode_load(reg_addr_t'(3), reg_addr_t'(2));
+        program_words[7] = word_t'(WORD_BYTES);
+        // 8: BEQ R1, R3 -> instruction at word index 12
+        program_words[8] = encode_branch(
+            CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(3));
+        program_words[9] = word_t'(12 * WORD_BYTES);
+        // 10: MOVI R4, 111 (never executed)
+        program_words[10] = encode_instruction(
+            ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[11] = word_t'(111);
+        // 12: MOVI R4, 222 (branch target)
+        program_words[12] = encode_instruction(
+            ALU_PASS_B, reg_addr_t'(4), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[13] = word_t'(222);
 
         ibus_allow = 1'b0;
-        dbus_ready = 1'b0;
-        dbus_read_data = '0;
+        d_rsp.ready = 1'b0;
+        d_rsp.rdata = '0;
 
         // Reset architectural state.
         @(posedge clk);
         #1;
-        check(pc === reg_t'(0), "reset PC is zero");
+        check(pc === word_t'(0), "reset PC is zero");
 
         @(negedge clk);
         rst = 1'b0;
@@ -145,7 +140,8 @@ module cpu_tb;
         // ----------------------------------------------------
         @(posedge clk); // Starts first fetch request.
         #1;
-        check(ibus_valid && ibus_address === reg_t'(0),
+        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
+              i_req.addr === word_t'(0) && i_req.wdata === '0,
               "I-BUS starts fetch at PC 0");
 
         // Pause after valid has been asserted. The started request must not
@@ -153,39 +149,44 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(ibus_valid && ibus_address === reg_t'(0),
+        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
+              i_req.addr === word_t'(0) && i_req.wdata === '0,
               "in-flight I-BUS request survives run deassertion");
 
         @(posedge clk);
         #1;
-        check(ibus_valid && ibus_address === reg_t'(0),
+        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
+              i_req.addr === word_t'(0) && i_req.wdata === '0,
               "I-BUS address remains stable while ready is low");
 
-        // Accept the fetch. The already-started instruction is then allowed
-        // to execute atomically even though run remains low.
+        // Accept the instruction word; the immediate beat completes on the
+        // next edge because ibus_allow stays high. The already-started
+        // instruction is then allowed to execute atomically even though
+        // run remains low.
         @(negedge clk);
         ibus_allow = 1'b1;
+        @(posedge clk);
         @(posedge clk);
         #1;
         check(dut.u_instruction_fetch.instruction_available &&
               instruction === program_words[0] && execution_valid,
-              "accepted fetch is buffered and executes");
+              "accepted fetch (instruction + immediate) is buffered and executes");
 
         @(posedge clk); // Retire MOVI R1,100.
         #1;
-        check(pc === reg_t'(INSTRUCTION_MEMORY_BYTES),
-              "PC advances only after fetched instruction retires");
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[1] === reg_t'(100),
+        check(pc === word_t'(2 * WORD_BYTES),
+              "PC advances past instruction and immediate");
+        check(dut.u_cpu_core.u_datapath.u_register_file.registers[1] === word_t'(100),
               "MOVI R1 retires after I-BUS fetch");
-        check(!ibus_valid,
+        check(!i_req.valid,
               "paused CPU does not start another fetch");
 
         // Resume and execute MOVI R2.
         @(negedge clk);
         run = 1'b1;
-        wait_for_buffered_pc(reg_t'(INSTRUCTION_MEMORY_BYTES));
+        wait_for_buffered_pc(word_t'(2 * WORD_BYTES));
         #1;
-        check(execution_valid && !dbus_valid,
+        check(execution_valid && !d_req.valid,
               "ordinary instruction executes without D-BUS traffic");
         @(posedge clk); // Retire MOVI R2.
         #1;
@@ -193,11 +194,11 @@ module cpu_tb;
         // ----------------------------------------------------
         // D-BUS STORE WAIT-STATE / HOLD GUARANTEE
         // ----------------------------------------------------
-        wait_for_buffered_pc(reg_t'(2 * INSTRUCTION_MEMORY_BYTES));
+        wait_for_buffered_pc(word_t'(4 * WORD_BYTES));
         #1;
-        check(dbus_valid && dbus_write &&
-              dbus_address === reg_t'(9 * REG_FILE_BYTES) &&
-              dbus_write_data === reg_t'(100),
+        check(d_req.valid && (d_req.op == bus_pkg::BUS_WRITE) &&
+              d_req.addr === word_t'(9 * WORD_BYTES) &&
+              d_req.wdata === word_t'(100),
               "STORE presents complete D-BUS request");
         check(!execution_valid,
               "STORE does not retire while D-BUS ready is low");
@@ -205,27 +206,28 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(dbus_valid && dbus_write,
+        check(d_req.valid && d_req.op == bus_pkg::BUS_WRITE,
               "in-flight STORE survives run deassertion");
 
         @(posedge clk);
         #1;
-        check(pc === reg_t'(2 * INSTRUCTION_MEMORY_BYTES) &&
-              dbus_valid &&
-              dbus_address === reg_t'(9 * REG_FILE_BYTES),
+        check(pc === word_t'(4 * WORD_BYTES) &&
+              d_req.valid &&
+              d_req.addr === word_t'(9 * WORD_BYTES) &&
+              d_req.wdata === word_t'(100),
               "STORE PC/request remain stable while waiting");
 
         @(negedge clk);
-        dbus_ready = 1'b1;
+        d_rsp.ready = 1'b1;
         #1;
-        check(dbus_valid && execution_valid,
+        check(d_req.valid && execution_valid,
               "STORE completes when D-BUS ready is asserted");
         @(posedge clk); // Retire STORE.
         #1;
-        dbus_ready = 1'b0;
-        check(pc === reg_t'(3 * INSTRUCTION_MEMORY_BYTES),
+        d_rsp.ready = 1'b0;
+        check(pc === word_t'(6 * WORD_BYTES),
               "PC advances after STORE handshake");
-        check(!ibus_valid,
+        check(!i_req.valid,
               "run=0 prevents next fetch after completed STORE");
 
         // ----------------------------------------------------
@@ -233,44 +235,44 @@ module cpu_tb;
         // ----------------------------------------------------
         @(negedge clk);
         run = 1'b1;
-        dbus_read_data = reg_t'(100);
-        wait_for_buffered_pc(reg_t'(3 * INSTRUCTION_MEMORY_BYTES));
+        d_rsp.rdata = word_t'(100);
+        wait_for_buffered_pc(word_t'(6 * WORD_BYTES));
         #1;
-        check(dbus_valid && !dbus_write &&
-              dbus_address === reg_t'(9 * REG_FILE_BYTES),
+        check(d_req.valid && d_req.op == bus_pkg::BUS_READ &&
+              d_req.addr === word_t'(9 * WORD_BYTES),
               "LOAD presents D-BUS read request");
         check(!execution_valid,
               "LOAD does not retire while D-BUS ready is low");
 
         @(posedge clk);
         #1;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === reg_t'(0),
+        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === word_t'(0),
               "stalled LOAD does not write R3 early");
 
         @(negedge clk);
-        dbus_ready = 1'b1;
+        d_rsp.ready = 1'b1;
         #1;
-        check(dbus_valid && !dbus_write && execution_valid,
+        check(d_req.valid && d_req.op == bus_pkg::BUS_READ && execution_valid,
               "LOAD completes on D-BUS handshake");
         @(posedge clk); // Retire LOAD and write R3.
         #1;
-        dbus_ready = 1'b0;
-        dbus_read_data = '0;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === reg_t'(100),
+        d_rsp.ready = 1'b0;
+        d_rsp.rdata = '0;
+        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === word_t'(100),
               "LOAD writes D-BUS data to R3");
 
-        // BEQ must observe R3=100 and redirect to instruction 6.
-        wait_for_buffered_pc(reg_t'(4 * INSTRUCTION_MEMORY_BYTES));
+        // BEQ must observe R3=100 and redirect to instruction 6 (word 12).
+        wait_for_buffered_pc(word_t'(8 * WORD_BYTES));
         #1;
         check(execution_valid && !illegal_instruction,
               "BEQ executes after LOAD completion");
         @(posedge clk); // Retire BEQ and redirect PC.
         #1;
-        check(pc === reg_t'(6 * INSTRUCTION_MEMORY_BYTES),
+        check(pc === word_t'(12 * WORD_BYTES),
               "BEQ redirects to branch target");
 
         // Branch target MOVI R4,222 executes; instruction 5 is never fetched.
-        wait_for_buffered_pc(reg_t'(6 * INSTRUCTION_MEMORY_BYTES));
+        wait_for_buffered_pc(word_t'(12 * WORD_BYTES));
         #1;
         check(execution_valid, "branch-target instruction executes");
         @(posedge clk);
@@ -279,7 +281,7 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[4] === reg_t'(222),
+        check(dut.u_cpu_core.u_datapath.u_register_file.registers[4] === word_t'(222),
               "CPU resumes normally after independent I/D bus stalls");
 
         $display("========================================");
@@ -297,7 +299,7 @@ module cpu_tb;
     end
 
     initial begin
-        #4000;
+        #8000;
         $fatal(1, "TIMEOUT");
     end
 

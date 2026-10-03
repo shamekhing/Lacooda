@@ -16,50 +16,36 @@
 // ============================================================
 
 module bus_interconnect (
-    // CPU/master side.
-    input  logic           dbus_valid,
-    input  logic           dbus_write,
-    input  cpu_pkg::reg_t dbus_address,
-    input  cpu_pkg::data_memory_t dbus_write_data,
-    output logic           dbus_ready,
-    output cpu_pkg::data_memory_t dbus_read_data,
-
-    // Local data-memory slave side.
-    output logic           slave_valid,
-    output logic           slave_write,
-    output cpu_pkg::reg_t slave_address,
-    output cpu_pkg::data_memory_t slave_write_data,
-    input  logic           slave_ready,
-    input  cpu_pkg::data_memory_t slave_read_data
+    input  bus_pkg::bus_req_t  d_req,
+    output bus_pkg::bus_rsp_t d_rsp,
+    output bus_pkg::bus_req_t  slave_req,
+    input  bus_pkg::bus_rsp_t slave_rsp
 );
 
-    logic slave_select;
+    logic slave_sel;
 
     address_decoder u_address_decoder (
-        .address      (dbus_address),
-        .slave_select (slave_select)
+        .addr      (d_req.addr),
+        .slave_sel (slave_sel)
     );
 
     // Requests are forwarded only to the selected slave. The address
     // presented to the slave is local to its mapped region.
-    assign slave_valid = dbus_valid && slave_select;
-    assign slave_write = dbus_write;
-    assign slave_address = dbus_address - bus_pkg::DATA_MEMORY_BASE;
-    assign slave_write_data = dbus_write_data;
+    assign slave_req.valid = d_req.valid && slave_sel;
+    assign slave_req.op = d_req.op;
+    assign slave_req.addr = d_req.addr - bus_pkg::DATA_MEMORY_BASE;
+    assign slave_req.wdata = d_req.wdata;
 
     always_comb begin
-        dbus_ready = 1'b0;
-        dbus_read_data = '0;
+        d_rsp = '0;
 
-        if (dbus_valid) begin
-            if (slave_select) begin
-                dbus_ready = slave_ready;
-                dbus_read_data = slave_read_data;
+        if (d_req.valid) begin
+            if (slave_sel) begin
+                d_rsp = slave_rsp;
             end else begin
                 // Preserve the existing no-fault Stage-7 behavior for an
                 // unmapped address: complete the request and return zero.
-                dbus_ready = 1'b1;
-                dbus_read_data = '0;
+                d_rsp.ready = 1'b1;
             end
         end
     end

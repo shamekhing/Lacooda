@@ -7,13 +7,11 @@
 // MOV (PASS_A) and MOVI (PASS_B).
 // ============================================================
 
-module logic_unit #(
-    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
-)(
-    input  logic [WIDTH-1:0] A, B,
+module logic_unit (
+    input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
 
-    output logic [WIDTH-1:0] result
+    output cpu_pkg::word_t result
 );
 
     import opcode_pkg::*;
@@ -22,15 +20,15 @@ module logic_unit #(
         result = '0;
 
         case (op)
-            ALU_AND:    result = A & B;
-            ALU_OR:     result = A | B;
-            ALU_XOR:    result = A ^ B;
-            ALU_NOT:    result = ~A;
-            ALU_NAND:   result = ~(A & B);
-            ALU_NOR:    result = ~(A | B);
-            ALU_XNOR:   result = ~(A ^ B);
-            ALU_PASS_A: result = A;
-            ALU_PASS_B: result = B;
+            ALU_AND:    result = operand_a & operand_b;
+            ALU_OR:     result = operand_a | operand_b;
+            ALU_XOR:    result = operand_a ^ operand_b;
+            ALU_NOT:    result = ~operand_a;
+            ALU_NAND:   result = ~(operand_a & operand_b);
+            ALU_NOR:    result = ~(operand_a | operand_b);
+            ALU_XNOR:   result = ~(operand_a ^ operand_b);
+            ALU_PASS_A: result = operand_a;
+            ALU_PASS_B: result = operand_b;
 
             default: result = '0;
         endcase

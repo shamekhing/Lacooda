@@ -18,96 +18,58 @@ module cpu_system (
     input logic rst,
     input logic run,
 
-    output cpu_pkg::reg_t pc,
+    output cpu_pkg::word_t pc,
     output cpu_pkg::instruction_t instruction,
-    output logic execution_valid,
-    output logic illegal_instruction,
-    output cpu_pkg::reg_t result
+    output logic retire_valid,
+    output logic illegal_instr,
+    output cpu_pkg::word_t alu_result
 );
 
-    // --------------------------------------------------------
     // CPU instruction bus.
-    // --------------------------------------------------------
-    logic ibus_valid;
-    logic ibus_ready;
-    cpu_pkg::reg_t ibus_address;
-    cpu_pkg::instruction_t ibus_read_data;
+    bus_pkg::bus_req_t instr_req;
+    bus_pkg::bus_rsp_t instr_rsp;
 
-    // --------------------------------------------------------
     // CPU data-bus master side.
-    // --------------------------------------------------------
-    logic dbus_valid;
-    logic dbus_write;
-    logic dbus_ready;
-    cpu_pkg::reg_t dbus_address;
-    cpu_pkg::data_memory_t dbus_write_data;
-    cpu_pkg::data_memory_t dbus_read_data;
+    bus_pkg::bus_req_t data_req;
+    bus_pkg::bus_rsp_t data_rsp;
 
-    // --------------------------------------------------------
     // Interconnect -> local data-memory slave side.
-    // --------------------------------------------------------
-    logic slave_valid;
-    logic slave_write;
-    logic slave_ready;
-    cpu_pkg::reg_t slave_address;
-    cpu_pkg::data_memory_t slave_write_data;
-    cpu_pkg::data_memory_t slave_read_data;
+    bus_pkg::bus_req_t  slave_req;
+    bus_pkg::bus_rsp_t  slave_rsp;
 
     cpu u_cpu (
-        .clk                 (clk),
-        .rst                 (rst),
-        .run                 (run),
+        .clk            (clk),
+        .rst            (rst),
+        .run            (run),
 
-        .ibus_valid          (ibus_valid),
-        .ibus_address        (ibus_address),
-        .ibus_ready          (ibus_ready),
-        .ibus_read_data      (ibus_read_data),
+        .instr_req      (instr_req),
+        .instr_rsp      (instr_rsp),
+        .data_req       (data_req),
+        .data_rsp       (data_rsp),
 
-        .dbus_valid          (dbus_valid),
-        .dbus_write          (dbus_write),
-        .dbus_address        (dbus_address),
-        .dbus_write_data     (dbus_write_data),
-        .dbus_ready          (dbus_ready),
-        .dbus_read_data      (dbus_read_data),
-
-        .pc                  (pc),
-        .instruction         (instruction),
-        .execution_valid     (execution_valid),
-        .illegal_instruction (illegal_instruction),
-        .result              (result)
+        .pc             (pc),
+        .instruction    (instruction),
+        .retire_valid   (retire_valid),
+        .illegal_instr  (illegal_instr),
+        .alu_result     (alu_result)
     );
 
     instruction_memory u_instruction_memory (
-        .slave_valid     (ibus_valid),
-        .slave_address   (ibus_address),
-        .slave_ready     (ibus_ready),
-        .slave_read_data (ibus_read_data)
+        .slave_req (instr_req),
+        .slave_rsp (instr_rsp)
     );
 
     bus_interconnect u_bus_interconnect (
-        .dbus_valid       (dbus_valid),
-        .dbus_write       (dbus_write),
-        .dbus_address     (dbus_address),
-        .dbus_write_data  (dbus_write_data),
-        .dbus_ready       (dbus_ready),
-        .dbus_read_data   (dbus_read_data),
-
-        .slave_valid      (slave_valid),
-        .slave_write      (slave_write),
-        .slave_address    (slave_address),
-        .slave_write_data (slave_write_data),
-        .slave_ready      (slave_ready),
-        .slave_read_data  (slave_read_data)
+        .d_req     (data_req),
+        .d_rsp     (data_rsp),
+        .slave_req (slave_req),
+        .slave_rsp (slave_rsp)
     );
 
     data_memory u_data_memory (
-        .clk               (clk),
-        .slave_valid       (slave_valid),
-        .slave_write       (slave_write),
-        .slave_address     (slave_address),
-        .slave_write_data  (slave_write_data),
-        .slave_ready       (slave_ready),
-        .slave_read_data   (slave_read_data)
+        .clk       (clk),
+        .slave_req (slave_req),
+        .slave_rsp (slave_rsp)
     );
 
 endmodule

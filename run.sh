@@ -1,7 +1,25 @@
 #!/bin/bash
 # LACOODA regression runner.
 # Run from the repository root so source paths and ROM initialization resolve.
+#
+# Word-width selection (see cpu_pkg.sv):
+#   ./run.sh              default global word = 64
+#   ./run.sh --word32     global word = 32  (-DLACOODA_WORD_WIDTH=32)
+#   ./run.sh --both       run the full regression at 32 and at 64
 set -e
+
+WORD_FLAGS=""
+for arg in "$@"; do
+    if [[ "$arg" == "--word32" ]]; then
+        WORD_FLAGS="-DLACOODA_WORD_WIDTH=32"
+    fi
+done
+
+if [[ "${1:-}" == "--both" ]]; then
+    "$0" --no-gui
+    "$0" --no-gui --word32
+    exit 0
+fi
 
 mkdir -p sim/build sim/waveforms
 
@@ -14,7 +32,8 @@ run_test() {
 
     echo "========== ${label} =========="
 
-    iverilog -g2012 -Wall \
+    # shellcheck disable=SC2086
+    iverilog -g2012 -Wall $WORD_FLAGS \
         -s "$top" \
         -o "sim/build/$binary" \
         "$@"
@@ -28,8 +47,8 @@ run_test() {
 
 run_test "ALU TEST" alu_tb alu_sim alu.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
     rtl/cpu/alu/logic_unit.sv \
     rtl/cpu/alu/shifter.sv \
@@ -40,15 +59,15 @@ run_test "ALU TEST" alu_tb alu_sim alu.vcd \
 
 run_test "REGISTER FILE TEST" register_file_tb register_file_sim register_file.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/core/register_file.sv \
     sim/testbench/cpu/register_file_tb.sv
 
 run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
     rtl/cpu/alu/logic_unit.sv \
     rtl/cpu/alu/shifter.sv \
@@ -61,15 +80,15 @@ run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
 
 run_test "DECODER TEST" decoder_tb decoder_sim decoder_tb.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/core/decoder.sv \
     sim/testbench/cpu/decoder_tb.sv
 
 run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
     rtl/cpu/alu/logic_unit.sv \
     rtl/cpu/alu/shifter.sv \
@@ -85,36 +104,35 @@ run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
 
 run_test "PROGRAM COUNTER TEST" program_counter_tb program_counter_sim program_counter.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/fetch/program_counter.sv \
     sim/testbench/cpu/program_counter_tb.sv
 
 run_test "BRANCH UNIT TEST" branch_unit_tb branch_unit_sim branch_unit.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/core/branch_unit.sv \
     sim/testbench/cpu/branch_unit_tb.sv
 
 run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch_sim instruction_fetch.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/fetch/program_counter.sv \
     rtl/cpu/fetch/instruction_fetch.sv \
     sim/testbench/cpu/instruction_fetch_tb.sv
 
 run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/memory/data_memory.sv \
     sim/testbench/memory/data_memory_tb.sv
 
 run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/packages/bus_pkg.sv \
     rtl/bus/address_decoder.sv \
@@ -123,8 +141,8 @@ run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_in
 
 run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
+    rtl/packages/bus_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \
     rtl/cpu/alu/logic_unit.sv \
     rtl/cpu/alu/shifter.sv \
@@ -143,7 +161,6 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
 
 run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     rtl/packages/opcode_pkg.sv \
-    rtl/packages/alu_pkg.sv \
     rtl/packages/cpu_pkg.sv \
     rtl/packages/bus_pkg.sv \
     rtl/cpu/alu/arithmetic.sv \

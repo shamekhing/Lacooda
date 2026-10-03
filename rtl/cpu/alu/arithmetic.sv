@@ -8,21 +8,19 @@
 // Side-channel status:
 //   carry    : unsigned carry out (ADD) / no-borrow (SUB)
 //   overflow : signed overflow; set when the true result is not
-//              representable in WIDTH bits
-//   div_zero : asserted whenever the divisor B is zero
+//              representable in cpu_pkg::WORD_WIDTH bits
+//   div_zero : asserted whenever the divisor operand_b is zero
 //
 // The signed MIN/-1 division and modulo cases are special-cased to
 // avoid the implementation-defined overflow of signed division.
 // ============================================================
 
-module arithmetic #(
-    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
-)(
-    input  logic [WIDTH-1:0] A, B,
+module arithmetic (
+    input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
     input  logic carry_in,
 
-    output logic [WIDTH-1:0] result,
+    output cpu_pkg::word_t result,
     output logic carry,
     output logic overflow,
     output logic div_zero
@@ -31,20 +29,20 @@ module arithmetic #(
     import opcode_pkg::*;
 
     // One extra bit preserves carry/borrow; a double-width product supports MULH.
-    logic [WIDTH:0] temp;
-    logic [2*WIDTH-1:0] product;
+    logic [cpu_pkg::WORD_WIDTH:0] add_ext;
+    logic [2*cpu_pkg::WORD_WIDTH-1:0] product;
 
-    logic signed [WIDTH-1:0] signed_a;
-    logic signed [WIDTH-1:0] signed_b;
+    logic signed [cpu_pkg::WORD_WIDTH-1:0] signed_a;
+    logic signed [cpu_pkg::WORD_WIDTH-1:0] signed_b;
 
-    logic [WIDTH-1:0] min_signed;
+    cpu_pkg::word_t min_signed;
 
-    logic [WIDTH-1:0] rhs;
+    cpu_pkg::word_t rhs;
 
-    assign signed_a = $signed(A);
-    assign signed_b = $signed(B);
+    assign signed_a = $signed(operand_a);
+    assign signed_b = $signed(operand_b);
 
-    assign min_signed = {1'b1, {(WIDTH-1){1'b0}}};
+    assign min_signed = {1'b1, {(cpu_pkg::WORD_WIDTH-1){1'b0}}};
 
     always_comb begin
         result   = '0;
@@ -52,72 +50,72 @@ module arithmetic #(
         overflow = 1'b0;
         div_zero = 1'b0;
 
-        temp    = '0;
+        add_ext    = '0;
         product = '0;
         rhs     = '0;
 
         case (op)
 
             ALU_ADD, ALU_ADC: begin
-                temp = {1'b0, A} + {1'b0, B}
+                add_ext = {1'b0, operand_a} + {1'b0, operand_b}
                      + ((op == ALU_ADC) ? carry_in : 1'b0);
 
-                result = temp[WIDTH-1:0];
-                carry  = temp[WIDTH];
+                result = add_ext[cpu_pkg::WORD_WIDTH-1:0];
+                carry  = add_ext[cpu_pkg::WORD_WIDTH];
 
                 overflow =
-                    (~(A[WIDTH-1] ^ B[WIDTH-1])) &
-                    (A[WIDTH-1] ^ result[WIDTH-1]);
+                    (~(operand_a[cpu_pkg::WORD_WIDTH-1] ^ operand_b[cpu_pkg::WORD_WIDTH-1])) &
+                    (operand_a[cpu_pkg::WORD_WIDTH-1] ^ result[cpu_pkg::WORD_WIDTH-1]);
             end
 
             ALU_SUB, ALU_SBC: begin
                 // C means no borrow: SBC subtracts an extra one when carry_in is zero.
-                rhs = B + ((op == ALU_SBC) ? !carry_in : 1'b0);
+                rhs = operand_b + ((op == ALU_SBC) ? !carry_in : 1'b0);
 
-                temp = {1'b0, A} - {1'b0, B}
+                add_ext = {1'b0, operand_a} - {1'b0, operand_b}
                      - ((op == ALU_SBC) ? !carry_in : 1'b0);
 
-                result = temp[WIDTH-1:0];
+                result = add_ext[cpu_pkg::WORD_WIDTH-1:0];
 
                 // No unsigned borrow
-                carry = ~temp[WIDTH];
+                carry = ~add_ext[cpu_pkg::WORD_WIDTH];
 
                 overflow =
-                    (A[WIDTH-1] ^ B[WIDTH-1]) &
-                    (A[WIDTH-1] ^ result[WIDTH-1]);
+                    (operand_a[cpu_pkg::WORD_WIDTH-1] ^ operand_b[cpu_pkg::WORD_WIDTH-1]) &
+                    (operand_a[cpu_pkg::WORD_WIDTH-1] ^ result[cpu_pkg::WORD_WIDTH-1]);
             end
 
             ALU_MUL: begin
-                product = A * B;
-                result  = product[WIDTH-1:0];
+                product = operand_a * operand_b;
+                result  = product[cpu_pkg::WORD_WIDTH-1:0];
             end
 
             ALU_MULH: begin
-                product = A * B;
-                result  = product[2*WIDTH-1:WIDTH];
+                product = operand_a * operand_b;
+                result  = product[2*cpu_pkg::WORD_WIDTH-1:cpu_pkg::WORD_WIDTH];
             end
 
             // Division/modulo by zero leave the default result of zero and raise DZ.
             ALU_DIVU: begin
-                if (B == '0)
+                if (operand_b == '0)
                     div_zero = 1'b1;
                 else
-                    result = A / B;
+                    result = operand_a / operand_b;
             end
 
             ALU_MODU: begin
-                if (B == '0)
+                if (operand_b == '0)
                     div_zero = 1'b1;
                 else
-                    result = A % B;
+                    result = operand_a % operand_b;
             end
 
             ALU_DIVS: begin
-                if (B == '0) begin
+                if (operand_b == '0) begin
                     div_zero = 1'b1;
                 end else if (
-                    A == min_signed &&
-                    B == {WIDTH{1'b1}}
+                    operand_a == min_signed &&
+                    operand_b == {cpu_pkg::WORD_WIDTH{1'b1}}
                 ) begin
                     result   = min_signed;
                     overflow = 1'b1;
@@ -127,11 +125,11 @@ module arithmetic #(
             end
 
             ALU_MODS: begin
-                if (B == '0) begin
+                if (operand_b == '0) begin
                     div_zero = 1'b1;
                 end else if (
-                    A == min_signed &&
-                    B == {WIDTH{1'b1}}
+                    operand_a == min_signed &&
+                    operand_b == {cpu_pkg::WORD_WIDTH{1'b1}}
                 ) begin
                     result = '0;
                 end else begin
@@ -139,27 +137,27 @@ module arithmetic #(
                 end
             end
 
-            // The most-negative signed value has no positive WIDTH-bit counterpart.
+            // The most-negative signed value has no positive cpu_pkg::WORD_WIDTH-bit counterpart.
             // NEG and ABS retain that bit pattern and report signed overflow.
             ALU_NEG: begin
-                result = -A;
-                carry  = (A == '0);
-                overflow = (A == min_signed);
+                result = -operand_a;
+                carry  = (operand_a == '0);
+                overflow = (operand_a == min_signed);
             end
 
             ALU_ABS: begin
-                result = A[WIDTH-1] ? -A : A;
-                overflow = (A == min_signed);
+                result = operand_a[cpu_pkg::WORD_WIDTH-1] ? -operand_a : operand_a;
+                overflow = (operand_a == min_signed);
             end
 
-            ALU_MINU: result = (A < B) ? A : B;
-            ALU_MAXU: result = (A > B) ? A : B;
+            ALU_MINU: result = (operand_a < operand_b) ? operand_a : operand_b;
+            ALU_MAXU: result = (operand_a > operand_b) ? operand_a : operand_b;
 
             ALU_MINS:
-                result = (signed_a < signed_b) ? A : B;
+                result = (signed_a < signed_b) ? operand_a : operand_b;
 
             ALU_MAXS:
-                result = (signed_a > signed_b) ? A : B;
+                result = (signed_a > signed_b) ? operand_a : operand_b;
 
             default: result = '0;
 

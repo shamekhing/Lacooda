@@ -2,38 +2,42 @@
 
 // LACOODA Stage 7 decoder regression. Compatible with Icarus Verilog:
 // no integer-to-enum casts, no hardcoded instruction bit positions.
+// The immediate is NOT an instruction field: the tb drives it on the
+// separate immediate_word port, exactly like the fetch unit does.
 module decoder_tb;
     import cpu_pkg::*;
     import opcode_pkg::*;
 
     instruction_t instruction;
+    word_t immediate_word;
     reg_addr_t rs1, rs2, rd;
     opcode_t alu_op;
-    cpu_pkg::reg_t immediate;
+    word_t immediate;
     logic use_immediate, register_write_enable, flags_write_enable;
     logic branch_enable;
     logic memory_read_enable, memory_write_enable;
-    branch_condition_t branch_condition;
-    reg_t branch_target;
+    opcode_t branch_opcode;
+    word_t branch_target;
     logic instruction_valid, illegal_instruction;
     integer tests = 0;
     integer errors = 0;
     logic [OPCODE_WIDTH:0] op_index;
     integer bit_index;
-    instruction_fields_t fields;
+    instr_fields_t fields;
 
     decoder dut (
-        .instruction(instruction), .rs1(rs1), .rs2(rs2), .rd(rd),
-        .alu_op(alu_op), .immediate(immediate), .use_immediate(use_immediate),
+        .instruction(instruction), .immediate_word(immediate_word),
+        .rs1(rs1), .rs2(rs2), .rd(rd),
+        .alu_op(alu_op), .imm_operand(immediate), .imm_sel(use_immediate),
         .register_write_enable(register_write_enable),
         .flags_write_enable(flags_write_enable),
         .branch_enable(branch_enable),
-        .branch_condition(branch_condition),
+        .branch_op(branch_opcode),
         .branch_target(branch_target),
         .memory_read_enable(memory_read_enable),
         .memory_write_enable(memory_write_enable),
-        .instruction_valid(instruction_valid),
-        .illegal_instruction(illegal_instruction)
+        .decode_valid(instruction_valid),
+        .illegal_instr(illegal_instruction)
     );
 
     task automatic check(input logic condition, input string description);
@@ -48,13 +52,13 @@ module decoder_tb;
 
     // Every call samples after combinational logic has settled.
     task automatic check_valid(input string description,
-                                input instruction_opcode_t expected_opcode,
+                                input opcode_t expected_opcode,
                                 input reg_addr_t expected_rd,
                                 input reg_addr_t expected_rs1,
                                 input reg_addr_t expected_rs2,
                                 input logic expected_i,
                                 input logic expected_s,
-                                input imm_t expected_imm);
+                                input word_t expected_imm);
         begin
             #1;
             check(instruction_valid === 1'b1 && illegal_instruction === 1'b0,
@@ -68,8 +72,8 @@ module decoder_tb;
             check(alu_op === expected_opcode[OPCODE_WIDTH-1:0],
                   {description, " opcode"});
             check(use_immediate === expected_i &&
-                  immediate === sign_extend_imm32(expected_imm),
-                  {description, " operand mode and sign extension"});
+                  immediate === expected_imm,
+                  {description, " operand mode and immediate"});
         end
     endtask
 
@@ -92,9 +96,9 @@ module decoder_tb;
 
     // Create arbitrary raw opcode values without illegal enum casts.
     // The package's packed layout is the source of truth.
-    task automatic set_raw(input instruction_opcode_t op,
+    task automatic set_raw(input opcode_t op,
                            input reg_addr_t dest, src1, src2,
-                           input logic i, s, input imm_t imm);
+                           input logic i, s, input word_t imm);
         begin
             fields = '0;
             fields.rd = dest;
@@ -102,9 +106,9 @@ module decoder_tb;
             fields.rs2 = src2;
             fields.immediate_mode = i;
             fields.update_status = s;
-            fields.imm32 = imm;
             instruction = fields;
             instruction[OPCODE_LSB +: OPCODE_WIDTH] = op[OPCODE_WIDTH-1:0];
+            immediate_word = imm;
         end
     endtask
 
@@ -112,23 +116,25 @@ module decoder_tb;
         $dumpfile("decoder_tb.vcd");
         $dumpvars(0, decoder_tb);
         instruction = '0;
+        immediate_word = '0;
 
         $display("=== PACKAGE / ENCODER ===");
-        check($bits(instruction_t) == INSTRUCTION_MEMORY_WIDTH &&
-              $bits(instruction_fields_t) == USED_INSTRUCTION_BITS,
+        check($bits(instruction_t) == WORD_WIDTH &&
+              $bits(instr_fields_t) == USED_INSTRUCTION_BITS,
               "instruction widths match");
         check($bits(reg_addr_t) == REG_FILE_ADDR_WIDTH &&
-              $bits(imm_t) == IMMEDIATE_WIDTH,
+              $bits(word_t) == WORD_WIDTH,
               "operand widths match");
         check(RESERVED_WIDTH >= 0 && OPCODE_LSB == RD_MSB + 1,
               "derived instruction layout");
         instruction = encode_instruction(ALU_ADD, reg_addr_t'(REG_FILE_COUNT - 1),
-                      reg_addr_t'(1), reg_addr_t'(2), 1'b1, 1'b1, imm_t'(123));
+                      reg_addr_t'(1), reg_addr_t'(2), 1'b1, 1'b1);
+        immediate_word = word_t'(123);
         fields = instruction;
         check((instruction >> USED_INSTRUCTION_BITS) === '0 && fields.opcode === ALU_ADD &&
               fields.rd === reg_addr_t'(REG_FILE_COUNT - 1) && fields.rs1 === reg_addr_t'(1) &&
               fields.rs2 === reg_addr_t'(2) && fields.immediate_mode &&
-              fields.update_status && fields.imm32 === imm_t'(123),
+              fields.update_status,
               "encoder packed field mapping");
         // The previous encoder example is intentionally invalid: I=1 and RS2!=0.
         check_invalid("encoder preserves raw invalid combination");
@@ -137,9 +143,9 @@ module decoder_tb;
         for (op_index = 0; op_index <= int'(ALU_GES); op_index = op_index + 1) begin
             if (op_index == int'(ALU_PASS_B)) begin
                 set_raw(op_index, reg_addr_t'(10), ZERO_REG, ZERO_REG,
-                        1'b1, 1'b0, imm_t'(42));
+                        1'b1, 1'b0, word_t'(42));
                 check_valid($sformatf("MOVI %0d", op_index), op_index,
-                             reg_addr_t'(10), ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(42));
+                             reg_addr_t'(10), ZERO_REG, ZERO_REG, 1'b1, 1'b0, word_t'(42));
             end else if (op_index == int'(ALU_PASS_A)) begin
                 set_raw(op_index, reg_addr_t'(10), reg_addr_t'(11), ZERO_REG,
                         1'b0, 1'b0, '0);
@@ -166,10 +172,10 @@ module decoder_tb;
                 op_index != int'(ALU_NOT) && op_index != int'(ALU_PASS_A) &&
                 op_index != int'(ALU_PASS_B)) begin
                 set_raw(op_index, reg_addr_t'(13), reg_addr_t'(14), ZERO_REG,
-                        1'b1, 1'b0, imm_t'(-1));
+                        1'b1, 1'b0, word_t'(-1));
                 check_valid($sformatf("immediate %0d", op_index), op_index,
                              reg_addr_t'(13), reg_addr_t'(14), ZERO_REG,
-                             1'b1, 1'b0, imm_t'(-1));
+                             1'b1, 1'b0, word_t'(-1));
             end
         end
 
@@ -179,76 +185,87 @@ module decoder_tb;
         check_valid("R0/Rlast", int'(ALU_ADD), reg_addr_t'(REG_FILE_COUNT-1),
                      ZERO_REG, reg_addr_t'(REG_FILE_COUNT-1), 1'b0, 1'b1, '0);
         set_raw(int'(ALU_PASS_B), ZERO_REG, ZERO_REG, ZERO_REG,
-                1'b1, 1'b0, imm_t'(1));
+                1'b1, 1'b0, word_t'(1));
         check_valid("R0 destination is legal", int'(ALU_PASS_B),
-                     ZERO_REG, ZERO_REG, ZERO_REG, 1'b1, 1'b0, imm_t'(1));
+                     ZERO_REG, ZERO_REG, ZERO_REG, 1'b1, 1'b0, word_t'(1));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
+                1'b1, 1'b1, (word_t'(1) << (WORD_WIDTH - 1)));
         check_valid("minimum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b1, (imm_t'(1) << (IMMEDIATE_WIDTH - 1)));
+                     1'b1, 1'b1, (word_t'(1) << (WORD_WIDTH - 1)));
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b0, (imm_t'('1) >> 1));
+                1'b1, 1'b0, (word_t'('1) >> 1));
         check_valid("maximum signed immediate", int'(ALU_ADD),
                      reg_addr_t'(1), reg_addr_t'(2), ZERO_REG,
-                     1'b1, 1'b0, (imm_t'('1) >> 1));
+                     1'b1, 1'b0, (word_t'('1) >> 1));
+        // A register-mode instruction carries no immediate word, so a
+        // nonzero value on the immediate port must simply be ignored.
+        set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2), reg_addr_t'(3),
+                1'b0, 1'b1, word_t'(7));
+        check_valid("register mode ignores immediate word", int'(ALU_ADD),
+                     reg_addr_t'(1), reg_addr_t'(2), reg_addr_t'(3),
+                     1'b0, 1'b1, word_t'(7));
 
         $display("=== STAGE 6 CONTROL FLOW ===");
-        instruction = encode_jump(imm_t'(32));
+        instruction = encode_jump();
+        immediate_word = word_t'(32);
         #1;
         check(instruction_valid && !illegal_instruction && branch_enable,
               "JMP legal");
-        check(branch_condition == BR_ALWAYS && branch_target == reg_t'(32),
+        check(branch_opcode == CTRL_JMP && branch_target == word_t'(32),
               "JMP controls");
         check(!register_write_enable && !flags_write_enable,
               "JMP does not write register/status");
 
-        instruction = encode_branch(CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(2), imm_t'(64));
+        instruction = encode_branch(CTRL_BEQ, reg_addr_t'(1), reg_addr_t'(2));
+        immediate_word = word_t'(64);
         #1;
         check(instruction_valid && !illegal_instruction && branch_enable,
               "BEQ legal");
         check(rs1 == reg_addr_t'(1) && rs2 == reg_addr_t'(2) && rd == ZERO_REG,
               "BEQ source registers");
-        check(branch_condition == BR_EQ && branch_target == reg_t'(64),
+        check(branch_opcode == CTRL_BEQ && branch_target == word_t'(64),
               "BEQ controls");
 
         // A branch may not claim an RD, immediate mode, or status update.
         set_raw(int'(CTRL_BEQ), reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2),
-                1'b0, 1'b0, imm_t'(64));
+                1'b0, 1'b0, word_t'(64));
         check_invalid("BEQ nonzero RD");
         set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
-                1'b1, 1'b0, imm_t'(64));
+                1'b1, 1'b0, word_t'(64));
         check_invalid("BEQ I=1");
         set_raw(int'(CTRL_BEQ), ZERO_REG, reg_addr_t'(1), reg_addr_t'(2),
-                1'b0, 1'b1, imm_t'(64));
+                1'b0, 1'b1, word_t'(64));
         check_invalid("BEQ S=1");
         set_raw(int'(CTRL_JMP), ZERO_REG, reg_addr_t'(1), ZERO_REG,
-                1'b0, 1'b0, imm_t'(64));
+                1'b0, 1'b0, word_t'(64));
         check_invalid("JMP nonzero RS1");
 
         $display("=== STAGE 7 MEMORY OPERATIONS ===");
 
-        instruction = encode_load(reg_addr_t'(3), reg_addr_t'(2), imm_t'(8));
+        instruction = encode_load(reg_addr_t'(3), reg_addr_t'(2));
+        immediate_word = word_t'(8);
         #1;
         check(instruction_valid && !illegal_instruction && !branch_enable,
               "LOAD legal");
         check(rs1 == reg_addr_t'(2) && rs2 == ZERO_REG && rd == reg_addr_t'(3),
               "LOAD register fields");
         check(alu_op == ALU_ADD && use_immediate &&
-              immediate == sign_extend_imm32(imm_t'(8)),
+              immediate == word_t'(8),
               "LOAD effective-address controls");
         check(memory_read_enable && !memory_write_enable &&
               register_write_enable && !flags_write_enable,
               "LOAD memory/writeback controls");
 
-        instruction = encode_store(reg_addr_t'(3), reg_addr_t'(2), imm_t'(-8));
+        instruction = encode_store(reg_addr_t'(3), reg_addr_t'(2));
+        immediate_word = word_t'(-8);
         #1;
         check(instruction_valid && !illegal_instruction && !branch_enable,
               "STORE legal");
         check(rs1 == reg_addr_t'(2) && rs2 == reg_addr_t'(3) && rd == ZERO_REG,
               "STORE register fields");
         check(alu_op == ALU_ADD && use_immediate &&
-              immediate == sign_extend_imm32(imm_t'(-8)),
+              immediate == word_t'(-8),
               "STORE effective-address controls");
         check(!memory_read_enable && memory_write_enable &&
               !register_write_enable && !flags_write_enable,
@@ -256,24 +273,24 @@ module decoder_tb;
 
         // LOAD may not use RS2, I, or S.
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), reg_addr_t'(1),
-                1'b0, 1'b0, imm_t'(8));
+                1'b0, 1'b0, word_t'(8));
         check_invalid("LOAD nonzero RS2");
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
-                1'b1, 1'b0, imm_t'(8));
+                1'b1, 1'b0, word_t'(8));
         check_invalid("LOAD I=1");
         set_raw(MEM_LOAD, reg_addr_t'(3), reg_addr_t'(2), ZERO_REG,
-                1'b0, 1'b1, imm_t'(8));
+                1'b0, 1'b1, word_t'(8));
         check_invalid("LOAD S=1");
 
         // STORE may not use RD, I, or S.
         set_raw(MEM_STORE, reg_addr_t'(1), reg_addr_t'(2), reg_addr_t'(3),
-                1'b0, 1'b0, imm_t'(8));
+                1'b0, 1'b0, word_t'(8));
         check_invalid("STORE nonzero RD");
         set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
-                1'b1, 1'b0, imm_t'(8));
+                1'b1, 1'b0, word_t'(8));
         check_invalid("STORE I=1");
         set_raw(MEM_STORE, ZERO_REG, reg_addr_t'(2), reg_addr_t'(3),
-                1'b0, 1'b1, imm_t'(8));
+                1'b0, 1'b1, word_t'(8));
         check_invalid("STORE S=1");
 
         $display("=== RESERVED BITS / UNDEFINED OPCODES ===");
@@ -284,17 +301,14 @@ module decoder_tb;
             check_invalid($sformatf("reserved bit %0d", bit_index));
         end
         for (op_index = int'(MEM_STORE)+1;
-             op_index < OPCODE_ENCODINGS; op_index = op_index + 1) begin
+             op_index < OPCODE_COUNT; op_index = op_index + 1) begin
             set_raw(op_index, ZERO_REG, ZERO_REG, ZERO_REG, 1'b0, 1'b0, '0);
             check_invalid($sformatf("undefined opcode %0d", op_index));
         end
 
         $display("=== INVALID OPERAND FORMATS ===");
         set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
-                reg_addr_t'(3), 1'b0, 1'b1, imm_t'(1));
-        check_invalid("register mode nonzero immediate");
-        set_raw(int'(ALU_ADD), reg_addr_t'(1), reg_addr_t'(2),
-                reg_addr_t'(3), 1'b1, 1'b1, imm_t'(1));
+                reg_addr_t'(3), 1'b1, 1'b1, word_t'(1));
         check_invalid("immediate mode nonzero RS2");
         for (op_index = int'(ALU_NEG); op_index <= int'(ALU_NOT);
              op_index = op_index + 1) begin
@@ -306,9 +320,6 @@ module decoder_tb;
                 set_raw(op_index, reg_addr_t'(1), reg_addr_t'(2),
                         ZERO_REG, 1'b1, 1'b1, '0);
                 check_invalid($sformatf("unary %0d immediate mode", op_index));
-                set_raw(op_index, reg_addr_t'(1), reg_addr_t'(2),
-                        ZERO_REG, 1'b0, 1'b1, imm_t'(1));
-                check_invalid($sformatf("unary %0d nonzero IMM32", op_index));
             end
         end
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
@@ -320,17 +331,14 @@ module decoder_tb;
         set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
                 ZERO_REG, 1'b1, 1'b0, '0);
         check_invalid("MOV I=1");
-        set_raw(int'(ALU_PASS_A), reg_addr_t'(1), reg_addr_t'(2),
-                ZERO_REG, 1'b0, 1'b0, imm_t'(1));
-        check_invalid("MOV nonzero IMM32");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
-                ZERO_REG, 1'b1, 1'b1, imm_t'(42));
+                ZERO_REG, 1'b1, 1'b1, word_t'(42));
         check_invalid("MOVI S=1");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), reg_addr_t'(2),
-                ZERO_REG, 1'b1, 1'b0, imm_t'(42));
+                ZERO_REG, 1'b1, 1'b0, word_t'(42));
         check_invalid("MOVI nonzero RS1");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
-                reg_addr_t'(3), 1'b1, 1'b0, imm_t'(42));
+                reg_addr_t'(3), 1'b1, 1'b0, word_t'(42));
         check_invalid("MOVI nonzero RS2");
         set_raw(int'(ALU_PASS_B), reg_addr_t'(1), ZERO_REG,
                 ZERO_REG, 1'b0, 1'b0, '0);

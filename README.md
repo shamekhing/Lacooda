@@ -3162,6 +3162,47 @@ If this model is clear, most of the code stops looking mysterious.
 
 ------------------------------------------------------------------------
 
+# Part XXVI --- Unifying the Word Width Across the CPU
+
+Every earlier part chose bus and memory widths module by module:
+
+``` text
+ibus:    WORD_WIDTH
+dbus:    XLEN
+imem:    WORD_WIDTH
+dmem:    XLEN
+decoder: XLEN
+```
+
+The numbers happened to match because the current configuration is
+32/32. Nothing *forced* them to match. That was a latent inconsistency:
+the bus layer's word and the CPU's architectural integer are two
+different concepts that only coincidentally had the same width.
+
+The unification change makes the relationship explicit:
+
+* the **global word width** is a single parameter (`WORD_WIDTH`),
+  passed down through the root;
+* every derived width (`XLEN`, `BYTE`, byte enables, address widths)
+  derives from it;
+* no module re-derives or re-declares the width independently.
+
+A root parameter is the natural single point of control. Every module
+in the hierarchy either receives the width through its parameters or
+derives it from the global package, so changing one number at the top
+reconfigures the whole system.
+
+### Important caveat
+
+Deriving local constants from global parameters keeps the system
+consistent by construction. But consistency of *widths* is not the
+same as correctness of *semantics*: sign extension, byte lane
+placement, and address arithmetic all had to be re-checked after the
+change, because a wider word silently changes their expected shapes.
+
+------------------------------------------------------------------------
+
+# Appendix A --- Core SystemVerilog Patterns Used
 # Appendix A --- Core SystemVerilog Patterns Used
 
 ## A.1 Continuous combinational assignment

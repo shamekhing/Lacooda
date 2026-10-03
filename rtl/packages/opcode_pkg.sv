@@ -21,6 +21,8 @@
 
 package opcode_pkg;
 
+    // OPCODE_WIDTH is declared before the enum so the enum base type is
+    // wide enough to hold the largest encoding (0x30).
     localparam int OPCODE_WIDTH = 6;
 
     typedef enum logic [OPCODE_WIDTH-1:0] {
@@ -34,20 +36,21 @@ package opcode_pkg;
         ALU_MODU   = 'h07,
         ALU_DIVS   = 'h08,
         ALU_MODS   = 'h09,
-        ALU_NEG    = 'h0A,
-        ALU_ABS    = 'h0B,
-        ALU_MINU   = 'h0C,
-        ALU_MAXU   = 'h0D,
-        ALU_MINS   = 'h0E,
-        ALU_MAXS   = 'h0F,
+        ALU_MINU   = 'h0A,
+        ALU_MAXU   = 'h0B,
+        ALU_MINS   = 'h0C,
+        ALU_MAXS   = 'h0D,
+        ALU_ABS    = 'h0E,
+        ALU_NEG    = 'h0F,
 
-        ALU_AND    = 'h10,
-        ALU_OR     = 'h11,
-        ALU_XOR    = 'h12,
-        ALU_NOT    = 'h13,
+        ALU_NOT    = 'h10,
+        ALU_AND    = 'h11,
+        ALU_OR     = 'h12,
+        ALU_XOR    = 'h13,
         ALU_NAND   = 'h14,
         ALU_NOR    = 'h15,
         ALU_XNOR   = 'h16,
+
         ALU_PASS_A = 'h17,
         ALU_PASS_B = 'h18,
 
@@ -77,27 +80,33 @@ package opcode_pkg;
         CTRL_BLTU  = 'h2D,
         CTRL_BGEU  = 'h2E,
 
-        // Memory (Stage 7). Both use a signed IMMEDIATE_WIDTH byte offset:
+        // Memory. Both use a signed immediate-word byte offset:
         //   LOAD  rd,  [rs1 + imm]
         //   STORE rs2, [rs1 + imm]
         MEM_LOAD   = 'h2F,
         MEM_STORE  = 'h30
-    } opcode_t;
+    } opcode_e;
+
+    // Raw opcode-field vector used for ports, structs and casts.
+    typedef logic [OPCODE_WIDTH-1:0] opcode_t;
 
     // Encodings the ALU itself executes: 0x00..ALU_GES.
     localparam int ALU_OPCODE_COUNT = int'(ALU_GES) + 1;
 
     // Number of distinct encodings the OPCODE_WIDTH-bit field can hold.
-    localparam logic [OPCODE_WIDTH:0] OPCODE_ENCODINGS = {1'b1, {OPCODE_WIDTH{1'b0}}};
+    localparam logic [OPCODE_WIDTH:0] OPCODE_COUNT = {1'b1, {OPCODE_WIDTH{1'b0}}};
 
     // ------------------------------------------------------------
     // Opcode classification.
+    // The helpers take the raw opcode-field bits rather than an enum
+    // type so call sites stay cast-free.
     // ------------------------------------------------------------
+
     function automatic logic is_valid_opcode(input logic [OPCODE_WIDTH-1:0] op);
         return (op <= MEM_STORE);
     endfunction
 
-    function automatic logic is_valid_alu_opcode(input logic [OPCODE_WIDTH-1:0] op);
+    function automatic logic is_alu_opcode(input logic [OPCODE_WIDTH-1:0] op);
         return (op <= ALU_GES);
     endfunction
 

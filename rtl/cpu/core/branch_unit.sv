@@ -12,23 +12,23 @@
 //
 // The program counter then loads redirect_target on the next rising
 // clock edge. If redirect is 0, the existing program_counter advances
-// normally by INSTRUCTION_MEMORY_BYTES.
+// normally by WORD_BYTES.
 //
 // Signed and unsigned comparisons are intentionally separate.
 // ============================================================
 
 module branch_unit (
     input  logic                       enable,
-    input  cpu_pkg::branch_condition_t condition,
-    input  cpu_pkg::reg_t             lhs,
-    input  cpu_pkg::reg_t             rhs,
-    input  cpu_pkg::reg_t             target,
+    input  opcode_pkg::opcode_t opcode,
+    input  cpu_pkg::word_t             operand_a,
+    input  cpu_pkg::word_t             operand_b,
+    input  cpu_pkg::word_t             target,
 
     output logic                       redirect,
-    output cpu_pkg::reg_t             redirect_target
+    output cpu_pkg::word_t             redirect_target
 );
 
-    import cpu_pkg::*;
+    import opcode_pkg::*;
 
     always_comb begin
         // Safe defaults: no branch. The target is still forwarded so
@@ -38,14 +38,14 @@ module branch_unit (
         redirect_target = target;
 
         if (enable) begin
-            case (condition)
-                BR_ALWAYS: redirect = 1'b1;
-                BR_EQ:     redirect = (lhs == rhs);
-                BR_NE:     redirect = (lhs != rhs);
-                BR_LT:     redirect = ($signed(lhs) <  $signed(rhs));
-                BR_GE:     redirect = ($signed(lhs) >= $signed(rhs));
-                BR_LTU:    redirect = (lhs <  rhs);
-                BR_GEU:    redirect = (lhs >= rhs);
+            case (opcode)
+                CTRL_JMP:  redirect = 1'b1;
+                CTRL_BEQ:  redirect = (operand_a == operand_b);
+                CTRL_BNE:  redirect = (operand_a != operand_b);
+                CTRL_BLT:  redirect = ($signed(operand_a) <  $signed(operand_b));
+                CTRL_BGE:  redirect = ($signed(operand_a) >= $signed(operand_b));
+                CTRL_BLTU: redirect = (operand_a <  operand_b);
+                CTRL_BGEU: redirect = (operand_a >= operand_b);
                 default:   redirect = 1'b0;
             endcase
         end

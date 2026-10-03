@@ -3,18 +3,16 @@
 // ALU comparison sub-unit
 //
 // Equality and ordered comparisons. Each produces a 1-bit boolean
-// zero-extended to WIDTH bits (1 = true, 0 = false). The *_U
+// zero-extended to cpu_pkg::WORD_WIDTH bits (1 = true, 0 = false). The *_U
 // variants compare unsigned; the *_S variants compare signed
 // (two's complement).
 // ============================================================
 
-module comparator #(
-    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
-)(
-    input  logic [WIDTH-1:0] A, B,
+module comparator (
+    input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
 
-    output logic [WIDTH-1:0] result
+    output cpu_pkg::word_t result
 );
 
     import opcode_pkg::*;
@@ -25,36 +23,36 @@ module comparator #(
         case (op)
 
             ALU_EQ:
-                result = (A == B);
+                result = (operand_a == operand_b);
 
             ALU_NE:
-                result = (A != B);
+                result = (operand_a != operand_b);
 
             // Unsigned comparisons
             ALU_LTU:
-                result = (A < B);
+                result = (operand_a < operand_b);
 
             ALU_LEU:
-                result = (A <= B);
+                result = (operand_a <= operand_b);
 
             ALU_GTU:
-                result = (A > B);
+                result = (operand_a > operand_b);
 
             ALU_GEU:
-                result = (A >= B);
+                result = (operand_a >= operand_b);
 
             // Signed comparisons
             ALU_LTS:
-                result = ($signed(A) < $signed(B));
+                result = ($signed(operand_a) < $signed(operand_b));
 
             ALU_LES:
-                result = ($signed(A) <= $signed(B));
+                result = ($signed(operand_a) <= $signed(operand_b));
 
             ALU_GTS:
-                result = ($signed(A) > $signed(B));
+                result = ($signed(operand_a) > $signed(operand_b));
 
             ALU_GES:
-                result = ($signed(A) >= $signed(B));
+                result = ($signed(operand_a) >= $signed(operand_b));
 
             default:
                 result = '0;

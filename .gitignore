@@ -3,6 +3,8 @@
 # Simulation outputs
 # ============================================================
 
+Gowin/*
+
 sim/build/*
 sim/waveforms/*
 /*_sim

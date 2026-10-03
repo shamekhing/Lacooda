@@ -2,7 +2,7 @@
 
 module datapath_tb;
 
-    import alu_pkg::*;
+    import cpu_pkg::*;
     import opcode_pkg::*;
     import cpu_pkg::*;
 
@@ -18,25 +18,25 @@ module datapath_tb;
     logic [OPCODE_WIDTH-1:0] alu_op;
     logic carry_in;
 
-    reg_t immediate;
+    word_t immediate;
     logic use_immediate;
 
     logic register_write_enable;
     logic flags_write_enable;
 
     // Stage 7 LOAD writeback controls/data.
-    reg_t memory_read_data;
+    word_t memory_read_data;
     logic writeback_from_memory;
 
-    reg_t operand_a;
-    reg_t operand_b;
-    reg_t store_data;
-    reg_t result;
+    word_t operand_a;
+    word_t operand_b;
+    word_t store_data;
+    word_t result;
 
     logic valid;
 
-    alu_pkg::flags_t alu_flags;
-    alu_pkg::flags_t status_flags;
+    cpu_pkg::flags_t alu_flags;
+    cpu_pkg::status_t status_flags;
 
     integer tests = 0;
     integer errors = 0;
@@ -56,23 +56,23 @@ module datapath_tb;
         .alu_op(alu_op),
         .carry_in(carry_in),
 
-        .immediate(immediate),
-        .use_immediate(use_immediate),
+        .imm_operand(immediate),
+        .imm_sel(use_immediate),
 
         .register_write_enable(register_write_enable),
         .flags_write_enable(flags_write_enable),
 
-        .memory_read_data(memory_read_data),
-        .writeback_from_memory(writeback_from_memory),
+        .dmem_rdata(memory_read_data),
+        .writeback_from_mem(writeback_from_memory),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
         .store_data(store_data),
-        .result(result),
-        .valid(valid),
+        .alu_result(result),
+        .alu_valid(valid),
 
-        .alu_flags(alu_flags),
-        .status_flags(status_flags)
+        .flags(alu_flags),
+        .status(status_flags)
     );
 
     // =========================================================
@@ -80,13 +80,13 @@ module datapath_tb;
     // =========================================================
 
     task automatic execute(
-        input logic [OPCODE_WIDTH-1:0] operation,
+        input logic [OPCODE_WIDTH-1:0] op,
         input reg_addr_t src_a,
         input reg_addr_t src_b,
         input reg_addr_t dest,
 
         input logic imm_enable,
-        input reg_t imm,
+        input word_t imm,
 
         input logic reg_write,
         input logic flag_write,
@@ -97,7 +97,7 @@ module datapath_tb;
 
             @(negedge clk);
 
-            alu_op = operation;
+            alu_op = op;
 
             rs1 = src_a;
             rs2 = src_b;
@@ -130,7 +130,7 @@ module datapath_tb;
 
     task automatic check_reg(
         input reg_addr_t addr,
-        input reg_t expected
+        input word_t expected
     );
 
         begin
@@ -185,7 +185,7 @@ module datapath_tb;
 
             tests = tests + 1;
 
-            if (status_flags !== expected) begin
+            if (status_flags !== status_t'(expected)) begin
 
                 errors = errors + 1;
 
@@ -306,7 +306,7 @@ module datapath_tb;
         check_reg(5, 0);
 
         // Z=1, C=1
-        check_flags(5'b10100);
+        check_flags(5'b00101);
 
         // =====================================================
         // MOVI R6, #100
@@ -321,7 +321,7 @@ module datapath_tb;
         );
 
         check_reg(6, 100);
-        check_flags(5'b10100);
+        check_flags(5'b00101);
 
         // =====================================================
         // ADDI R7, R6, #23
@@ -434,11 +434,11 @@ module datapath_tb;
         );
 
         tests = tests + 1;
-        if (result !== reg_t'(108) || store_data !== reg_t'(10)) begin
+        if (result !== word_t'(108) || store_data !== word_t'(10)) begin
             errors = errors + 1;
             $display(
                 "[FAIL] STORE path address=%h data=%h expected_address=%h expected_data=%h",
-                result, store_data, reg_t'(108), reg_t'(10)
+                result, store_data, word_t'(108), word_t'(10)
             );
         end else begin
             $display("[PASS] STORE path address=%h data=%h", result, store_data);
@@ -457,19 +457,19 @@ module datapath_tb;
         rs2 = ZERO_REG;
         rd  = reg_addr_t'(10);
         use_immediate = 1'b1;
-        immediate = reg_t'(8);
+        immediate = word_t'(8);
         register_write_enable = 1'b1;
         flags_write_enable = 1'b0;
         carry_in = 1'b0;
-        memory_read_data = reg_t'(16'hBEEF);
+        memory_read_data = word_t'(16'hBEEF);
         writeback_from_memory = 1'b1;
 
         #1;
         tests = tests + 1;
-        if (result !== reg_t'(108)) begin
+        if (result !== word_t'(108)) begin
             errors = errors + 1;
             $display("[FAIL] LOAD effective address got=%h expected=%h",
-                     result, reg_t'(108));
+                     result, word_t'(108));
         end else begin
             $display("[PASS] LOAD effective address = %h", result);
         end
@@ -480,7 +480,7 @@ module datapath_tb;
         register_write_enable = 1'b0;
         memory_read_data = '0;
 
-        check_reg(reg_addr_t'(10), reg_t'(16'hBEEF));
+        check_reg(reg_addr_t'(10), word_t'(16'hBEEF));
 
         // =====================================================
         // RESET

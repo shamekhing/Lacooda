@@ -8,37 +8,35 @@
 // result plus the arithmetic sub-unit's carry/overflow/div-zero.
 //
 // Ports:
-//   A, B     : WIDTH-bit operands (B is also the shift amount)
+//   operand_a, operand_b     : cpu_pkg::WORD_WIDTH-bit operands (operand_b is also the shift amount)
 //   op       : opcode_pkg::opcode_t, valid ALU encodings are 0x00..0x27
 //   carry_in : carry/borrow input for ADC / SBC
-//   result   : selected WIDTH-bit result
-//   flags    : alu_pkg::flags_t (Z/N/C/V/DZ)
+//   result   : selected cpu_pkg::WORD_WIDTH-bit result
+//   flags    : cpu_pkg::flags_t (Z/N/C/V/DZ)
 //   valid    : low for an unrecognised opcode, high otherwise
 //
 // An unrecognised opcode forces result = 0 and flags = 0 so that
 // downstream write enables (gated by `valid`) stay inactive.
 // ============================================================
 
-module alu #(
-    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
-)(
-    input  logic [WIDTH-1:0] A, B,
+module alu (
+    input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
     input  logic carry_in,
 
-    output logic [WIDTH-1:0] result,
-    output alu_pkg::flags_t flags,
+    output cpu_pkg::word_t result,
+    output cpu_pkg::flags_t flags,
     output logic valid
 );
 
-    import alu_pkg::*;
+    import cpu_pkg::*;
     import opcode_pkg::*;
 
     // Result produced by each functional sub-unit.
-    logic [WIDTH-1:0] arithmetic_result;
-    logic [WIDTH-1:0] logic_result;
-    logic [WIDTH-1:0] shift_result;
-    logic [WIDTH-1:0] compare_result;
+    cpu_pkg::word_t arithmetic_result;
+    cpu_pkg::word_t logic_result;
+    cpu_pkg::word_t shift_result;
+    cpu_pkg::word_t compare_result;
 
     // Arithmetic-only side-channel status.
     logic arithmetic_carry;
@@ -46,14 +44,14 @@ module alu #(
     logic arithmetic_div_zero;
 
     // Status selected alongside the active result (C / V / DZ).
-    logic carry_internal;
-    logic overflow_internal;
-    logic div_zero_internal;
+    logic carry_sel;
+    logic overflow_sel;
+    logic div_zero_sel;
 
     // Arithmetic: ADD/ADC/SUB/SBC/MUL/MULH/DIV/MOD/NEG/ABS/MIN/MAX.
-    arithmetic #(.WIDTH(WIDTH)) u_arithmetic (
-        .A(A),
-        .B(B),
+    arithmetic u_arithmetic (
+        .operand_a(operand_a),
+        .operand_b(operand_b),
         .op(op),
         .carry_in(carry_in),
         .result(arithmetic_result),
@@ -63,25 +61,25 @@ module alu #(
     );
 
     // Bitwise logic: AND/OR/XOR/NOT/NAND/NOR/XNOR/PASS_A/PASS_B.
-    logic_unit #(.WIDTH(WIDTH)) u_logic_unit (
-        .A(A),
-        .B(B),
+    logic_unit u_logic_unit (
+        .operand_a(operand_a),
+        .operand_b(operand_b),
         .op(op),
         .result(logic_result)
     );
 
     // Shifts and rotations: SHL/SHR/SAR/ROL/ROR.
-    shifter #(.WIDTH(WIDTH)) u_shifter (
-        .A(A),
-        .B(B),
+    shifter u_shifter (
+        .operand_a(operand_a),
+        .operand_b(operand_b),
         .op(op),
         .result(shift_result)
     );
 
     // Comparisons: EQ/NE/LT/LE/GT/GE (signed and unsigned).
-    comparator #(.WIDTH(WIDTH)) u_comparator (
-        .A(A),
-        .B(B),
+    comparator u_comparator (
+        .operand_a(operand_a),
+        .operand_b(operand_b),
         .op(op),
         .result(compare_result)
     );
@@ -93,9 +91,9 @@ module alu #(
         result = '0;
         valid  = 1'b1;
 
-        carry_internal    = 1'b0;
-        overflow_internal = 1'b0;
-        div_zero_internal = 1'b0;
+        carry_sel    = 1'b0;
+        overflow_sel = 1'b0;
+        div_zero_sel = 1'b0;
 
         case (op)
 
@@ -111,9 +109,9 @@ module alu #(
 
                 result = arithmetic_result;
 
-                carry_internal    = arithmetic_carry;
-                overflow_internal = arithmetic_overflow;
-                div_zero_internal = arithmetic_div_zero;
+                carry_sel    = arithmetic_carry;
+                overflow_sel = arithmetic_overflow;
+                div_zero_sel = arithmetic_div_zero;
             end
 
             // Bitwise-logic group.
@@ -157,10 +155,10 @@ module alu #(
 
         if (valid) begin
             flags.Z  = (result == '0);
-            flags.N  = result[WIDTH-1];
-            flags.C  = carry_internal;
-            flags.V  = overflow_internal;
-            flags.DZ = div_zero_internal;
+            flags.N  = result[cpu_pkg::WORD_WIDTH-1];
+            flags.C  = carry_sel;
+            flags.V  = overflow_sel;
+            flags.DZ = div_zero_sel;
         end
     end
 

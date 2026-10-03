@@ -4,16 +4,21 @@
 // LACOODA instruction fetch unit
 //
 // The instruction memory is deliberately OUTSIDE the CPU. This unit owns
-// the PC and a one-entry instruction buffer, and exposes an instruction
-// valid/ready master interface to the surrounding SoC.
+// the PC and a one-entry instruction buffer, and exposes a typed
+// valid/ready I-BUS request/response interface to the surrounding SoC.
 //
 // Fetch protocol:
-//   1. When run requests execution and no instruction is buffered, a fetch
-//      request is started.
-//   2. ibus_valid/address remain stable until ibus_ready is asserted.
-//   3. The accepted instruction is buffered inside the CPU.
-//   4. The PC changes only when that buffered instruction retires.
-//   5. A branch/jump retirement loads target instead of PC+instruction size.
+//   1. When run requests execution and nothing is buffered, the
+//      instruction word at pc is fetched.
+//   2. ibus_req stays stable until ibus_rsp.ready is asserted.
+//   3. If the instruction uses an immediate (branch/jump, LOAD/STORE,
+//      or ALU in immediate mode), ONE more word — the immediate — is
+//      fetched from the word that follows the instruction.
+//   4. The accepted instruction (and its immediate, if any) are buffered
+//      inside the CPU.
+//   5. The pc changes only when that buffered instruction retires, and
+//      skips the immediate word as well.
+//   6. A branch/jump retirement loads target instead of pc + word.
 //
 // Once a fetch request has started, deasserting run does not abandon it.
 // Once an instruction has been fetched, it is allowed to retire atomically;
@@ -28,57 +33,86 @@ module instruction_fetch (
     // Current buffered instruction retirement from the CPU core.
     input  logic retire,
     input  logic redirect,
-    input  cpu_pkg::reg_t redirect_target,
+    input  cpu_pkg::word_t redirect_target,
 
-    // Instruction-bus master request/response.
-    output logic                  ibus_valid,
-    output cpu_pkg::reg_t        ibus_address,
-    input  logic                  ibus_ready,
-    input  cpu_pkg::instruction_t ibus_read_data,
+    // I-BUS master request/response.
+    output bus_pkg::bus_req_t ibus_req,
+    input  bus_pkg::bus_rsp_t ibus_rsp,
 
     // Buffered instruction presented to the CPU core.
-    output cpu_pkg::reg_t        pc,
+    output cpu_pkg::word_t pc,
     output cpu_pkg::instruction_t instruction,
-    output logic                  instruction_available
+    output cpu_pkg::word_t immediate_word,
+    output logic instruction_available
 );
 
-    logic fetch_request_active;
+    // Fetch state: idle, fetching the instruction, fetching its immediate.
+    typedef enum logic [1:0] {
+        FETCH_IDLE,
+        FETCH_INSTR,
+        FETCH_IMM
+    } fetch_state_e;
+
+    fetch_state_e fetch_state;
+    logic has_imm;
 
     program_counter u_program_counter (
-        .clk      (clk),
-        .rst      (rst),
-        .enable   (retire),
-        .redirect (redirect),
-        .target   (redirect_target),
-        .pc       (pc)
+        .clk     (clk),
+        .rst     (rst),
+        .enable  (retire),
+        .redirect(redirect),
+        .target  (redirect_target),
+        .has_imm (has_imm),
+        .pc      (pc)
     );
 
-    assign ibus_valid = fetch_request_active;
-    assign ibus_address = pc;
+    // The instruction word lives at pc; its immediate word (if any) is the
+    // very next word in instruction memory.
+    assign ibus_req.valid = (fetch_state != FETCH_IDLE);
+    assign ibus_req.op    = bus_pkg::BUS_READ;
+    assign ibus_req.addr  = (fetch_state == FETCH_IMM)
+                            ? pc + cpu_pkg::word_t'(cpu_pkg::WORD_BYTES)
+                            : pc;
+    assign ibus_req.wdata = '0;
+
+    // How many words the buffered instruction occupies. The pc uses this
+    // when the instruction retires so the immediate word is never executed.
+    assign has_imm = instruction_available &&
+                     cpu_pkg::instr_uses_imm(instruction);
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            fetch_request_active <= 1'b0;
+            fetch_state           <= FETCH_IDLE;
             instruction_available <= 1'b0;
-            instruction <= '0;
+            instruction           <= '0;
+            immediate_word        <= '0;
         end else begin
             // Retiring the current instruction frees the one-entry buffer.
             // If run remains asserted, immediately start the next fetch after
-            // the same edge; the PC also advances on this retirement edge.
+            // the same edge; the pc also advances on this retirement edge.
             if (retire) begin
                 instruction_available <= 1'b0;
                 if (run)
-                    fetch_request_active <= 1'b1;
-            end else if (!instruction_available && !fetch_request_active && run) begin
+                    fetch_state <= FETCH_INSTR;
+            end else if ((fetch_state == FETCH_IDLE) &&
+                         !instruction_available && run) begin
                 // Start the first request, or restart after a paused CPU.
-                fetch_request_active <= 1'b1;
+                fetch_state <= FETCH_INSTR;
             end
 
-            // A started request remains active until the slave accepts it.
-            if (fetch_request_active && ibus_ready) begin
-                instruction <= ibus_read_data;
+            // A started instruction request remains active until the slave
+            // accepts it. The accept decides whether an immediate follows:
+            // with one, the instruction completes only after the immediate
+            // word is buffered; without one, it is immediately available.
+            if ((fetch_state == FETCH_INSTR) && ibus_rsp.ready) begin
+                instruction           <= cpu_pkg::instruction_t'(ibus_rsp.rdata);
+                fetch_state           <= cpu_pkg::instr_uses_imm(ibus_rsp.rdata)
+                                         ? FETCH_IMM : FETCH_IDLE;
+                instruction_available <= !cpu_pkg::instr_uses_imm(ibus_rsp.rdata);
+            end else if ((fetch_state == FETCH_IMM) && ibus_rsp.ready) begin
+                immediate_word        <= ibus_rsp.rdata;
+                fetch_state           <= FETCH_IDLE;
                 instruction_available <= 1'b1;
-                fetch_request_active <= 1'b0;
             end
         end
     end

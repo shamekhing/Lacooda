@@ -3,7 +3,7 @@
 module cpu_core_tb;
 
     import cpu_pkg::*;
-    import alu_pkg::*;
+    import cpu_pkg::*;
     import opcode_pkg::*;
 
     logic clk = 1'b0;
@@ -16,58 +16,62 @@ module cpu_core_tb;
 
     // Data-bus handshake interface.
     logic dbus_ready;
-    reg_t dbus_read_data;
+    word_t dbus_read_data;
     logic dbus_valid;
     logic dbus_write;
-    reg_t dbus_address;
-    reg_t dbus_write_data;
+    word_t dbus_address;
+    word_t dbus_write_data;
+    word_t immediate_word;
 
     logic instruction_valid;
     logic illegal_instruction;
     logic execution_valid;
 
-    reg_t operand_a;
-    reg_t operand_b;
-    reg_t result;
+    word_t operand_a;
+    word_t operand_b;
+    word_t result;
 
     flags_t alu_flags;
-    flags_t status_flags;
+    cpu_pkg::status_t status_flags;
 
     integer tests = 0;
     integer errors = 0;
 
-    // Keep the Stage-7 store value tied to what the configured immediate
-    // field can actually encode. For example, with IMMEDIATE_WIDTH=8,
-    // imm_t'(777) encodes 8'h09, so the architectural MOVI value is 9.
-    localparam imm_t STORE_TEST_IMM = imm_t'(777);
-    localparam reg_t STORE_TEST_VALUE = sign_extend_imm32(STORE_TEST_IMM);
+    // The immediate is a separate word delivered on its own port, exactly
+    // like the fetch unit does. make_instruction records it; execute()
+    // presents it to the core together with the instruction word.
+    localparam word_t STORE_TEST_IMM = word_t'(777);
+    localparam word_t STORE_TEST_VALUE = word_t'(STORE_TEST_IMM);
+
+    word_t pending_immediate;
 
     cpu_core dut (
         .clk(clk),
         .rst(rst),
 
-        .instruction_enable(instruction_enable),
-        .instruction(instruction),
+        .core_enable(instruction_enable),
+        .instruction_word(instruction),
+        .immediate_word(immediate_word),
         .carry_in(carry_in),
 
         .dbus_ready(dbus_ready),
-        .dbus_read_data(dbus_read_data),
+        .dbus_rdata(dbus_read_data),
 
-        .instruction_valid(instruction_valid),
-        .illegal_instruction(illegal_instruction),
-        .execution_valid(execution_valid),
+        .decode_valid(instruction_valid),
+        .illegal_instr(illegal_instruction),
+        .retire_valid(execution_valid),
 
         .dbus_valid(dbus_valid),
         .dbus_write(dbus_write),
-        .dbus_address(dbus_address),
-        .dbus_write_data(dbus_write_data),
+        .dbus_addr(dbus_address),
+        .dbus_wdata(dbus_write_data),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
-        .result(result),
+        .alu_result(result),
 
-        .alu_flags(alu_flags),
-        .status_flags(status_flags)
+        .flags(alu_flags),
+        .status(status_flags)
     );
 
     // --------------------------------------------------------
@@ -81,16 +85,16 @@ module cpu_core_tb;
         input reg_addr_t source_b,
         input logic immediate_mode,
         input logic update_status,
-        input imm_t immediate_value
+        input word_t immediate_value
     );
+        pending_immediate = immediate_value;
         return encode_instruction(
             op,
             destination,
             source_a,
             source_b,
             immediate_mode,
-            update_status,
-            immediate_value
+            update_status
         );
     endfunction
 
@@ -98,11 +102,12 @@ module cpu_core_tb;
     task automatic execute(
         input instruction_t word,
         input logic expected_valid,
-        input reg_t expected_result
+        input word_t expected_result
     );
         @(negedge clk);
 
         instruction = word;
+        immediate_word = pending_immediate;
         instruction_enable = 1'b1;
 
         #1;
@@ -155,7 +160,7 @@ module cpu_core_tb;
     // instruction_enable stays low, so this does not write back.
     task automatic check_register(
         input reg_addr_t address,
-        input reg_t expected
+        input word_t expected
     );
         @(negedge clk);
 
@@ -166,9 +171,10 @@ module cpu_core_tb;
             ZERO_REG,
             1'b0,
             1'b0,
-            imm_t'(0)
+            word_t'(0)
         );
 
+        immediate_word = pending_immediate;
         instruction_enable = 1'b0;
 
         #1;
@@ -216,10 +222,10 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(25)
+                word_t'(25)
             ),
             1'b1,
-            reg_t'(25)
+            word_t'(25)
         );
 
         // MOVI R2, #100
@@ -231,10 +237,10 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(100)
+                word_t'(100)
             ),
             1'b1,
-            reg_t'(100)
+            word_t'(100)
         );
 
         // ADD R3, R1, R2 => 125
@@ -246,10 +252,10 @@ module cpu_core_tb;
                 reg_addr_t'(2),
                 1'b0,
                 1'b1,
-                imm_t'(0)
+                word_t'(0)
             ),
             1'b1,
-            reg_t'(125)
+            word_t'(125)
         );
 
         // SUB R4, R3, R1 => 100
@@ -261,10 +267,10 @@ module cpu_core_tb;
                 reg_addr_t'(1),
                 1'b0,
                 1'b1,
-                imm_t'(0)
+                word_t'(0)
             ),
             1'b1,
-            reg_t'(100)
+            word_t'(100)
         );
 
         // ADD R5, R1, #-1 => 24
@@ -276,23 +282,23 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b1,
-                imm_t'(-1)
+                word_t'(-1)
             ),
             1'b1,
-            reg_t'(24)
+            word_t'(24)
         );
 
-        check_register(reg_addr_t'(1), reg_t'(25));
-        check_register(reg_addr_t'(2), reg_t'(100));
-        check_register(reg_addr_t'(3), reg_t'(125));
-        check_register(reg_addr_t'(4), reg_t'(100));
-        check_register(reg_addr_t'(5), reg_t'(24));
+        check_register(reg_addr_t'(1), word_t'(25));
+        check_register(reg_addr_t'(2), word_t'(100));
+        check_register(reg_addr_t'(3), word_t'(125));
+        check_register(reg_addr_t'(4), word_t'(100));
+        check_register(reg_addr_t'(5), word_t'(24));
 
         // --------------------------------------------------------
         // STAGE 7 LOAD / STORE
         // --------------------------------------------------------
 
-        // MOVI R10, #(8 * REG_FILE_BYTES) -- aligned base byte address
+        // MOVI R10, #(8 * WORD_BYTES) -- aligned base byte address
         execute(
             make_instruction(
                 ALU_PASS_B,
@@ -301,10 +307,10 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(8 * REG_FILE_BYTES)
+                word_t'(8 * WORD_BYTES)
             ),
             1'b1,
-            reg_t'(8 * REG_FILE_BYTES)
+            word_t'(8 * WORD_BYTES)
         );
 
         // MOVI R11, #STORE_TEST_IMM -- value to store after encoding
@@ -322,9 +328,10 @@ module cpu_core_tb;
             STORE_TEST_VALUE
         );
 
-        // STORE R11, [R10 + REG_FILE_BYTES]
+        // STORE R11, [R10 + WORD_BYTES]
         @(negedge clk);
-        instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10), imm_t'(REG_FILE_BYTES));
+        instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10));
+        immediate_word = word_t'(WORD_BYTES);
         instruction_enable = 1'b1;
         dbus_read_data = '0;
         #1;
@@ -332,7 +339,7 @@ module cpu_core_tb;
         tests = tests + 1;
         if (!(instruction_valid && execution_valid && !illegal_instruction &&
               dbus_valid && dbus_write && dbus_ready &&
-              dbus_address == reg_t'(9 * REG_FILE_BYTES) &&
+              dbus_address == word_t'(9 * WORD_BYTES) &&
               dbus_write_data == STORE_TEST_VALUE)) begin
             $display(
                 "FAIL: STORE bus addr=%h data=%h valid=%b write=%b ready=%b",
@@ -348,10 +355,11 @@ module cpu_core_tb;
         #1;
         instruction_enable = 1'b0;
 
-        // LOAD R12, [R10 + REG_FILE_BYTES]. First hold dbus_ready low to prove
+        // LOAD R12, [R10 + WORD_BYTES]. First hold dbus_ready low to prove
         // that a valid memory instruction does not retire or write RD early.
         @(negedge clk);
-        instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10), imm_t'(REG_FILE_BYTES));
+        instruction = encode_load(reg_addr_t'(12), reg_addr_t'(10));
+        immediate_word = word_t'(WORD_BYTES);
         instruction_enable = 1'b1;
         dbus_ready = 1'b0;
         dbus_read_data = STORE_TEST_VALUE;
@@ -360,7 +368,7 @@ module cpu_core_tb;
         tests = tests + 1;
         if (!(instruction_valid && !execution_valid && !illegal_instruction &&
               dbus_valid && !dbus_write && !dbus_ready &&
-              dbus_address == reg_t'(9 * REG_FILE_BYTES))) begin
+              dbus_address == word_t'(9 * WORD_BYTES))) begin
             $display(
                 "FAIL: waiting LOAD bus addr=%h valid=%b write=%b ready=%b exec=%b",
                 dbus_address, dbus_valid, dbus_write, dbus_ready, execution_valid
@@ -374,7 +382,7 @@ module cpu_core_tb;
         @(posedge clk);
         #1;
         tests = tests + 1;
-        if (dut.u_datapath.u_register_file.registers[12] !== reg_t'(0)) begin
+        if (dut.u_datapath.u_register_file.registers[12] !== word_t'(0)) begin
             $display("FAIL: stalled LOAD wrote R12 before bus handshake");
             errors = errors + 1;
         end else begin
@@ -411,16 +419,17 @@ module cpu_core_tb;
                 ZERO_REG,
                 1'b1,
                 1'b0,
-                imm_t'(99)
+                word_t'(99)
             ),
             1'b1,
-            reg_t'(99)
+            word_t'(99)
         );
 
-        check_register(ZERO_REG, reg_t'(0));
+        check_register(ZERO_REG, word_t'(0));
 
-        // An illegal encoding must not overwrite R3.
-        // Register mode with a nonzero immediate is invalid.
+        // A register-mode instruction carries no immediate word, so a
+        // nonzero value on the immediate port must be ignored: R3 keeps
+        // its value (R1 + R2 = 125) and the flags from ADD are Z=N=0.
         execute(
             make_instruction(
                 ALU_ADD,
@@ -429,18 +438,18 @@ module cpu_core_tb;
                 reg_addr_t'(2),
                 1'b0,
                 1'b1,
-                imm_t'(1)
+                word_t'(1)
             ),
-            1'b0,
-            '0
+            1'b1,
+            word_t'(125)
         );
 
-        check_register(reg_addr_t'(3), reg_t'(125));
+        check_register(reg_addr_t'(3), word_t'(125));
 
         // Verify that the illegal instruction did not update flags.
         tests = tests + 1;
-        if (status_flags.Z !== 1'b0 ||
-            status_flags.N !== 1'b0) begin
+        if (status_flags[0] !== 1'b0 ||
+            status_flags[1] !== 1'b0) begin
             $display("FAIL: status flags changed unexpectedly");
             errors = errors + 1;
         end

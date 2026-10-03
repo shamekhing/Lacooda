@@ -3,7 +3,7 @@
 // ============================================================
 // LACOODA CPU — final CPU boundary
 //
-// Everything required to execute the Stage-7 ISA is inside this module:
+// Everything required to execute the ISA is inside this module:
 //   - program counter and instruction fetch buffering
 //   - decoder
 //   - register file
@@ -13,7 +13,7 @@
 //   - LOAD/STORE transaction handling
 //
 // Memories and address routing are NOT inside the CPU. The CPU exposes two
-// independent valid/ready master interfaces:
+// independent typed valid/ready master interfaces:
 //
 //   I-BUS : read-only instruction fetches
 //   D-BUS : LOAD/STORE data transactions
@@ -28,47 +28,51 @@ module cpu (
     input logic rst,
     input logic run,
 
-    // --------------------------------------------------------
     // Instruction-bus master interface (read-only).
-    // --------------------------------------------------------
-    output logic                  ibus_valid,
-    output cpu_pkg::reg_t        ibus_address,
-    input  logic                  ibus_ready,
-    input  cpu_pkg::instruction_t ibus_read_data,
+    output bus_pkg::bus_req_t instr_req,
+    input  bus_pkg::bus_rsp_t instr_rsp,
 
-    // --------------------------------------------------------
     // Data-bus master interface.
     // dbus_write=0 -> LOAD/read
     // dbus_write=1 -> STORE/write
-    // --------------------------------------------------------
-    output logic           dbus_valid,
-    output logic           dbus_write,
-    output cpu_pkg::reg_t dbus_address,
-    output cpu_pkg::data_memory_t dbus_write_data,
-    input  logic           dbus_ready,
-    input  cpu_pkg::data_memory_t dbus_read_data,
+    output bus_pkg::bus_req_t data_req,
+    input  bus_pkg::bus_rsp_t data_rsp,
 
     // Observation outputs retained for simulation/debug.
-    output cpu_pkg::reg_t        pc,
+    output cpu_pkg::word_t        pc,
     output cpu_pkg::instruction_t instruction,
-    output logic                  execution_valid,
-    output logic                  illegal_instruction,
-    output cpu_pkg::reg_t        result
+    output logic                  retire_valid,
+    output logic                  illegal_instr,
+    output cpu_pkg::word_t        alu_result
 );
 
     logic instruction_available;
-    logic instruction_valid;
+    logic decode_valid;
     logic core_enable;
     logic retire;
 
-    cpu_pkg::reg_t operand_a;
-    cpu_pkg::reg_t operand_b;
+    cpu_pkg::word_t immediate_word;
 
-    alu_pkg::flags_t alu_flags;
-    alu_pkg::flags_t status_flags;
+    cpu_pkg::word_t operand_a;
+    cpu_pkg::word_t operand_b;
+
+    cpu_pkg::flags_t  flags;
+    cpu_pkg::status_t status;
 
     logic redirect;
-    cpu_pkg::reg_t redirect_target;
+    cpu_pkg::word_t redirect_target;
+
+    logic dbus_valid;
+    logic dbus_write;
+    cpu_pkg::word_t dbus_addr;
+    cpu_pkg::word_t dbus_wdata;
+
+    // The execution core retains its scalar control ports internally;
+    // the CPU boundary presents the data side as a typed bus value.
+    assign data_req.valid = dbus_valid;
+    assign data_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
+    assign data_req.addr  = dbus_addr;
+    assign data_req.wdata = dbus_wdata;
 
     // A buffered instruction is already inside the CPU and is therefore
     // allowed to finish regardless of a later run deassertion. This also
@@ -77,11 +81,11 @@ module cpu (
 
     // Legal instructions retire when the core reports completion. Illegal
     // instructions have no architectural side effects but are consumed so
-    // they cannot permanently wedge the fetch unit at one PC.
+    // they cannot permanently wedge the fetch unit at one pc.
     assign retire =
         instruction_available &&
         !rst &&
-        (execution_valid || illegal_instruction);
+        (retire_valid || illegal_instr);
 
     // --------------------------------------------------------
     // FETCH / I-BUS
@@ -93,12 +97,11 @@ module cpu (
         .retire                (retire),
         .redirect              (redirect),
         .redirect_target       (redirect_target),
-        .ibus_valid            (ibus_valid),
-        .ibus_address          (ibus_address),
-        .ibus_ready            (ibus_ready),
-        .ibus_read_data        (ibus_read_data),
+        .ibus_req              (instr_req),
+        .ibus_rsp              (instr_rsp),
         .pc                    (pc),
         .instruction           (instruction),
+        .immediate_word        (immediate_word),
         .instruction_available (instruction_available)
     );
 
@@ -106,36 +109,37 @@ module cpu (
     // EXECUTION CORE / D-BUS
     // --------------------------------------------------------
     cpu_core u_cpu_core (
-        .clk                 (clk),
-        .rst                 (rst),
+        .clk            (clk),
+        .rst            (rst),
 
-        .instruction_enable  (core_enable),
-        .instruction         (instruction),
+        .core_enable    (core_enable),
+        .instruction_word(instruction),
+        .immediate_word (immediate_word),
 
         // ADC/SBC retain the existing fixed carry input behavior.
-        .carry_in            (1'b0),
+        .carry_in       (1'b0),
 
-        .dbus_ready           (dbus_ready),
-        .dbus_read_data       (dbus_read_data),
+        .dbus_ready     (data_rsp.ready),
+        .dbus_rdata     (data_rsp.rdata),
 
-        .instruction_valid   (instruction_valid),
-        .illegal_instruction (illegal_instruction),
-        .execution_valid     (execution_valid),
+        .decode_valid   (decode_valid),
+        .illegal_instr  (illegal_instr),
+        .retire_valid   (retire_valid),
 
-        .redirect            (redirect),
-        .redirect_target     (redirect_target),
+        .redirect       (redirect),
+        .redirect_target(redirect_target),
 
-        .dbus_valid           (dbus_valid),
-        .dbus_write           (dbus_write),
-        .dbus_address         (dbus_address),
-        .dbus_write_data      (dbus_write_data),
+        .dbus_valid     (dbus_valid),
+        .dbus_write     (dbus_write),
+        .dbus_addr      (dbus_addr),
+        .dbus_wdata     (dbus_wdata),
 
-        .operand_a           (operand_a),
-        .operand_b           (operand_b),
-        .result              (result),
+        .operand_a      (operand_a),
+        .operand_b      (operand_b),
+        .alu_result     (alu_result),
 
-        .alu_flags           (alu_flags),
-        .status_flags        (status_flags)
+        .flags          (flags),
+        .status         (status)
     );
 
 endmodule

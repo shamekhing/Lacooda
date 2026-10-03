@@ -10,24 +10,25 @@
 module branch_unit_tb;
 
     import cpu_pkg::*;
+    import opcode_pkg::*;
 
     logic enable;
-    branch_condition_t condition;
-    reg_t lhs;
-    reg_t rhs;
-    reg_t target;
+    opcode_t opcode;
+    word_t lhs;
+    word_t rhs;
+    word_t target;
 
     logic redirect;
-    reg_t redirect_target;
+    word_t redirect_target;
 
     integer tests = 0;
     integer errors = 0;
 
     branch_unit dut (
         .enable(enable),
-        .condition(condition),
-        .lhs(lhs),
-        .rhs(rhs),
+        .opcode(opcode),
+        .operand_a(lhs),
+        .operand_b(rhs),
         .target(target),
         .redirect(redirect),
         .redirect_target(redirect_target)
@@ -60,47 +61,47 @@ module branch_unit_tb;
         $dumpvars(0, branch_unit_tb);
 
         enable = 1'b1;
-        target = reg_t'(64);
+        target = word_t'(64);
         lhs = '0;
         rhs = '0;
 
-        condition = BR_ALWAYS;
+        opcode = opcode_pkg::CTRL_JMP;
         check_branch("JMP always redirects", 1'b1);
 
-        lhs = reg_t'(10);
-        rhs = reg_t'(10);
-        condition = BR_EQ;
+        lhs = word_t'(10);
+        rhs = word_t'(10);
+        opcode = opcode_pkg::CTRL_BEQ;
         check_branch("BEQ taken", 1'b1);
 
-        rhs = reg_t'(11);
+        rhs = word_t'(11);
         check_branch("BEQ not taken", 1'b0);
 
-        condition = BR_NE;
+        opcode = opcode_pkg::CTRL_BNE;
         check_branch("BNE taken", 1'b1);
 
-        rhs = reg_t'(10);
+        rhs = word_t'(10);
         check_branch("BNE not taken", 1'b0);
 
         // Same raw lhs value (-1 / all ones) produces different signed
         // and unsigned ordering relative to +1.
-        lhs = reg_t'(-1);
-        rhs = reg_t'(1);
+        lhs = word_t'(-1);
+        rhs = word_t'(1);
 
-        condition = BR_LT;
+        opcode = opcode_pkg::CTRL_BLT;
         check_branch("BLT signed -1 < 1", 1'b1);
 
-        condition = BR_GE;
+        opcode = opcode_pkg::CTRL_BGE;
         check_branch("BGE signed -1 >= 1", 1'b0);
 
-        condition = BR_LTU;
+        opcode = opcode_pkg::CTRL_BLTU;
         check_branch("BLTU unsigned max < 1", 1'b0);
 
-        condition = BR_GEU;
+        opcode = opcode_pkg::CTRL_BGEU;
         check_branch("BGEU unsigned max >= 1", 1'b1);
 
         // Disable must suppress even an unconditional jump.
         enable = 1'b0;
-        condition = BR_ALWAYS;
+        opcode = opcode_pkg::CTRL_JMP;
         check_branch("disabled unit never redirects", 1'b0);
 
         $display("========================================");

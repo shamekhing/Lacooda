@@ -2,15 +2,16 @@
 
 module program_counter_tb;
     import cpu_pkg::*;
-    localparam reg_t REDIRECT_TARGET = 8 * INSTRUCTION_MEMORY_BYTES;
+    localparam word_t REDIRECT_TARGET = 8 * WORD_BYTES;
 
     logic clk = 0;
     logic rst = 1;
     logic enable = 0;
     logic redirect = 0;
+    logic immediate_follows = 0;
 
-    reg_t target = 0;
-    reg_t pc;
+    word_t target = 0;
+    word_t pc;
 
     always #5 clk = ~clk;
 
@@ -20,10 +21,11 @@ module program_counter_tb;
         .enable(enable),
         .redirect(redirect),
         .target(target),
+        .has_imm(immediate_follows),
         .pc(pc)
     );
 
-    task automatic check_pc(input reg_t expected);
+    task automatic check_pc(input word_t expected);
         assert (pc === expected)
             else $fatal(1,
                 "PC mismatch: expected %0d, got %0d",
@@ -38,19 +40,22 @@ module program_counter_tb;
         #1;
         check_pc('0);
 
-        // First instruction
+        // First instruction without an immediate word.
         @(negedge clk);
         rst = 0;
         enable = 1;
+        immediate_follows = 0;
 
         @(posedge clk);
         #1;
-        check_pc(INSTRUCTION_MEMORY_BYTES);
+        check_pc(WORD_BYTES);
 
-        // Second instruction
+        // Second instruction skips its immediate word.
+        @(negedge clk);
+        immediate_follows = 1;
         @(posedge clk);
         #1;
-        check_pc(2 * INSTRUCTION_MEMORY_BYTES);
+        check_pc(3 * WORD_BYTES);
 
         // Hold
         @(negedge clk);
@@ -58,7 +63,7 @@ module program_counter_tb;
 
         @(posedge clk);
         #1;
-        check_pc(2 * INSTRUCTION_MEMORY_BYTES);
+        check_pc(3 * WORD_BYTES);
 
         // Redirect
         @(negedge clk);
@@ -73,10 +78,11 @@ module program_counter_tb;
         // Resume sequential execution
         @(negedge clk);
         redirect = 0;
+        immediate_follows = 0;
 
         @(posedge clk);
         #1;
-        check_pc(REDIRECT_TARGET + INSTRUCTION_MEMORY_BYTES);
+        check_pc(REDIRECT_TARGET + WORD_BYTES);
 
         $display("PASS: program_counter_tb");
         $finish;

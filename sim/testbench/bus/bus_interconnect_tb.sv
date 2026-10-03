@@ -8,36 +8,19 @@ module bus_interconnect_tb;
     import cpu_pkg::*;
     import bus_pkg::*;
 
-    logic dbus_valid;
-    logic dbus_write;
-    reg_t dbus_address;
-    reg_t dbus_write_data;
-    logic dbus_ready;
-    reg_t dbus_read_data;
-
-    logic slave_valid;
-    logic slave_write;
-    reg_t slave_address;
-    reg_t slave_write_data;
-    logic slave_ready;
-    reg_t slave_read_data;
+    bus_req_t d_req;
+    bus_rsp_t d_rsp;
+    bus_req_t slave_req;
+    bus_rsp_t slave_rsp;
 
     integer tests = 0;
     integer errors = 0;
 
     bus_interconnect dut (
-        .dbus_valid(dbus_valid),
-        .dbus_write(dbus_write),
-        .dbus_address(dbus_address),
-        .dbus_write_data(dbus_write_data),
-        .dbus_ready(dbus_ready),
-        .dbus_read_data(dbus_read_data),
-        .slave_valid(slave_valid),
-        .slave_write(slave_write),
-        .slave_address(slave_address),
-        .slave_write_data(slave_write_data),
-        .slave_ready(slave_ready),
-        .slave_read_data(slave_read_data)
+        .d_req(d_req),
+        .d_rsp(d_rsp),
+        .slave_req(slave_req),
+        .slave_rsp(slave_rsp)
     );
 
     task automatic check(input logic condition, input string description);
@@ -53,59 +36,63 @@ module bus_interconnect_tb;
     endtask
 
     initial begin
+        check(BUS_READ === 1'b0 && BUS_WRITE === 1'b1,
+              "bus op encodings match the existing write bit");
         $dumpfile("bus_interconnect.vcd");
         $dumpvars(0, bus_interconnect_tb);
 
-        dbus_valid = 1'b0;
-        dbus_write = 1'b0;
-        dbus_address = '0;
-        dbus_write_data = '0;
-        slave_ready = 1'b0;
-        slave_read_data = reg_t'(16'h1234);
+        d_req.valid = 1'b0;
+        d_req.op = BUS_READ;
+        d_req.addr = '0;
+        d_req.wdata = '0;
+        slave_rsp.ready = 1'b0;
+        slave_rsp.rdata = word_t'(16'h1234);
         #1;
 
-        check(!dbus_ready && !slave_valid,
+        check(!d_rsp.ready && !slave_req.valid,
               "idle master produces no slave request");
 
         // Mapped request is forwarded and waits for the selected slave.
-        dbus_valid = 1'b1;
-        dbus_write = 1'b1;
-        dbus_address = DATA_MEMORY_BASE + reg_t'(3 * REG_FILE_BYTES);
-        dbus_write_data = reg_t'(16'h55AA);
+        d_req.valid = 1'b1;
+        d_req.op = BUS_WRITE;
+        d_req.addr = DATA_MEMORY_BASE + word_t'(3 * WORD_BYTES);
+        d_req.wdata = word_t'(16'h55AA);
         #1;
-        check(slave_valid && slave_write,
+        check(slave_req.valid && slave_req.op == BUS_WRITE,
               "mapped STORE selects data memory");
-        check(slave_address === reg_t'(3 * REG_FILE_BYTES) &&
-              slave_write_data === reg_t'(16'h55AA),
+        check(slave_req.addr === word_t'(3 * WORD_BYTES) &&
+              slave_req.wdata === word_t'(16'h55AA),
               "mapped STORE payload is forwarded");
-        check(!dbus_ready,
+        check(!d_rsp.ready,
               "master waits while selected slave is not ready");
 
-        slave_ready = 1'b1;
+        slave_rsp.ready = 1'b1;
         #1;
-        check(dbus_ready,
+        check(d_rsp.ready,
               "selected slave ready is returned to master");
 
-        dbus_write = 1'b0;
-        slave_read_data = reg_t'(16'hCAFE);
+        d_req.op = BUS_READ;
+        slave_rsp.rdata = word_t'(16'hCAFE);
         #1;
-        check(dbus_read_data === reg_t'(16'hCAFE),
+        check(slave_req.op == BUS_READ,
+              "mapped READ op reaches the slave");
+        check(d_rsp.rdata === word_t'(16'hCAFE),
               "selected slave read data is returned to master");
 
         // First address after local RAM is unmapped. Current architectural
         // behavior completes such accesses immediately with zero data.
-        dbus_address = DATA_MEMORY_LIMIT;
-        slave_ready = 1'b0;
-        slave_read_data = reg_t'(16'hFFFF);
+        d_req.addr = DATA_MEMORY_LIMIT;
+        slave_rsp.ready = 1'b0;
+        slave_rsp.rdata = word_t'(16'hFFFF);
         #1;
-        check(!slave_valid,
+        check(!slave_req.valid,
               "unmapped address selects no data-memory slave");
-        check(dbus_ready && dbus_read_data === '0,
+        check(d_rsp.ready && d_rsp.rdata === '0,
               "unmapped access completes with zero response");
 
-        dbus_valid = 1'b0;
+        d_req.valid = 1'b0;
         #1;
-        check(!dbus_ready,
+        check(!d_rsp.ready,
               "ready drops when master request is removed");
 
         $display("========================================");

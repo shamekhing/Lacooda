@@ -3,27 +3,25 @@
 // ALU shift / rotate sub-unit
 //
 // SHL, SHR, arithmetic right shift (SAR) and the ROL/ROR
-// rotations. The rotate amount is reduced modulo WIDTH, including
+// rotations. The rotate shift_amount is reduced modulo cpu_pkg::WORD_WIDTH, including
 // byte-scaled widths that are not powers of two.
 // ============================================================
 
-module shifter #(
-    parameter int WIDTH = cpu_pkg::REG_FILE_WIDTH
-)(
-    input  logic [WIDTH-1:0] A, B,
+module shifter (
+    input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
 
-    output logic [WIDTH-1:0] result
+    output cpu_pkg::word_t result
 );
 
     import opcode_pkg::*;
 
-    localparam int SHIFT_BITS = $clog2(WIDTH);
+    localparam int SHIFT_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
 
-    logic [SHIFT_BITS-1:0] amount;
+    logic [SHIFT_WIDTH-1:0] shift_amount;
 
-    // Rotations use the full shift operand modulo WIDTH.
-    assign amount = SHIFT_BITS'(B % WIDTH);
+    // Rotations use the full shift operand modulo cpu_pkg::WORD_WIDTH.
+    assign shift_amount = SHIFT_WIDTH'(operand_b % cpu_pkg::WORD_WIDTH);
 
     always_comb begin
         result = '0;
@@ -31,21 +29,21 @@ module shifter #(
         case (op)
 
             ALU_SHL:
-                result = A << B;
+                result = operand_a << operand_b;
 
             ALU_SHR:
-                result = A >> B;
+                result = operand_a >> operand_b;
 
             ALU_SAR:
-                result = $signed(A) >>> B;
+                result = $signed(operand_a) >>> operand_b;
 
             ALU_ROL:
-                result = (A << amount) |
-                         (A >> (WIDTH - amount));
+                result = (operand_a << shift_amount) |
+                         (operand_a >> (cpu_pkg::WORD_WIDTH - shift_amount));
 
             ALU_ROR:
-                result = (A >> amount) |
-                         (A << (WIDTH - amount));
+                result = (operand_a >> shift_amount) |
+                         (operand_a << (cpu_pkg::WORD_WIDTH - shift_amount));
 
             default:
                 result = '0;

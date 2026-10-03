@@ -6,35 +6,31 @@
 // Register 0 is architecturally hardwired to zero: writes to it
 // are ignored and reads from it always return zero. Reset is
 // asynchronous and clears every register.
+// Every word is the global word (cpu_pkg::WORD_WIDTH).
 // ============================================================
 
-module register_file #(
-    // Default width comes from the register-file parameter group.
-    parameter int REG_FILE_WIDTH = cpu_pkg::REG_FILE_WIDTH,
-    parameter int REG_FILE_ADDR_WIDTH = cpu_pkg::REG_FILE_ADDR_WIDTH,
-    parameter int REG_FILE_COUNT  = cpu_pkg::REG_FILE_COUNT
-) (
-    input  logic                  clk,
-    input  logic                  rst,
-    input  logic [REG_FILE_ADDR_WIDTH-1:0] read_addr_a,
-    output logic [REG_FILE_WIDTH-1:0] read_data_a,
-    input  logic [REG_FILE_ADDR_WIDTH-1:0] read_addr_b,
-    output logic [REG_FILE_WIDTH-1:0] read_data_b,
-    input  logic                  write_enable,
-    input  logic [REG_FILE_ADDR_WIDTH-1:0] write_addr,
-    input  logic [REG_FILE_WIDTH-1:0] write_data
+module register_file (
+    input  logic             clk,
+    input  logic             rst,
+    input  cpu_pkg::reg_addr_t rs1_addr,
+    output cpu_pkg::word_t      rs1_data,
+    input  cpu_pkg::reg_addr_t rs2_addr,
+    output cpu_pkg::word_t      rs2_data,
+    input  logic             write_enable,
+    input  cpu_pkg::reg_addr_t write_addr,
+    input  cpu_pkg::word_t      write_data
 );
-    logic [REG_FILE_WIDTH-1:0] registers [0:REG_FILE_COUNT-1];
+    cpu_pkg::word_t registers [0:cpu_pkg::REG_FILE_COUNT-1];
 
     // R0 is architecturally hardwired to zero.
-    assign read_data_a = (read_addr_a == '0) ? '0 : registers[read_addr_a];
-    assign read_data_b = (read_addr_b == '0) ? '0 : registers[read_addr_b];
+    assign rs1_data = (rs1_addr == '0) ? '0 : registers[rs1_addr];
+    assign rs2_data = (rs2_addr == '0) ? '0 : registers[rs2_addr];
 
-    integer i;
+    integer idx;
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            for (i = 0; i < REG_FILE_COUNT; i = i + 1)
-                registers[i] <= '0;
+            for (idx = 0; idx < cpu_pkg::REG_FILE_COUNT; idx = idx + 1)
+                registers[idx] <= '0;
         end else if (write_enable && (write_addr != '0)) begin
             registers[write_addr] <= write_data;
         end

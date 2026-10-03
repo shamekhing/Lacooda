@@ -1,22 +1,20 @@
 # Build a CPU by Hand with SystemVerilog
 
-## The LACOODA Development Journey --- From Wires and ALU Logic to a Bus-Wrapped CPU
+## The Development Journey 
 
 **Project:** LACOODA\
 **Language:** SystemVerilog\
-**Target direction:** Sipeed Tang Primer 20K / Gowin GW2A-LV18\
+**Target direction:** FPGA(N/A)\
 **CPU datapath:** 64-bit by default\
-**Instruction word:** 64-bit in the CPU described in this manual\
+**Instruction word:** 64-bit by default\
 **Register file:** 64 × 64-bit by default\
-**Purpose:** A hands-on learning manual reconstructed from the actual
-LACOODA development journey.
+**Purpose:** A hands-on learning manual reconstructed from my stupid questions to AI.
 
 ------------------------------------------------------------------------
 
 # Preface
 
-This is not a SystemVerilog syntax reference with a toy counter at the
-end.
+This is not a SystemVerilog tutorial nor a standard README but mostly my learning journey to build game from hardware from scratch.
 
 The goal is to learn SystemVerilog by building a processor, discovering
 the places where a software-programming mental model stops working, and
@@ -24,7 +22,7 @@ then progressively turning a collection of arithmetic modules into a CPU
 with instructions, state, program flow, memory, a handshake bus, and a
 clean system boundary.
 
-The processor is **LACOODA**.
+The processor is **LACOODA**. from the 3 hump lacooda ygo card but it is a long story so i will save you the details.
 
 The order matters. We do not begin with a complete CPU diagram and
 pretend every block is already obvious. We begin with the exact
@@ -3164,6 +3162,47 @@ If this model is clear, most of the code stops looking mysterious.
 
 ------------------------------------------------------------------------
 
+# Part XXVI --- Unifying the Word Width Across the CPU
+
+Every earlier part chose bus and memory widths module by module:
+
+``` text
+ibus:    WORD_WIDTH
+dbus:    XLEN
+imem:    WORD_WIDTH
+dmem:    XLEN
+decoder: XLEN
+```
+
+The numbers happened to match because the current configuration is
+32/32. Nothing *forced* them to match. That was a latent inconsistency:
+the bus layer's word and the CPU's architectural integer are two
+different concepts that only coincidentally had the same width.
+
+The unification change makes the relationship explicit:
+
+* the **global word width** is a single parameter (`WORD_WIDTH`),
+  passed down through the root;
+* every derived width (`XLEN`, `BYTE`, byte enables, address widths)
+  derives from it;
+* no module re-derives or re-declares the width independently.
+
+A root parameter is the natural single point of control. Every module
+in the hierarchy either receives the width through its parameters or
+derives it from the global package, so changing one number at the top
+reconfigures the whole system.
+
+### Important caveat
+
+Deriving local constants from global parameters keeps the system
+consistent by construction. But consistency of *widths* is not the
+same as correctness of *semantics*: sign extension, byte lane
+placement, and address arithmetic all had to be re-checked after the
+change, because a wider word silently changes their expected shapes.
+
+------------------------------------------------------------------------
+
+# Appendix A --- Core SystemVerilog Patterns Used
 # Appendix A --- Core SystemVerilog Patterns Used
 
 ## A.1 Continuous combinational assignment

@@ -1,0 +1,419 @@
+%% LACOODA - complete RTL traceability graph (single graph)
+%% One node per traced construct; every node carries its exact source
+%% location as @ Lstart-Lend. One subgraph per source file, constructed
+%% in source order. Cross-file edges follow instantiation hierarchy.
+%% Indexes: docs/rtl/rtl_to_graph.md, docs/rtl/graph_to_rtl.md,
+%%          docs/rtl/source_coverage.md, docs/rtl/traceability.json
+flowchart TD
+
+  subgraph sg_opcode_pkg["rtl/packages/opcode_pkg.sv"]
+    direction TB
+    pkg_opcode["package opcode_pkg<br/>@ L22-L133"]
+    pkg_opcode_pkg_param_OPCODE_WIDTH["localparam OPCODE_WIDTH<br/>@ L26"]
+    pkg_opcode_pkg_enum_opcode_e["typedef enum opcode_e (ALU_/CTRL_/MEM_ codepoints)<br/>@ L28-L88"]
+    pkg_opcode_pkg_type_opcode_t["typedef opcode_t<br/>@ L91"]
+    pkg_opcode_pkg_param_ALU_OPCODE_COUNT["localparam ALU_OPCODE_COUNT<br/>@ L94"]
+    pkg_opcode_pkg_param_OPCODE_COUNT["localparam OPCODE_COUNT<br/>@ L97"]
+    pkg_opcode_pkg_func_is_valid_opcode["function is_valid_opcode<br/>@ L105-L107"]
+    pkg_opcode_pkg_func_is_alu_opcode["function is_alu_opcode<br/>@ L109-L111"]
+    pkg_opcode_pkg_func_is_unary_opcode["function is_unary_opcode<br/>@ L113-L115"]
+    pkg_opcode_pkg_func_is_mov_op["function is_mov_op<br/>@ L117-L119"]
+    pkg_opcode_pkg_func_is_movi_op["function is_movi_op<br/>@ L121-L123"]
+    pkg_opcode_pkg_func_is_branch_opcode["function is_branch_opcode<br/>@ L125-L127"]
+    pkg_opcode_pkg_func_is_memory_opcode["function is_memory_opcode<br/>@ L129-L131"]
+  end
+
+  subgraph sg_cpu_pkg["rtl/packages/cpu_pkg.sv"]
+    direction TB
+    pkg_cpu["package cpu_pkg<br/>@ L24-L257"]
+    pkg_cpu_pkg_macro_LACOODA_WORD_WIDTH["macro LACOODA_WORD_WIDTH (default 64)<br/>@ L35-L37"]
+    pkg_cpu_pkg_param_WORD_WIDTH["localparam WORD_WIDTH<br/>@ L39"]
+    pkg_cpu_pkg_param_WORD_BYTES["localparam WORD_BYTES<br/>@ L40"]
+    pkg_cpu_pkg_type_word_t["typedef word_t<br/>@ L48"]
+    pkg_cpu_pkg_type_instruction_t["typedef instruction_t<br/>@ L51"]
+    pkg_cpu_pkg_param_REG_FILE_COUNT["localparam REG_FILE_COUNT<br/>@ L57"]
+    pkg_cpu_pkg_param_REG_FILE_ADDR_WIDTH["localparam REG_FILE_ADDR_WIDTH<br/>@ L58"]
+    pkg_cpu_pkg_type_reg_addr_t["typedef reg_addr_t<br/>@ L60"]
+    pkg_cpu_pkg_param_ZERO_REG["localparam ZERO_REG<br/>@ L63"]
+    pkg_cpu_pkg_param_INSTRUCTION_MEMORY_COUNT["localparam INSTRUCTION_MEMORY_COUNT<br/>@ L69"]
+    pkg_cpu_pkg_param_DATA_MEMORY_COUNT["localparam DATA_MEMORY_COUNT<br/>@ L70"]
+    pkg_cpu_pkg_param_PROGRAM_FILE["localparam PROGRAM_FILE (word-width dependent)<br/>@ L73-L74"]
+    pkg_cpu_pkg_param_STATUS_WIDTH["localparam STATUS_WIDTH = 32<br/>@ L83"]
+    pkg_cpu_pkg_type_status_t["typedef status_t<br/>@ L85"]
+    pkg_cpu_pkg_type_flags_t["typedef struct flags_t (Z N C V DZ)<br/>@ L93-L99"]
+    pkg_cpu_pkg_func_make_flags["function make_flags<br/>@ L101-L111"]
+    pkg_cpu_pkg_param_LAYOUT["localparam RS2_LSB / RS2_MSB / localparam RS1_LSB / RS1_MSB / localparam RD_LSB / RD_MSB / localparam OPCOD...<br/>@ L119-L132"]
+    pkg_cpu_pkg_func_validate_configuration["function validate_configuration<br/>@ L135-L156"]
+    pkg_cpu_pkg_type_instr_fields_t["typedef struct instr_fields_t<br/>@ L160-L167"]
+    pkg_cpu_pkg_func_uses_imm["function uses_imm<br/>@ L178-L183"]
+    pkg_cpu_pkg_func_instr_uses_imm["function instr_uses_imm<br/>@ L185-L189"]
+    pkg_cpu_pkg_func_encode_instruction["function encode_instruction<br/>@ L193-L207"]
+    pkg_cpu_pkg_func_encode_branch["function encode_branch<br/>@ L211-L222"]
+    pkg_cpu_pkg_func_encode_jump["function encode_jump<br/>@ L225-L227"]
+    pkg_cpu_pkg_func_encode_load["function encode_load<br/>@ L231-L241"]
+    pkg_cpu_pkg_func_encode_store["function encode_store<br/>@ L245-L255"]
+  end
+
+  subgraph sg_bus_pkg["rtl/packages/bus_pkg.sv"]
+    direction TB
+    pkg_bus["package bus_pkg<br/>@ L13-L49"]
+    pkg_bus_pkg_enum_bus_op_t["typedef enum bus_op_t (BUS_READ/BUS_WRITE)<br/>@ L15-L18"]
+    pkg_bus_pkg_struct_bus_req_t["typedef struct bus_req_t (valid op addr wdata)<br/>@ L21-L26"]
+    pkg_bus_pkg_struct_bus_rsp_t["typedef struct bus_rsp_t (ready rdata)<br/>@ L28-L31"]
+    pkg_bus_pkg_param_DATA_MEMORY_BASE["localparam DATA_MEMORY_BASE<br/>@ L36"]
+    pkg_bus_pkg_param_DATA_MEMORY_SIZE["localparam DATA_MEMORY_SIZE<br/>@ L42-L44"]
+    pkg_bus_pkg_param_DATA_MEMORY_LIMIT["localparam DATA_MEMORY_LIMIT<br/>@ L46-L47"]
+  end
+
+  subgraph sg_alu["rtl/cpu/alu/alu.sv"]
+    direction TB
+    mod_alu["module alu<br/>@ L22-L165"]
+    mod_alu_port_operand_a["input operand_a<br/>@ L23"]
+    mod_alu_port_operand_b["input operand_b<br/>@ L23"]
+    mod_alu_port_op["input op : opcode_t<br/>@ L24"]
+    mod_alu_port_carry_in["input carry_in<br/>@ L25"]
+    mod_alu_port_result["output result : word_t<br/>@ L27"]
+    mod_alu_port_flags["output flags : flags_t<br/>@ L28"]
+    mod_alu_port_valid["output valid<br/>@ L29"]
+    mod_alu_sig_arithmetic_result["signal arithmetic_result<br/>@ L36"]
+    mod_alu_sig_logic_result["signal logic_result<br/>@ L37"]
+    mod_alu_sig_shift_result["signal shift_result<br/>@ L38"]
+    mod_alu_sig_compare_result["signal compare_result<br/>@ L39"]
+    mod_alu_sig_arithmetic_carry["signals arithmetic_carry/overflow/div_zero<br/>@ L42-L44"]
+    mod_alu_sig_carry_sel["signals carry_sel/overflow_sel/div_zero_sel<br/>@ L47-L49"]
+    mod_alu_inst_arithmetic["instance u_arithmetic<br/>@ L52-L61"]
+    mod_alu_inst_logic_unit["instance u_logic_unit<br/>@ L64-L69"]
+    mod_alu_inst_shifter["instance u_shifter<br/>@ L72-L77"]
+    mod_alu_inst_comparator["instance u_comparator<br/>@ L80-L85"]
+    mod_alu_comb_L88["always_comb result multiplexer<br/>@ L88-L149"]
+    mod_alu_comb_L152["always_comb flags derivation<br/>@ L152-L163"]
+  end
+
+  subgraph sg_arithmetic["rtl/cpu/alu/arithmetic.sv"]
+    direction TB
+    mod_arithmetic["module arithmetic<br/>@ L18-L167"]
+    mod_arithmetic_port_operand_a["input operand_a / operand_b<br/>@ L19"]
+    mod_arithmetic_port_op["input op<br/>@ L20"]
+    mod_arithmetic_port_carry_in["input carry_in<br/>@ L21"]
+    mod_arithmetic_port_result["output result<br/>@ L23"]
+    mod_arithmetic_port_carry["output carry<br/>@ L24"]
+    mod_arithmetic_port_overflow["output overflow<br/>@ L25"]
+    mod_arithmetic_port_div_zero["output div_zero<br/>@ L26"]
+    mod_arithmetic_sig_add_ext["signal add_ext<br/>@ L32"]
+    mod_arithmetic_sig_product["signal product<br/>@ L33"]
+    mod_arithmetic_sig_signed_a["signals signed_a / signed_b<br/>@ L35-L36"]
+    mod_arithmetic_sig_min_signed["signal min_signed<br/>@ L38"]
+    mod_arithmetic_sig_rhs["signal rhs<br/>@ L40"]
+    mod_arithmetic_assign_L42["assign signed_a<br/>@ L42"]
+    mod_arithmetic_assign_L43["assign signed_b<br/>@ L43"]
+    mod_arithmetic_assign_L45["assign min_signed<br/>@ L45"]
+    mod_arithmetic_comb_L47["always_comb arithmetic<br/>@ L47-L165"]
+  end
+
+  subgraph sg_comparator["rtl/cpu/alu/comparator.sv"]
+    direction TB
+    mod_comparator["module comparator<br/>@ L11-L63"]
+    mod_comparator_port_operand_a["input operand_a / operand_b<br/>@ L12"]
+    mod_comparator_port_op["input op<br/>@ L13"]
+    mod_comparator_port_result["output result<br/>@ L15"]
+    mod_comparator_comb_L20["always_comb comparisons<br/>@ L20-L61"]
+  end
+
+  subgraph sg_logic_unit["rtl/cpu/alu/logic_unit.sv"]
+    direction TB
+    mod_logic_unit["module logic_unit<br/>@ L10-L37"]
+    mod_logic_unit_port_operand_a["input operand_a / operand_b<br/>@ L11"]
+    mod_logic_unit_port_op["input op<br/>@ L12"]
+    mod_logic_unit_port_result["output result<br/>@ L14"]
+    mod_logic_unit_comb_L19["always_comb bitwise ops<br/>@ L19-L35"]
+  end
+
+  subgraph sg_shifter["rtl/cpu/alu/shifter.sv"]
+    direction TB
+    mod_shifter["module shifter<br/>@ L10-L54"]
+    mod_shifter_port_operand_a["input operand_a / operand_b<br/>@ L11"]
+    mod_shifter_port_op["input op<br/>@ L12"]
+    mod_shifter_port_result["output result<br/>@ L14"]
+    mod_shifter_param_SHIFT_WIDTH["localparam SHIFT_WIDTH<br/>@ L19"]
+    mod_shifter_sig_shift_amount["signal shift_amount<br/>@ L21"]
+    mod_shifter_assign_L24["assign shift_amount<br/>@ L24"]
+    mod_shifter_comb_L26["always_comb shifts/rotates<br/>@ L26-L52"]
+  end
+
+  subgraph sg_register_file["rtl/cpu/core/register_file.sv"]
+    direction TB
+    mod_register_file["module register_file<br/>@ L12-L38"]
+    mod_register_file_port_clk["input clk / rst<br/>@ L13-L14"]
+    mod_register_file_port_rs1_addr["rs1_addr / rs1_data<br/>@ L15-L16"]
+    mod_register_file_port_rs2_addr["rs2_addr / rs2_data<br/>@ L17-L18"]
+    mod_register_file_port_write_enable["write_enable / write_addr / write_data<br/>@ L19-L21"]
+    mod_register_file_mem_registers["memory registers [0:REG_FILE_COUNT-1]<br/>@ L23"]
+    mod_register_file_assign_L26["assign rs1_data (R0 reads 0)<br/>@ L26"]
+    mod_register_file_assign_L27["assign rs2_data (R0 reads 0)<br/>@ L27"]
+    mod_register_file_sig_idx["integer idx<br/>@ L29"]
+    mod_register_file_ff_L30["always_ff reset clear + write<br/>@ L30-L37"]
+  end
+
+  subgraph sg_status_register["rtl/cpu/core/status_register.sv"]
+    direction TB
+    mod_status_register["module status_register<br/>@ L14-L39"]
+    mod_status_register_port_clk["input clk / rst / write_enable<br/>@ L15-L17"]
+    mod_status_register_port_flags_in["input flags_in<br/>@ L19"]
+    mod_status_register_port_status["output status<br/>@ L20"]
+    mod_status_register_sig_flags_reg["signal flags_reg<br/>@ L23"]
+    mod_status_register_ff_L25["always_ff flag storage<br/>@ L25-L33"]
+    mod_status_register_assign_L35["assign status {DZ,V,C,N,Z}<br/>@ L35-L37"]
+  end
+
+  subgraph sg_branch_unit["rtl/cpu/core/branch_unit.sv"]
+    direction TB
+    mod_branch_unit["module branch_unit<br/>@ L20-L54"]
+    mod_branch_unit_port_enable["input enable<br/>@ L21"]
+    mod_branch_unit_port_opcode["input opcode<br/>@ L22"]
+    mod_branch_unit_port_operand_a["input operand_a / operand_b<br/>@ L23-L24"]
+    mod_branch_unit_port_target["input target<br/>@ L25"]
+    mod_branch_unit_port_redirect["output redirect<br/>@ L27"]
+    mod_branch_unit_port_redirect_target["output redirect_target<br/>@ L28"]
+    mod_branch_unit_comb_L33["always_comb condition select<br/>@ L33-L52"]
+  end
+
+  subgraph sg_decoder["rtl/cpu/core/decoder.sv"]
+    direction TB
+    mod_decoder["module decoder<br/>@ L20-L238"]
+    mod_decoder_port_instruction["input instruction<br/>@ L21"]
+    mod_decoder_port_immediate_word["input immediate_word<br/>@ L22"]
+    mod_decoder_port_rs1["outputs rs1 / rs2 / rd<br/>@ L24-L26"]
+    mod_decoder_port_alu_op["outputs alu_op / imm_operand / imm_sel<br/>@ L28-L30"]
+    mod_decoder_port_register_write_enable["outputs register_write_enable / flags_write_enable<br/>@ L32-L33"]
+    mod_decoder_port_branch_enable["outputs branch_enable / branch_op / branch_target<br/>@ L36-L38"]
+    mod_decoder_port_memory_read_enable["outputs memory_read_enable / memory_write_enable<br/>@ L41-L42"]
+    mod_decoder_port_decode_valid["outputs decode_valid / illegal_instr<br/>@ L44-L45"]
+    mod_decoder_sig_instr_fields["signal instr_fields<br/>@ L51"]
+    mod_decoder_sig_opcode_valid["signals opcode_valid / format_valid<br/>@ L53-L54"]
+    mod_decoder_sig_unary_qual["signals unary_qual / mov_qual / movi_qual<br/>@ L55-L57"]
+    mod_decoder_sig_branch_qual["signals branch_qual / memory_qual<br/>@ L58-L59"]
+    mod_decoder_sig_load_qual["signals load_qual / store_qual<br/>@ L60-L61"]
+    mod_decoder_assign_L67["assign instr_fields = instruction<br/>@ L67"]
+    mod_decoder_comb_L72["always_comb format validation<br/>@ L72-L158"]
+    mod_decoder_comb_L163["always_comb control generation<br/>@ L163-L236"]
+  end
+
+  subgraph sg_datapath["rtl/cpu/core/datapath.sv"]
+    direction TB
+    mod_datapath["module datapath<br/>@ L25-L144"]
+    mod_datapath_port_clk["input clk / rst<br/>@ L26-L27"]
+    mod_datapath_port_rs1["inputs rs1 / rs2 / rd<br/>@ L30-L32"]
+    mod_datapath_port_alu_op["inputs alu_op / carry_in<br/>@ L35-L36"]
+    mod_datapath_port_imm_operand["inputs imm_operand / imm_sel<br/>@ L39-L40"]
+    mod_datapath_port_register_write_enable["inputs register_write_enable / flags_write_enable<br/>@ L43-L44"]
+    mod_datapath_port_dmem_rdata["inputs dmem_rdata / writeback_from_mem<br/>@ L47-L48"]
+    mod_datapath_port_operand_a["outputs operand_a/operand_b/store_data/alu_result/alu_valid<br/>@ L51-L55"]
+    mod_datapath_port_flags["outputs flags / status<br/>@ L58-L59"]
+    mod_datapath_sig_rs2_data["signals rs2_data / writeback_data<br/>@ L61-L62"]
+    mod_datapath_sig_register_wen["signals register_wen / flags_wen<br/>@ L64-L65"]
+    mod_datapath_assign_L71["assign register_wen<br/>@ L71-L72"]
+    mod_datapath_assign_L74["assign flags_wen<br/>@ L74-L75"]
+    mod_datapath_inst_register_file["instance u_register_file<br/>@ L81-L94"]
+    mod_datapath_assign_L97["assign store_data<br/>@ L97"]
+    mod_datapath_assign_L103["assign operand_b (imm mux)<br/>@ L103-L104"]
+    mod_datapath_inst_alu["instance u_alu<br/>@ L110-L120"]
+    mod_datapath_assign_L128["assign writeback_data<br/>@ L128-L129"]
+    mod_datapath_inst_status_register["instance u_status_register<br/>@ L135-L142"]
+  end
+
+  subgraph sg_cpu_core["rtl/cpu/core/cpu_core.sv"]
+    direction TB
+    mod_cpu_core["module cpu_core<br/>@ L20-L228"]
+    mod_cpu_core_port_clk["input clk / rst<br/>@ L21-L22"]
+    mod_cpu_core_port_core_enable["inputs core_enable / instruction_word / immediate_word<br/>@ L24-L26"]
+    mod_cpu_core_port_carry_in["input carry_in<br/>@ L29"]
+    mod_cpu_core_port_dbus_ready["inputs dbus_ready / dbus_rdata<br/>@ L35-L36"]
+    mod_cpu_core_port_decode_valid["outputs decode_valid / illegal_instr / retire_valid<br/>@ L38-L40"]
+    mod_cpu_core_port_redirect["outputs redirect / redirect_target<br/>@ L43-L44"]
+    mod_cpu_core_port_dbus_valid["outputs dbus_valid / dbus_write / dbus_addr / dbus_wdata<br/>@ L54-L57"]
+    mod_cpu_core_port_operand_a["outputs operand_a / operand_b / alu_result<br/>@ L59-L61"]
+    mod_cpu_core_port_flags["outputs flags / status<br/>@ L63-L64"]
+    mod_cpu_core_sig_rs1["signals rs1 / rs2 / rd<br/>@ L67-L69"]
+    mod_cpu_core_sig_alu_op["signals alu_op / imm_operand<br/>@ L71-L72"]
+    mod_cpu_core_sig_imm_sel["signals imm_sel / register_write_enable / flags_write_enable / alu_valid<br/>@ L74-L77"]
+    mod_cpu_core_sig_branch_enable["signals branch_enable / branch_op / branch_target<br/>@ L80-L82"]
+    mod_cpu_core_sig_memory_read_enable["signals memory_read_enable / memory_write_enable / memory_op / memory_complete<br/>@ L86-L89"]
+    mod_cpu_core_sig_store_data["signal store_data<br/>@ L91"]
+    mod_cpu_core_sig_effective_register_write["signals effective_register_write / effective_flags_write<br/>@ L93-L94"]
+    mod_cpu_core_inst_decoder["instance u_decoder<br/>@ L99-L123"]
+    mod_cpu_core_assign_L127["assign memory_op<br/>@ L127-L128"]
+    mod_cpu_core_assign_L132["assign memory_complete<br/>@ L132"]
+    mod_cpu_core_assign_L140["assign dbus_valid<br/>@ L140-L144"]
+    mod_cpu_core_assign_L146["assign dbus_write<br/>@ L146"]
+    mod_cpu_core_assign_L149["assign dbus_addr<br/>@ L149"]
+    mod_cpu_core_assign_L150["assign dbus_wdata<br/>@ L150"]
+    mod_cpu_core_assign_L158["assign effective_register_write<br/>@ L158-L162"]
+    mod_cpu_core_assign_L164["assign effective_flags_write<br/>@ L164-L167"]
+    mod_cpu_core_inst_datapath["instance u_datapath<br/>@ L172-L200"]
+    mod_cpu_core_inst_branch_unit["instance u_branch_unit<br/>@ L205-L218"]
+    mod_cpu_core_assign_L222["assign retire_valid<br/>@ L222-L226"]
+  end
+
+  subgraph sg_cpu["rtl/cpu/cpu.sv"]
+    direction TB
+    mod_cpu["module cpu<br/>@ L26-L145"]
+    mod_cpu_port_clk["input clk / rst / run<br/>@ L27-L29"]
+    mod_cpu_port_instr_req["instr_req / instr_rsp<br/>@ L32-L33"]
+    mod_cpu_port_data_req["data_req / data_rsp<br/>@ L38-L39"]
+    mod_cpu_port_pc["outputs pc / instruction / retire_valid / illegal_instr / alu_result<br/>@ L42-L46"]
+    mod_cpu_sig_instruction_available["signals instruction_available / decode_valid / core_enable / retire<br/>@ L49-L52"]
+    mod_cpu_sig_immediate_word["signal immediate_word<br/>@ L54"]
+    mod_cpu_sig_operand_a["signals operand_a / operand_b<br/>@ L56-L57"]
+    mod_cpu_sig_flags["signals flags / status<br/>@ L59-L60"]
+    mod_cpu_sig_redirect["signals redirect / redirect_target<br/>@ L62-L63"]
+    mod_cpu_sig_dbus_valid["signals dbus_valid / dbus_write / dbus_addr / dbus_wdata<br/>@ L65-L68"]
+    mod_cpu_assign_L72["assign data_req.*<br/>@ L72-L75"]
+    mod_cpu_assign_L80["assign core_enable<br/>@ L80"]
+    mod_cpu_assign_L85["assign retire<br/>@ L85-L88"]
+    mod_cpu_inst_instruction_fetch["instance u_instruction_fetch<br/>@ L93-L106"]
+    mod_cpu_inst_cpu_core["instance u_cpu_core<br/>@ L111-L143"]
+  end
+
+  subgraph sg_instruction_fetch["rtl/cpu/fetch/instruction_fetch.sv"]
+    direction TB
+    mod_fetch["module instruction_fetch<br/>@ L28-L120"]
+    mod_fetch_port_clk["input clk / rst / run<br/>@ L29-L31"]
+    mod_fetch_port_retire["input retire / redirect / redirect_target<br/>@ L34-L36"]
+    mod_fetch_port_ibus_req["ibus_req / ibus_rsp<br/>@ L39-L40"]
+    mod_fetch_port_pc["outputs pc / instruction / immediate_word / instruction_available<br/>@ L43-L46"]
+    mod_fetch_fsm_L50["FSM typedef enum fetch_state_e / FSM state FETCH_IDLE / FSM state FETCH_INSTR / FSM state FETCH_IMM<br/>@ L50-L54"]
+    mod_fetch_sig_fetch_state["signal fetch_state<br/>@ L56"]
+    mod_fetch_sig_has_imm["signal has_imm<br/>@ L57"]
+    mod_fetch_inst_program_counter["instance u_program_counter<br/>@ L59-L67"]
+    mod_fetch_assign_L71["assign ibus_req.valid<br/>@ L71"]
+    mod_fetch_assign_L72["assign ibus_req.op = BUS_READ<br/>@ L72"]
+    mod_fetch_assign_L73["assign ibus_req.addr<br/>@ L73-L74"]
+    mod_fetch_assign_L76["assign ibus_req.wdata<br/>@ L76"]
+    mod_fetch_assign_L80["assign has_imm<br/>@ L80-L81"]
+    mod_fetch_ff_L83["always_ff fetch FSM<br/>@ L83-L118"]
+  end
+
+  subgraph sg_program_counter["rtl/cpu/fetch/program_counter.sv"]
+    direction TB
+    mod_program_counter["module program_counter<br/>@ L8-L34"]
+    mod_program_counter_port_clk["input clk / rst / enable<br/>@ L9-L11"]
+    mod_program_counter_port_redirect["input redirect / target / has_imm<br/>@ L13-L15"]
+    mod_program_counter_port_pc["output pc<br/>@ L17"]
+    mod_program_counter_ff_L20["always_ff pc update<br/>@ L20-L32"]
+  end
+
+  subgraph sg_address_decoder["rtl/bus/address_decoder.sv"]
+    direction TB
+    mod_address_decoder["module address_decoder<br/>@ L11-L22"]
+    mod_address_decoder_port_addr["input addr<br/>@ L12"]
+    mod_address_decoder_port_slave_sel["output slave_sel<br/>@ L13"]
+    mod_address_decoder_comb_L16["always_comb region compare<br/>@ L16-L20"]
+  end
+
+  subgraph sg_bus_interconnect["rtl/bus/bus_interconnect.sv"]
+    direction TB
+    mod_bus_interconnect["module bus_interconnect<br/>@ L18-L53"]
+    mod_bus_interconnect_port_d_req["ports d_req/d_rsp/slave_req/slave_rsp<br/>@ L19-L22"]
+    mod_bus_interconnect_sig_slave_sel["signal slave_sel<br/>@ L25"]
+    mod_bus_interconnect_inst_address_decoder["instance u_address_decoder<br/>@ L27-L30"]
+    mod_bus_interconnect_assign_L34["assigns slave_req.*<br/>@ L34-L37"]
+    mod_bus_interconnect_comb_L39["always_comb response routing<br/>@ L39-L51"]
+  end
+
+  subgraph sg_data_memory["rtl/memory/data_memory.sv"]
+    direction TB
+    mod_data_memory["module data_memory<br/>@ L26-L69"]
+    mod_data_memory_port_clk["input clk<br/>@ L27"]
+    mod_data_memory_port_slave_req["ports slave_req / slave_rsp<br/>@ L29-L30"]
+    mod_data_memory_mem["memory mem [0:DATA_MEMORY_COUNT-1]<br/>@ L33"]
+    mod_data_memory_sig_addr_valid["signal addr_valid<br/>@ L34"]
+    mod_data_memory_sig_rdata["signal rdata<br/>@ L35"]
+    mod_data_memory_initial_L38["initial zero fill<br/>@ L38-L41"]
+    mod_data_memory_assign_L45["assign slave_rsp<br/>@ L45"]
+    mod_data_memory_comb_L48["always_comb alignment/range check<br/>@ L48-L52"]
+    mod_data_memory_comb_L55["always_comb read data<br/>@ L55-L60"]
+    mod_data_memory_ff_L63["always_ff store commit<br/>@ L63-L67"]
+  end
+
+  subgraph sg_instruction_memory["rtl/memory/instruction_memory.sv"]
+    direction TB
+    mod_instruction_memory["module instruction_memory<br/>@ L22-L53"]
+    mod_instruction_memory_port_slave_req["ports slave_req / slave_rsp<br/>@ L23-L24"]
+    mod_instruction_memory_mem["memory mem [0:INSTRUCTION_MEMORY_COUNT-1]<br/>@ L27"]
+    mod_instruction_memory_sig_addr_valid["signal addr_valid<br/>@ L28"]
+    mod_instruction_memory_sig_rdata["signal rdata<br/>@ L29"]
+    mod_instruction_memory_initial_L31["initial zero fill + $readmemh(PROGRAM_FILE)<br/>@ L31-L36"]
+    mod_instruction_memory_assign_L38["assign slave_rsp<br/>@ L38"]
+    mod_instruction_memory_comb_L40["always_comb alignment/range check<br/>@ L40-L44"]
+    mod_instruction_memory_comb_L46["always_comb read data<br/>@ L46-L51"]
+  end
+
+  subgraph sg_cpu_system["rtl/soc/cpu_system.sv"]
+    direction TB
+    mod_cpu_system["module cpu_system<br/>@ L16-L75"]
+    mod_cpu_system_port_clk["input clk / rst / run<br/>@ L17-L19"]
+    mod_cpu_system_port_pc["outputs pc / instruction / retire_valid / illegal_instr / alu_result<br/>@ L21-L25"]
+    mod_cpu_system_sig_instr_req["instr_req / instr_rsp<br/>@ L29-L30"]
+    mod_cpu_system_sig_data_req["data_req / data_rsp<br/>@ L33-L34"]
+    mod_cpu_system_sig_slave_req["slave_req / slave_rsp<br/>@ L37-L38"]
+    mod_cpu_system_inst_cpu["instance u_cpu<br/>@ L40-L55"]
+    mod_cpu_system_inst_instruction_memory["instance u_instruction_memory<br/>@ L57-L60"]
+    mod_cpu_system_inst_bus_interconnect["instance u_bus_interconnect<br/>@ L62-L67"]
+    mod_cpu_system_inst_data_memory["instance u_data_memory<br/>@ L69-L73"]
+  end
+
+  %% ---------------- instantiation hierarchy ----------------
+  mod_cpu_system_inst_cpu --> mod_cpu
+  mod_cpu_system_inst_instruction_memory --> mod_instruction_memory
+  mod_cpu_system_inst_bus_interconnect --> mod_bus_interconnect
+  mod_cpu_system_inst_data_memory --> mod_data_memory
+  mod_cpu_inst_instruction_fetch --> mod_fetch
+  mod_cpu_inst_cpu_core --> mod_cpu_core
+  mod_cpu_core_inst_decoder --> mod_decoder
+  mod_cpu_core_inst_datapath --> mod_datapath
+  mod_cpu_core_inst_branch_unit --> mod_branch_unit
+  mod_datapath_inst_register_file --> mod_register_file
+  mod_datapath_inst_alu --> mod_alu
+  mod_datapath_inst_status_register --> mod_status_register
+  mod_fetch_inst_program_counter --> mod_program_counter
+  mod_bus_interconnect_inst_address_decoder --> mod_address_decoder
+  mod_alu_inst_arithmetic --> mod_arithmetic
+  mod_alu_inst_logic_unit --> mod_logic_unit
+  mod_alu_inst_shifter --> mod_shifter
+  mod_alu_inst_comparator --> mod_comparator
+
+  %% ---------------- package coupling ----------------
+  pkg_opcode_pkg_type_opcode_t -.-> pkg_cpu_pkg_type_instr_fields_t
+  pkg_cpu_pkg_type_word_t -.-> pkg_bus_pkg_struct_bus_req_t
+  pkg_cpu_pkg_type_word_t -.-> pkg_bus_pkg_struct_bus_rsp_t
+  pkg_cpu_pkg_param_WORD_BYTES -.-> pkg_bus_pkg_param_DATA_MEMORY_SIZE
+  pkg_cpu_pkg_param_LAYOUT -.-> pkg_cpu_pkg_func_instr_uses_imm
+  pkg_cpu_pkg_func_uses_imm -.-> pkg_cpu_pkg_func_instr_uses_imm
+  pkg_cpu_pkg_func_encode_branch -.-> pkg_cpu_pkg_func_encode_jump
+  mod_decoder -.-> pkg_opcode_pkg_type_opcode_t
+  mod_instruction_memory_initial_L31 -.-> pkg_cpu_pkg_param_PROGRAM_FILE
+  mod_address_decoder_comb_L16 -.-> pkg_bus_pkg_param_DATA_MEMORY_LIMIT
+
+  %% ---------------- clickable source links ----------------
+  click sg_opcode_pkg "../../rtl/packages/opcode_pkg.sv" "opcode_pkg.sv"
+  click sg_cpu_pkg "../../rtl/packages/cpu_pkg.sv" "cpu_pkg.sv"
+  click sg_bus_pkg "../../rtl/packages/bus_pkg.sv" "bus_pkg.sv"
+  click sg_alu "../../rtl/cpu/alu/alu.sv" "alu.sv"
+  click sg_arithmetic "../../rtl/cpu/alu/arithmetic.sv" "arithmetic.sv"
+  click sg_comparator "../../rtl/cpu/alu/comparator.sv" "comparator.sv"
+  click sg_logic_unit "../../rtl/cpu/alu/logic_unit.sv" "logic_unit.sv"
+  click sg_shifter "../../rtl/cpu/alu/shifter.sv" "shifter.sv"
+  click sg_register_file "../../rtl/cpu/core/register_file.sv" "register_file.sv"
+  click sg_status_register "../../rtl/cpu/core/status_register.sv" "status_register.sv"
+  click sg_branch_unit "../../rtl/cpu/core/branch_unit.sv" "branch_unit.sv"
+  click sg_decoder "../../rtl/cpu/core/decoder.sv" "decoder.sv"
+  click sg_datapath "../../rtl/cpu/core/datapath.sv" "datapath.sv"
+  click sg_cpu_core "../../rtl/cpu/core/cpu_core.sv" "cpu_core.sv"
+  click sg_cpu "../../rtl/cpu/cpu.sv" "cpu.sv"
+  click sg_instruction_fetch "../../rtl/cpu/fetch/instruction_fetch.sv" "instruction_fetch.sv"
+  click sg_program_counter "../../rtl/cpu/fetch/program_counter.sv" "program_counter.sv"
+  click sg_address_decoder "../../rtl/bus/address_decoder.sv" "address_decoder.sv"
+  click sg_bus_interconnect "../../rtl/bus/bus_interconnect.sv" "bus_interconnect.sv"
+  click sg_data_memory "../../rtl/memory/data_memory.sv" "data_memory.sv"
+  click sg_instruction_memory "../../rtl/memory/instruction_memory.sv" "instruction_memory.sv"
+  click sg_cpu_system "../../rtl/soc/cpu_system.sv" "cpu_system.sv"

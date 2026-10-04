@@ -8,10 +8,10 @@ module bus_interconnect_tb;
     import cpu_pkg::*;
     import bus_pkg::*;
 
-    bus_req_t d_req;
-    bus_rsp_t d_rsp;
-    bus_req_t slave_req;
-    bus_rsp_t slave_rsp;
+    bus_req_s d_req;
+    bus_rsp_s d_rsp;
+    bus_req_s slave_req;
+    bus_rsp_s slave_rsp;
 
     integer tests = 0;
     integer errors = 0;

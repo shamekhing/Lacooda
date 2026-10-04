@@ -26,8 +26,8 @@
 module data_memory (
     input  logic                   clk,
 
-    input  bus_pkg::bus_req_t  slave_req,
-    output bus_pkg::bus_rsp_t slave_rsp
+    input  bus_pkg::bus_req_s  slave_req,
+    output bus_pkg::bus_rsp_s  slave_rsp
 );
 
     cpu_pkg::word_t mem [0:cpu_pkg::DATA_MEMORY_COUNT-1];

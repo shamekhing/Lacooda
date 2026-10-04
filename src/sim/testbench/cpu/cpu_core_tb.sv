@@ -31,7 +31,7 @@ module cpu_core_tb;
     word_t operand_b;
     word_t result;
 
-    flags_t alu_flags;
+    flags_s alu_flags;
     cpu_pkg::status_t status_flags;
 
     integer tests = 0;
@@ -388,7 +388,7 @@ module cpu_core_tb;
         @(posedge clk);
         #1;
         tests = tests + 1;
-        if (dut.u_datapath.u_register_file.registers[12] !== word_t'(0)) begin
+        if (dut.u_cpu_datapath.u_cpu_register.registers[12] !== word_t'(0)) begin
             $display("FAIL: stalled LOAD wrote R12 before bus handshake");
             errors = errors + 1;
         end else begin

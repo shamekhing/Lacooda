@@ -15,7 +15,7 @@
 //
 // cpu_system stays the unit under test in simulation; here it is driven by
 // the board pins and its state is exposed through the LEDs so the optimizer
-// cannot sweep the datapath away.
+// cannot sweep the cpu_datapath away.
 // ============================================================
 
 module fpga_top (

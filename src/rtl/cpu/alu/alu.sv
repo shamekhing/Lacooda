@@ -29,7 +29,7 @@ module alu (
     input  logic carry_in,
 
     output cpu_pkg::word_t result,
-    output cpu_pkg::flags_t flags,
+    output cpu_pkg::flags_s flags,
     output logic valid,
     output logic busy,
     output logic done

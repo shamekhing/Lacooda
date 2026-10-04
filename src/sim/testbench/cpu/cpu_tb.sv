@@ -23,11 +23,11 @@ module cpu_tb;
     logic run = 1'b0;
 
     // Typed CPU bus interfaces.
-    bus_pkg::bus_req_t i_req;
-    bus_pkg::bus_rsp_t i_rsp;
+    bus_pkg::bus_req_s i_req;
+    bus_pkg::bus_rsp_s i_rsp;
     logic ibus_allow;
-    bus_pkg::bus_req_t d_req;
-    bus_pkg::bus_rsp_t d_rsp;
+    bus_pkg::bus_req_s d_req;
+    bus_pkg::bus_rsp_s d_rsp;
 
     word_t pc;
     instruction_t instruction;
@@ -179,7 +179,7 @@ module cpu_tb;
         #1;
         check(pc === word_t'(2 * WORD_BYTES),
               "PC advances past instruction and immediate");
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[1] === word_t'(100),
+        check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[1] === word_t'(100),
               "MOVI R1 retires after I-BUS fetch");
         check(!i_req.valid,
               "paused CPU does not start another fetch");
@@ -253,7 +253,7 @@ module cpu_tb;
 
         @(posedge clk);
         #1;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === word_t'(0),
+        check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[3] === word_t'(0),
               "stalled LOAD does not write R3 early");
 
         @(negedge clk);
@@ -265,7 +265,7 @@ module cpu_tb;
         #1;
         d_rsp.ready = 1'b0;
         d_rsp.rdata = '0;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[3] === word_t'(100),
+        check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[3] === word_t'(100),
               "LOAD writes D-BUS data to R3");
 
         // BEQ must observe R3=100 and redirect to instruction 6 (word 12).
@@ -290,7 +290,7 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(dut.u_cpu_core.u_datapath.u_register_file.registers[4] === word_t'(222),
+        check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222),
               "CPU resumes normally after independent I/D bus stalls");
 
         $display("========================================");

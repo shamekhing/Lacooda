@@ -1,14 +1,14 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA data-bus addr decoder
+// LACOODA data-bus addr cpu_decoder
 //
 // Pure combinational addr classification. At the current system stage
 // there is one mapped data-bus slave: local data memory. More regions can
 // be added later without changing the CPU master interface.
 // ============================================================
 
-module address_decoder (
+module address_cpu_decoder (
     input  cpu_pkg::word_t addr,
     output logic slave_sel
 );

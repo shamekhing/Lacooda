@@ -9,7 +9,7 @@
 // Every word is the global word (cpu_pkg::WORD_WIDTH).
 // ============================================================
 
-module register_file (
+module cpu_register (
     input  logic             clk,
     input  logic             rst,
     input  cpu_pkg::reg_addr_t rs1_addr,

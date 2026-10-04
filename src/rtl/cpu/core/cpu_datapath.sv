@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 // ============================================================
-// Datapath — Stage 7
+// cpu_datapath — Stage 7
 //
 // Wires the register file, operand-B multiplexer, ALU, LOAD
 // writeback multiplexer and status register together. Every word
@@ -22,7 +22,7 @@
 // needs the imm_operand as operand B.
 // ============================================================
 
-module datapath (
+module cpu_datapath (
     input logic clk,
     input logic rst,
 
@@ -48,7 +48,7 @@ module datapath (
     input cpu_pkg::word_t dmem_rdata,
     input logic writeback_from_mem,
 
-    // Datapath outputs
+    // cpu_datapath outputs
     output cpu_pkg::word_t operand_a,
     output cpu_pkg::word_t operand_b,
     output cpu_pkg::word_t store_data,
@@ -58,7 +58,7 @@ module datapath (
     output logic alu_done,
 
     // Flags
-    output cpu_pkg::flags_t flags,
+    output cpu_pkg::flags_s flags,
     output cpu_pkg::status_t status
 );
     cpu_pkg::word_t rs2_data;
@@ -84,7 +84,7 @@ module datapath (
     // REGISTER FILE
     // =========================================================
 
-    register_file u_register_file (
+    cpu_register u_cpu_register (
         .clk(clk),
         .rst(rst),
 

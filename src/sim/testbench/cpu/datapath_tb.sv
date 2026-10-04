@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-module datapath_tb;
+module cpu_datapath_tb;
 
     import cpu_pkg::*;
     import opcode_pkg::*;
@@ -38,17 +38,17 @@ module datapath_tb;
     logic alu_busy;
     logic alu_done;
 
-    cpu_pkg::flags_t alu_flags;
+    cpu_pkg::flags_s alu_flags;
     cpu_pkg::status_t status_flags;
 
     integer tests = 0;
     integer errors = 0;
 
     // =========================================================
-    // DATAPATH INSTANCE
+    // cpu_datapath INSTANCE
     // =========================================================
 
-    datapath dut (
+    cpu_datapath dut (
         .clk(clk),
         .rst(rst),
 
@@ -235,8 +235,8 @@ module datapath_tb;
 
     initial begin
 
-        $dumpfile("datapath.vcd");
-        $dumpvars(0, datapath_tb);
+        $dumpfile("cpu_datapath.vcd");
+        $dumpvars(0, cpu_datapath_tb);
 
         rst = 1;
 
@@ -547,7 +547,7 @@ module datapath_tb;
 
         $display("");
         $display("================================");
-        $display("       DATAPATH TEST SUMMARY");
+        $display("       cpu_datapath TEST SUMMARY");
         $display("================================");
 
         $display("Total tests : %0d", tests);
@@ -557,9 +557,9 @@ module datapath_tb;
         $display("================================");
 
         if (errors != 0)
-            $fatal(1, "DATAPATH TEST FAILED");
+            $fatal(1, "cpu_datapath TEST FAILED");
 
-        $display("ALL DATAPATH TESTS PASSED");
+        $display("ALL cpu_datapath TESTS PASSED");
 
         $finish;
 

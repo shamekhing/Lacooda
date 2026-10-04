@@ -16,15 +16,15 @@
 // ============================================================
 
 module bus_interconnect (
-    input  bus_pkg::bus_req_t  d_req,
-    output bus_pkg::bus_rsp_t d_rsp,
-    output bus_pkg::bus_req_t  slave_req,
-    input  bus_pkg::bus_rsp_t slave_rsp
+    input  bus_pkg::bus_req_s  d_req,
+    output bus_pkg::bus_rsp_s  d_rsp,
+    output bus_pkg::bus_req_s  slave_req,
+    input  bus_pkg::bus_rsp_s  slave_rsp
 );
 
     logic slave_sel;
 
-    address_decoder u_address_decoder (
+    address_cpu_decoder u_address_cpu_decoder (
         .addr      (d_req.addr),
         .slave_sel (slave_sel)
     );

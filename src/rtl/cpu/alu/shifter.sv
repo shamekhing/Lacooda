@@ -77,7 +77,7 @@ module shifter (
                        : (cpu_pkg::WORD_WIDTH - 1);
 
     // ------------------------------------------------------------
-    // Per-cycle serial datapath
+    // Per-cycle serial cpu_datapath
     // ------------------------------------------------------------
     logic [COUNTER_WIDTH-1:0] sh_amt;
     logic                     shift_hold, shift_fill, emitting, r_msb_first;

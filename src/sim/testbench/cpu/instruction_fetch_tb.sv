@@ -21,8 +21,8 @@ module instruction_fetch_tb;
     logic redirect = 1'b0;
     word_t redirect_target = '0;
 
-    bus_pkg::bus_req_t ibus_req;
-    bus_pkg::bus_rsp_t ibus_rsp;
+    bus_pkg::bus_req_s ibus_req;
+    bus_pkg::bus_rsp_s ibus_rsp;
 
     word_t pc;
     instruction_t instruction;

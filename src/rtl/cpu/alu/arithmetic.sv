@@ -138,7 +138,7 @@ module arithmetic (
     end
 
     // ------------------------------------------------------------
-    // Per-cycle 1-bit datapath
+    // Per-cycle 1-bit cpu_datapath
     // ------------------------------------------------------------
     logic a_bit, b_bit, x_bit, y_bit, sum_bit, cout_bit, add_out;
 

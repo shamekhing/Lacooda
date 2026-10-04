@@ -60,14 +60,14 @@ run_test "ALU TEST" alu_tb alu_sim alu.vcd \
     src/rtl/cpu/core/status_register.sv \
     src/sim/testbench/cpu/alu_tb.sv
 
-run_test "REGISTER FILE TEST" register_file_tb register_file_sim register_file.vcd \
+run_test "REGISTER FILE TEST" cpu_register_tb cpu_register_sim cpu_register.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/cpu/core/register_file.sv \
-    src/sim/testbench/cpu/register_file_tb.sv
+    src/rtl/cpu/core/cpu_register.sv \
+    src/sim/testbench/cpu/cpu_register_tb.sv
 
-run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
+run_test "cpu_datapath TEST" cpu_datapath_tb cpu_datapath_sim cpu_datapath.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
@@ -76,17 +76,17 @@ run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
     src/rtl/cpu/alu/shifter.sv \
     src/rtl/cpu/alu/comparator.sv \
     src/rtl/cpu/alu/alu.sv \
-    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/cpu_register.sv \
     src/rtl/cpu/core/status_register.sv \
-    src/rtl/cpu/core/datapath.sv \
-    src/sim/testbench/cpu/datapath_tb.sv
+    src/rtl/cpu/core/cpu_datapath.sv \
+    src/sim/testbench/cpu/cpu_datapath_tb.sv
 
-run_test "DECODER TEST" decoder_tb decoder_sim decoder_tb.vcd \
+run_test "cpu_decoder TEST" cpu_decoder_tb cpu_decoder_sim cpu_decoder_tb.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/cpu/core/decoder.sv \
-    src/sim/testbench/cpu/decoder_tb.sv
+    src/rtl/cpu/core/cpu_decoder.sv \
+    src/sim/testbench/cpu/cpu_decoder_tb.sv
 
 run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
     src/rtl/packages/opcode_pkg.sv \
@@ -97,10 +97,10 @@ run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
     src/rtl/cpu/alu/shifter.sv \
     src/rtl/cpu/alu/comparator.sv \
     src/rtl/cpu/alu/alu.sv \
-    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/cpu_register.sv \
     src/rtl/cpu/core/status_register.sv \
-    src/rtl/cpu/core/datapath.sv \
-    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/cpu_datapath.sv \
+    src/rtl/cpu/core/cpu_decoder.sv \
     src/rtl/cpu/core/branch_unit.sv \
     src/rtl/cpu/core/cpu_core.sv \
     src/sim/testbench/cpu/cpu_core_tb.sv
@@ -138,7 +138,7 @@ run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_in
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/bus/address_decoder.sv \
+    src/rtl/bus/address_cpu_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/sim/testbench/bus/bus_interconnect_tb.sv
 
@@ -151,10 +151,10 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     src/rtl/cpu/alu/shifter.sv \
     src/rtl/cpu/alu/comparator.sv \
     src/rtl/cpu/alu/alu.sv \
-    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/cpu_register.sv \
     src/rtl/cpu/core/status_register.sv \
-    src/rtl/cpu/core/datapath.sv \
-    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/cpu_datapath.sv \
+    src/rtl/cpu/core/cpu_decoder.sv \
     src/rtl/cpu/core/branch_unit.sv \
     src/rtl/cpu/core/cpu_core.sv \
     src/rtl/cpu/fetch/program_counter.sv \
@@ -171,16 +171,16 @@ run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     src/rtl/cpu/alu/shifter.sv \
     src/rtl/cpu/alu/comparator.sv \
     src/rtl/cpu/alu/alu.sv \
-    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/cpu_register.sv \
     src/rtl/cpu/core/status_register.sv \
-    src/rtl/cpu/core/datapath.sv \
-    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/cpu_datapath.sv \
+    src/rtl/cpu/core/cpu_decoder.sv \
     src/rtl/cpu/core/branch_unit.sv \
     src/rtl/cpu/core/cpu_core.sv \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/rtl/cpu/cpu.sv \
-    src/rtl/bus/address_decoder.sv \
+    src/rtl/bus/address_cpu_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/rtl/memory/instruction_memory.sv \
     src/rtl/memory/data_memory.sv \
@@ -199,9 +199,9 @@ unset GTK_PATH GIO_MODULE_DIR LD_LIBRARY_PATH LD_PRELOAD
 
 gtkwave \
     src/sim/waveforms/alu.vcd \
-    src/sim/waveforms/register_file.vcd \
-    src/sim/waveforms/datapath.vcd \
-    src/sim/waveforms/decoder_tb.vcd \
+    src/sim/waveforms/cpu_register.vcd \
+    src/sim/waveforms/cpu_datapath.vcd \
+    src/sim/waveforms/cpu_decoder_tb.vcd \
     src/sim/waveforms/cpu_core.vcd \
     src/sim/waveforms/program_counter.vcd \
     src/sim/waveforms/branch_unit.vcd \

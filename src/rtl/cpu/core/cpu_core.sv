@@ -25,7 +25,7 @@ module cpu_core (
     input  cpu_pkg::instruction_t instruction_word,
     input  cpu_pkg::word_t immediate_word,
 
-    // Kept external to preserve the existing datapath interface.
+    // Kept external to preserve the existing cpu_datapath interface.
     input  logic carry_in,
 
     // --------------------------------------------------------
@@ -60,7 +60,7 @@ module cpu_core (
     output cpu_pkg::word_t operand_b,
     output cpu_pkg::word_t alu_result,
 
-    output cpu_pkg::flags_t flags,
+    output cpu_pkg::flags_s flags,
     output cpu_pkg::status_t status
 );
 
@@ -107,9 +107,9 @@ module cpu_core (
     logic mem_accept;
 
     // --------------------------------------------------------
-    // INSTRUCTION DECODER
+    // INSTRUCTION cpu_decoder
     // --------------------------------------------------------
-    decoder u_decoder (
+    cpu_decoder u_cpu_decoder (
         .instruction(instruction_word),
         .immediate_word(immediate_word),
 
@@ -135,7 +135,7 @@ module cpu_core (
         .illegal_instr(illegal_instr)
     );
 
-    // A decoded LOAD or STORE is a memory instruction_word. The decoder makes
+    // A decoded LOAD or STORE is a memory instruction_word. The cpu_decoder makes
     // these controls mutually exclusive for all legal instructions.
     assign memory_op =
         memory_read_enable || memory_write_enable;
@@ -216,9 +216,9 @@ module cpu_core (
         flags_write_enable && retire_valid;
 
     // --------------------------------------------------------
-    // DATAPATH
+    // cpu_datapath
     // --------------------------------------------------------
-    datapath u_datapath (
+    cpu_datapath u_cpu_datapath (
         .clk(clk),
         .rst(rst),
 

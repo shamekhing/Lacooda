@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-module register_file_tb;
+module cpu_register_tb;
     import cpu_pkg::*;
 
     logic clk = 0;
@@ -12,7 +12,7 @@ module register_file_tb;
     integer tests = 0;
     integer errors = 0;
 
-    register_file dut (
+    cpu_register dut (
         .clk(clk), .rst(rst),
         .rs1_addr(read_addr_a), .rs1_data(read_data_a),
         .rs2_addr(read_addr_b), .rs2_data(read_data_b),
@@ -46,8 +46,8 @@ module register_file_tb;
     endtask
 
     initial begin
-        $dumpfile("register_file.vcd");
-        $dumpvars(0, register_file_tb);
+        $dumpfile("cpu_register.vcd");
+        $dumpvars(0, cpu_register_tb);
         // Assert reset after time zero so its edge is unambiguous.
         #1 rst = 1;
         read_addr_a = reg_addr_t'(1);

@@ -5,9 +5,6 @@
     <Version>5</Version>
     <Device name="GW2A-18C" pn="GW2A-LV18PG256C8/I7">gw2a18c-011</Device>
     <FileList>
-        <File path="src/rtl/packages/opcode_pkg.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/packages/cpu_pkg.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/packages/bus_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/bus/address_decoder.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/bus/bus_interconnect.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/alu/alu.sv" type="file.verilog" enable="1"/>
@@ -17,15 +14,18 @@
         <File path="src/rtl/cpu/alu/shifter.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/core/branch_unit.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/core/cpu_core.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/cpu/core/datapath.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/cpu/core/decoder.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/cpu/core/register_file.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/cpu/core/cpu_datapath.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/cpu/core/cpu_decoder.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/cpu/core/cpu_register.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/core/status_register.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/cpu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/instruction_fetch.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/program_counter.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/data_memory.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/instruction_memory.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/packages/bus_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/packages/cpu_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/packages/opcode_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/soc/cpu_system.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/soc/fpga_top.sv" type="file.verilog" enable="1"/>
         <File path="src/constraints/sipeed_tang_primer_20k.cst" type="file.cst" enable="1"/>

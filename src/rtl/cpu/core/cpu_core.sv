@@ -82,16 +82,29 @@ module cpu_core (
     cpu_pkg::word_t branch_target;
 
     // Stage 7 decoded memory controls. These describe the instruction_word;
-    // dbus_valid below additionally gates them with execution/reset state.
+    // dbus_valid below additionally gates them with execution state.
     logic memory_read_enable;
     logic memory_write_enable;
     logic memory_op;
-    logic memory_complete;
 
     cpu_pkg::word_t store_data;
 
     logic effective_register_write;
     logic effective_flags_write;
+
+    // Multi-cycle execution state.
+    typedef enum logic [1:0] {
+        EX_IDLE,
+        EX_ALU,
+        EX_MEM
+    } ex_state_e;
+
+    ex_state_e ex_state;
+
+    logic alu_start;
+    logic alu_busy;
+    logic alu_done;
+    logic mem_accept;
 
     // --------------------------------------------------------
     // INSTRUCTION DECODER
@@ -127,21 +140,62 @@ module cpu_core (
     assign memory_op =
         memory_read_enable || memory_write_enable;
 
-    // Non-memory instructions complete without an external handshake.
-    // Memory instructions complete only when the bus slave accepts them.
-    assign memory_complete = !memory_op || dbus_ready;
+    // --------------------------------------------------------
+    // EXECUTION FSM
+    //
+    // Every decoded instruction runs the multi-cycle ALU. A LOAD/STORE
+    // uses it to form the effective address; a branch uses the result
+    // only as an observable value (the branch decision itself is made by
+    // the combinational branch unit). Memory operations then wait for the
+    // bus before retiring.
+    // --------------------------------------------------------
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            ex_state  <= EX_IDLE;
+            alu_start <= 1'b0;
+        end else begin
+            alu_start <= 1'b0;
+
+            case (ex_state)
+
+                EX_IDLE: begin
+                    if (core_enable && decode_valid && !rst) begin
+                        alu_start <= 1'b1;
+                        ex_state  <= EX_ALU;
+                    end
+                end
+
+                EX_ALU: begin
+                    if (alu_done)
+                        ex_state <= memory_op ? EX_MEM : EX_IDLE;
+                end
+
+                EX_MEM: begin
+                    if (mem_accept || !core_enable)
+                        ex_state <= EX_IDLE;
+                end
+
+                default: ex_state <= EX_IDLE;
+
+            endcase
+        end
+    end
 
     // --------------------------------------------------------
     // DATA BUS MASTER
     // --------------------------------------------------------
     // core_enable remains asserted while the wrapper stalls the PC,
     // therefore dbus_valid and all request payload signals remain asserted
-    // and stable until dbus_ready completes the transaction.
+    // and stable until dbus_ready completes the transaction. The request
+    // only starts once the ALU has produced the effective address.
     assign dbus_valid =
+        (ex_state == EX_MEM) &&
         core_enable &&
         decode_valid &&
         memory_op &&
         !rst;
+
+    assign mem_accept = dbus_valid && dbus_ready;
 
     assign dbus_write = memory_write_enable;
 
@@ -152,19 +206,14 @@ module cpu_core (
     // --------------------------------------------------------
     // ARCHITECTURAL WRITE ENABLES
     // --------------------------------------------------------
-    // A LOAD must not write its destination register while the external
-    // memory transaction is still waiting. Normal instructions preserve
-    // the original one-cycle write behavior.
+    // retire_valid marks the single cycle on which the instruction
+    // completes, so it also gates the register/flags writes. A LOAD only
+    // completes on the bus handshake, a normal instruction on alu_done.
     assign effective_register_write =
-        core_enable &&
-        decode_valid &&
-        register_write_enable &&
-        memory_complete;
+        register_write_enable && retire_valid;
 
     assign effective_flags_write =
-        core_enable &&
-        decode_valid &&
-        flags_write_enable;
+        flags_write_enable && retire_valid;
 
     // --------------------------------------------------------
     // DATAPATH
@@ -179,6 +228,7 @@ module cpu_core (
 
         .alu_op(alu_op),
         .carry_in(carry_in),
+        .alu_start(alu_start),
 
         .imm_operand(imm_operand),
         .imm_sel(imm_sel),
@@ -194,6 +244,8 @@ module cpu_core (
         .store_data(store_data),
         .alu_result(alu_result),
         .alu_valid(alu_valid),
+        .alu_busy(alu_busy),
+        .alu_done(alu_done),
 
         .flags(flags),
         .status(status)
@@ -218,11 +270,14 @@ module cpu_core (
     );
 
     // retire_valid now means that the current instruction_word has actually
-    // completed. A waiting LOAD/STORE is validly decoded but not complete.
+    // completed. Every instruction completes when the multi-cycle ALU
+    // pulses done; a LOAD/STORE additionally waits until the bus slave
+    // accepts the request.
     assign retire_valid =
         core_enable &&
         decode_valid &&
         !rst &&
-        (branch_enable || (alu_valid && memory_complete));
+        ( (!memory_op && alu_done) ||
+          mem_accept );
 
 endmodule

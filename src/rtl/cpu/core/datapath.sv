@@ -34,6 +34,7 @@ module datapath (
     // ALU control
     input opcode_pkg::opcode_t alu_op,
     input logic carry_in,
+    input logic alu_start,
 
     // Immediate operand (the word that followed the instruction)
     input cpu_pkg::word_t imm_operand,
@@ -53,6 +54,8 @@ module datapath (
     output cpu_pkg::word_t store_data,
     output cpu_pkg::word_t alu_result,
     output logic alu_valid,
+    output logic alu_busy,
+    output logic alu_done,
 
     // Flags
     output cpu_pkg::flags_t flags,
@@ -67,7 +70,10 @@ module datapath (
     // =========================================================
     // WRITE ENABLE CONTROL
     // =========================================================
-
+    // The core asserts these for exactly the cycle on which an
+    // instruction completes, so the multi-cycle ALU cannot disturb
+    // the register file until its result is final. An unrecognised
+    // encoding (alu_valid low) can never write.
     assign register_wen =
         register_write_enable && alu_valid && !rst;
 
@@ -108,6 +114,11 @@ module datapath (
     // =========================================================
 
     alu u_alu (
+        .clk(clk),
+        .rst(rst),
+
+        .start(alu_start),
+
         .operand_a(operand_a),
         .operand_b(operand_b),
 
@@ -116,7 +127,9 @@ module datapath (
 
         .result(alu_result),
         .flags(flags),
-        .valid(alu_valid)
+        .valid(alu_valid),
+        .busy(alu_busy),
+        .done(alu_done)
     );
 
     // =========================================================

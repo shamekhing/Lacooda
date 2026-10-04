@@ -3503,3 +3503,570 @@ Those are hardware-design questions.
 Once you start asking those automatically, SystemVerilog stops being
 strange C-like syntax and starts becoming what it actually is: a
 language for describing machines.
+
+------------------------------------------------------------------------
+
+# Appendix E --- Rebuilding the ALU as a Bit-Serial Machine
+
+Part XVI ended with a list of questions the physical design asks once the
+functional design is done:
+
+``` text
+resource use?
+critical path?
+maximum clock?
+DSP inference?
+multicycle alternative?
+pipeline?
+```
+
+The ALU was already correct. Then I read the synthesis report, and the ALU
+stopped being "the part that works" and became "the part that is the
+circuit".
+
+------------------------------------------------------------------------
+
+## E.1 The Number That Started It
+
+GowinSynthesis printed a hierarchy resource table.
+
+One block dominated it:
+
+``` text
+Whole design             9412 LUT
++-- u_alu                7844 LUT     <- 83% of the design
+|   +-- u_arithmetic     7542 LUT
+|   +-- u_logic_unit        0 LUT
++-- u_register_file       259 LUT
++-- u_data_memory         256 LUT
++-- u_program_counter     107 LUT
+DSP blocks used             0
+```
+
+I had built a register file, a bus, an interconnect, two memories, a
+fetch unit and a branch unit.
+
+The ALU alone was bigger than all of them together.
+
+This is where "it passes the tests" stops being the same sentence as
+"it is finished".
+
+------------------------------------------------------------------------
+
+## E.2 "Why Is the ALU So Big?"
+
+Because every bit of every operation existed at the same time.
+
+``` text
+32-bit add     = 32 adders + carry chain, always present
+32x32 multiply = wall of partial products, always present
+divide         = every shift-and-subtract step, always present
+```
+
+None of that is computed lazily. It is combinational hardware. It is
+there every clock, whether the instruction is ADD, AND, or nothing at
+all.
+
+And the report said `DSP = 0`, so even the multiplier was built from LUT
+fabric instead of the board's hardware multiplier blocks.
+
+The LUT count was not overhead around the arithmetic.
+
+The LUT count *was* the arithmetic.
+
+------------------------------------------------------------------------
+
+## E.3 The Question That Changed the ALU
+
+The question was not "how do I make a faster adder".
+
+It was:
+
+> Why do all 32 bits have to be computed in the same instant?
+
+A 32-bit word is an architectural decision.
+
+It says the result must be 32 bits wide.
+
+It does not say that 32 adders must exist at once.
+
+It says 32 bits must be *resolved* before a register captures the result.
+
+How long that resolution takes is up to me.
+
+------------------------------------------------------------------------
+
+## E.4 One Bit per Clock
+
+So the new ALU computes one bit per clock edge and finishes in 32 clocks.
+
+``` text
+        cycle 0    cycle 1    ...    cycle 31    cycle 32
+          bit 0      bit 1               bit 31      DONE
+```
+
+Everything it needs is tiny:
+
+``` text
+one 1-bit full adder
+one carry flip-flop
+two operand shift registers
+one result shift register
+one cycle counter
+one small sequencer
+```
+
+No parallel multiplier. No parallel divider. One bit of arithmetic and a
+clock.
+
+This is how processors were built when a gate was expensive. The trade
+has one shape:
+
+``` text
+area        down
+throughput  down
+latency     up
+```
+
+You buy area with time. That is the entire idea.
+
+
+------------------------------------------------------------------------
+
+## E.5 The ALU Did Not Change Shape
+
+The ALU still has the same four functional units from Stage 1, plus the
+top level.
+
+``` text
+alu/
+├── alu.sv          top: decode, launch, result mux, flags
+├── arithmetic.sv   ADD ADC SUB SBC NEG ABS MUL MULH DIVU MODU DIVS MODS
+├── logic_unit.sv   AND OR XOR NOT NAND NOR XNOR PASS_A PASS_B
+├── shifter.sv      SHL SHR SAR ROL ROR
+└── comparator.sv   EQ NE LT LE GT GE (u/s) and MINU MAXU MINS MAXS
+```
+
+What changed is that every unit is now sequential instead of
+combinational. Each one obeys the same contract:
+
+``` text
+clk, rst, start, operand_a, operand_b, op [, carry_in]
+    -> result [, carry overflow div_zero], busy, done
+```
+
+The top level does the same job it always did:
+
+``` text
+decode op
+    |
+select which unit is active
+    |
+mux the result
+    |
+produce flags
+```
+
+The difference is that "active" now means "started", not "always
+evaluating".
+
+------------------------------------------------------------------------
+
+## E.6 The One Adder Everything Shares
+
+Here is the whole arithmetic core of the ALU.
+
+It is one full adder.
+
+``` systemverilog
+sum  = a ^ b ^ carry;
+next = (a & b) | (carry & (a ^ b));
+```
+
+That is it.
+
+ADD, ADC, SUB, SBC, NEG and ABS are all this adder with different inputs
+and a different starting carry.
+
+``` text
+op     A input   B input   start carry
+ADD    a         b         0
+ADC    a         b         carry_in
+SUB    a         ~b        1
+SBC    a         ~b        carry_in
+NEG    0         ~a        1
+ABS    0         ~a        1   (only when the sign bit is set)
+```
+
+Feed the bits through one at a time, carry the carry along, and the
+32-bit answer falls out after 32 clocks.
+
+There is no second subtractor. Subtraction never got its own hardware.
+
+------------------------------------------------------------------------
+
+## E.7 Subtraction Is Addition Wearing a Mask
+
+`A - B` is `A + ~B + 1`.
+
+In a two's-complement machine that is not a trick to memorize. It is the
+definition of subtraction, and it is why the ALU only needs one adder.
+
+``` text
+A - B = A + (~B) + 1
+```
+
+SBC adds one more subtlety: it subtracts a borrow only when there was no
+carry in.
+
+``` text
+SBC:  A + ~B + carry_in
+```
+
+The flag that falls out is the same carry out of the same adder. For ADD
+it means carry. For SUB it means "no borrow". One wire, two meanings,
+decided by which unit was launched.
+
+------------------------------------------------------------------------
+
+## E.8 Negation and Absolute Value for Free
+
+Two more operations wanted subtractors of their own and did not get one.
+
+``` text
+NEG(A) = 0 - A           = ~A + 1
+ABS(A) = sign(A) ? ~A + 1 : A
+```
+
+NEG is SUB with the first operand forced to zero.
+
+ABS is just a choice: if the sign bit is set, take the NEG path; if it is
+clear, pass A straight through.
+
+The signed overflow flags still come out correctly because the unit
+remembers the original sign bits and compares them with the sign bit of
+the final result.
+
+------------------------------------------------------------------------
+
+## E.9 Multiplication Without a Multiplier
+
+There is no 32x32 multiplier in the fabric.
+
+There is a loop that runs 32 times.
+
+``` text
+for 32 iterations:
+    if (multiplier bit 0): accumulate += multiplicand
+    multiplicand <<= 1
+    multiplier  >>= 1
+```
+
+The accumulate is a narrow adder. The multiplicand and accumulator are
+shift registers. MUL takes the low word of the result, MULH the high
+word.
+
+The wall of partial products became one adder used 32 times.
+
+
+------------------------------------------------------------------------
+
+## E.10 Division Without a Divider
+
+Division became the classic schoolbook restoring loop.
+
+``` text
+remainder = 0
+for 32 iterations:
+    remainder = (remainder << 1) | next dividend bit
+    if (remainder >= divisor):
+        remainder -= divisor
+        quotient  = (quotient << 1) | 1
+    else:
+        quotient  = (quotient << 1) | 0
+```
+
+Quotient and remainder come out together, which is why DIV and MOD share
+one circuit instead of building two.
+
+Signed division divides the magnitudes and then fixes the signs.
+
+``` text
+DIVS: signs differ   -> negate the quotient
+MODS: dividend < 0   -> negate the remainder
+```
+
+And the two cases that break naive signed division are handled up front.
+
+``` text
+divide by zero   -> result 0, DZ flag set
+MIN / -1         -> result MIN, overflow flag set
+```
+
+Those are the same special cases the original combinational ALU already
+had. The rewrite did not lose them.
+
+------------------------------------------------------------------------
+
+## E.11 Shifts: Hold, Then Stream
+
+A shift by N cannot be done one bit per clock the naive way, because the
+serialiser does not know where to start.
+
+The trick is to treat the shift as a delay.
+
+``` text
+SHL by N:   emit 0 for N cycles, then stream the operand
+SHR by N:   emit 0 for N cycles, then stream the operand (MSB first)
+SAR by N:   emit the sign for N cycles, then stream the operand
+```
+
+While the unit is emitting the fill bit, it holds the operand register
+still. When the fill is done, it starts shifting.
+
+Rotations are different, because nothing is lost and nothing is filled.
+The unit pre-rotates a circular register into position and then emits.
+
+``` text
+ROL by N:   pre-rotate by (W - N), then emit W bits
+ROR by N:   pre-rotate by N,       then emit W bits
+```
+
+That is why rotations take `W + offset` cycles instead of exactly `W`.
+
+------------------------------------------------------------------------
+
+## E.12 Comparisons: the First Differing Bit Wins
+
+There is no wide comparator.
+
+There is a state machine that walks from the most significant bit down.
+
+``` text
+equal_so_far = 1
+gt = 0
+lt = 0
+
+for each bit (MSB first):
+    if still equal:
+        if (a_bit, b_bit) == (1, 0): gt = 1, equal_so_far = 0
+        if (a_bit, b_bit) == (0, 1): lt = 1, equal_so_far = 0
+```
+
+Two flip-flops and one bit of look-ahead decide a 32-bit comparison.
+
+Signed comparisons do not need new hardware. They flip the sign bit of
+both operands and then compare as unsigned.
+
+``` text
+A <signed B   ==   (A ^ MSB) <unsigned (B ^ MSB)
+```
+
+One XOR on the way in.
+
+------------------------------------------------------------------------
+
+## E.13 MIN and MAX Are Not a New Circuit
+
+MIN and MAX look like they need a comparison plus a mux.
+
+They do. But the comparison already exists in the comparator unit.
+
+``` text
+MINU = (lt)   ? A : B
+MAXU = (gt)   ? A : B
+MINS = (lt_s) ? A : B
+MAXS = (gt_s) ? A : B
+```
+
+So MIN and MAX live in the comparator, next to the decision that chooses
+them. Arithmetic does not grow a second comparator just to pick the
+smaller operand.
+
+That is the "common resource" habit from the register file and the bus,
+applied inside the ALU.
+
+------------------------------------------------------------------------
+
+## E.14 Flags in a Serial World
+
+The flags did not disappear. They just became small accumulators.
+
+``` text
+Z  =  every result bit was 0
+N  =  the last bit produced (the sign bit)
+C  =  the carry left in the flip-flop after 32 cycles
+V  =  the sign bits of A, B and the result disagree in the signed way
+DZ =  the divisor was zero
+```
+
+The top level still owns the rule from Stage 1.
+
+``` text
+ALU produces candidate flags
+status register captures them only when the instruction says so
+```
+
+The arithmetic unit reports C, V and DZ upward. The top level adds Z and
+N from whichever result was selected.
+
+------------------------------------------------------------------------
+
+## E.15 The Contract: start, busy, done
+
+Every unit exposes the same three handshake signals.
+
+``` text
+start : begin an operation
+busy  : the unit is still working
+done  : result and flags are valid, for exactly one cycle
+```
+
+At a high level:
+
+``` text
+IDLE --start--> RUN --(32 cycles)--> DONE --one cycle--> IDLE
+```
+
+The top level only starts the unit that matches the opcode. The other
+three sit idle.
+
+``` text
+start --->|- arithmetic |-.
+       |->| logic unit |-|---> mux ---> result
+       |->| shifter    |-'
+       |->| comparator |-
+```
+
+
+------------------------------------------------------------------------
+
+## E.16 "But Now the CPU Has to Wait"
+
+A 32-cycle ALU is only correct if the rest of the CPU can wait.
+
+The CPU already had the rule that makes this easy.
+
+> The PC advances only when an instruction retires.
+
+So the core learned a small execution loop.
+
+``` text
+EX_IDLE -> launch the ALU -> EX_ALU
+                               |
+                    memory op?  |
+                    yes         no
+                     |           |
+                   EX_MEM      retire
+                     |
+              wait for bus ready
+                     |
+                   retire
+```
+
+Nothing about fetch, the register file, or the status register had to be
+redesigned. They already respected retirement.
+
+The self-stalling pipeline fell out of the same rule from Part XI.
+
+------------------------------------------------------------------------
+
+## E.17 What Did Not Change
+
+``` text
+packages                 unchanged
+opcode map               unchanged
+instruction encoding      unchanged
+decoder                   unchanged
+branch unit               unchanged (still combinational)
+fetch / PC hold           unchanged
+run.sh test file lists    restored to the four units
+```
+
+The ALU changed inside its own files. The architecture did not move.
+
+------------------------------------------------------------------------
+
+## E.18 The Bug That Taught the Most
+
+As soon as the result became a mux of four sub-units, several tests
+started reading the *previous* answer.
+
+The hardware was fine.
+
+The testbench was reading `result` in the same simulation delta in which
+`wait (done)` unblocked, before the combinational mux had re-evaluated.
+
+``` text
+posedge
+  |
+state <= DONE        (the unit finishes)
+result <= final      (the unit latches its own result)
+  |
+done becomes 1  and  the top-level mux re-evaluates
+  |
+testbench wakes up   <-- and sometimes read the OLD mux output
+```
+
+The fix was one timestep of settle before sampling.
+
+This is the same lesson as the rest of the manual, in new clothes: a
+simulation reads signals at a point in time, and "immediately after an
+event" is a place, not an instant.
+
+------------------------------------------------------------------------
+
+## E.19 What It Costs
+
+``` text
+before   1 cycle per instruction
+after    about 34 cycles per instruction
+```
+
+That is 32 cycles of arithmetic plus a couple of cycles of launch and
+retire.
+
+Throughput dropped. Area dropped much more.
+
+For a learning CPU driving a small system on a small FPGA, that is the
+right side of the trade. If throughput ever matters, the same structure
+pipes cleanly: run four ALUs at four phases of one instruction.
+
+------------------------------------------------------------------------
+
+## E.20 Packages Stay the Source of Truth
+
+The serial units use the existing packages exactly as they are.
+
+``` systemverilog
+cpu_pkg::WORD_WIDTH
+cpu_pkg::word_t
+cpu_pkg::flags_t
+opcode_pkg::opcode_t
+```
+
+The only new constants are the ones that must be derived.
+
+``` systemverilog
+localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
+```
+
+No package was edited. There is still exactly one source of truth for
+"how wide is a word", and it is still in `cpu_pkg`.
+
+------------------------------------------------------------------------
+
+## E.21 Measure First
+
+The ALU was rewritten because a synthesis report printed a number: 7844
+LUT in one block.
+
+The lesson is not "always go bit-serial".
+
+The lesson is:
+
+> Measure first. The circuit you are most proud of may be the circuit you
+> have to change.
+
+Correctness is where the design starts, not where it ends.
+

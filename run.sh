@@ -3,15 +3,18 @@
 # Run from the repository root so source paths and ROM initialization resolve.
 #
 # Word-width selection (see cpu_pkg.sv):
-#   ./run.sh              default global word = 64
+#   ./run.sh              global word = 32 (cpu_pkg default)
 #   ./run.sh --word32     global word = 32  (-DLACOODA_WORD_WIDTH=32)
 #   ./run.sh --both       run the full regression at 32 and at 64
 set -e
 
 WORD_FLAGS=""
+NO_GUI=0
 for arg in "$@"; do
     if [[ "$arg" == "--word32" ]]; then
         WORD_FLAGS="-DLACOODA_WORD_WIDTH=32"
+    elif [[ "$arg" == "--no-gui" ]]; then
+        NO_GUI=1
     fi
 done
 
@@ -21,7 +24,7 @@ if [[ "${1:-}" == "--both" ]]; then
     exit 0
 fi
 
-mkdir -p sim/build sim/waveforms
+mkdir -p src/sim/build src/sim/waveforms
 
 run_test() {
     local label="$1"
@@ -35,175 +38,175 @@ run_test() {
     # shellcheck disable=SC2086
     iverilog -g2012 -Wall $WORD_FLAGS \
         -s "$top" \
-        -o "sim/build/$binary" \
+        -o "src/sim/build/$binary" \
         "$@"
 
-    vvp "sim/build/$binary"
+    vvp "src/sim/build/$binary"
 
     if [[ -f "$vcd" ]]; then
-        mv -f "$vcd" "sim/waveforms/$vcd"
+        mv -f "$vcd" "src/sim/waveforms/$vcd"
     fi
 }
 
 run_test "ALU TEST" alu_tb alu_sim alu.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/alu/arithmetic.sv \
-    rtl/cpu/alu/logic_unit.sv \
-    rtl/cpu/alu/shifter.sv \
-    rtl/cpu/alu/comparator.sv \
-    rtl/cpu/alu/alu.sv \
-    rtl/cpu/core/status_register.sv \
-    sim/testbench/cpu/alu_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/alu/arithmetic.sv \
+    src/rtl/cpu/alu/logic_unit.sv \
+    src/rtl/cpu/alu/shifter.sv \
+    src/rtl/cpu/alu/comparator.sv \
+    src/rtl/cpu/alu/alu.sv \
+    src/rtl/cpu/core/status_register.sv \
+    src/sim/testbench/cpu/alu_tb.sv
 
 run_test "REGISTER FILE TEST" register_file_tb register_file_sim register_file.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/core/register_file.sv \
-    sim/testbench/cpu/register_file_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/core/register_file.sv \
+    src/sim/testbench/cpu/register_file_tb.sv
 
 run_test "DATAPATH TEST" datapath_tb datapath_sim datapath.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/alu/arithmetic.sv \
-    rtl/cpu/alu/logic_unit.sv \
-    rtl/cpu/alu/shifter.sv \
-    rtl/cpu/alu/comparator.sv \
-    rtl/cpu/alu/alu.sv \
-    rtl/cpu/core/register_file.sv \
-    rtl/cpu/core/status_register.sv \
-    rtl/cpu/core/datapath.sv \
-    sim/testbench/cpu/datapath_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/alu/arithmetic.sv \
+    src/rtl/cpu/alu/logic_unit.sv \
+    src/rtl/cpu/alu/shifter.sv \
+    src/rtl/cpu/alu/comparator.sv \
+    src/rtl/cpu/alu/alu.sv \
+    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/status_register.sv \
+    src/rtl/cpu/core/datapath.sv \
+    src/sim/testbench/cpu/datapath_tb.sv
 
 run_test "DECODER TEST" decoder_tb decoder_sim decoder_tb.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/core/decoder.sv \
-    sim/testbench/cpu/decoder_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/core/decoder.sv \
+    src/sim/testbench/cpu/decoder_tb.sv
 
 run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/alu/arithmetic.sv \
-    rtl/cpu/alu/logic_unit.sv \
-    rtl/cpu/alu/shifter.sv \
-    rtl/cpu/alu/comparator.sv \
-    rtl/cpu/alu/alu.sv \
-    rtl/cpu/core/register_file.sv \
-    rtl/cpu/core/status_register.sv \
-    rtl/cpu/core/datapath.sv \
-    rtl/cpu/core/decoder.sv \
-    rtl/cpu/core/branch_unit.sv \
-    rtl/cpu/core/cpu_core.sv \
-    sim/testbench/cpu/cpu_core_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/alu/arithmetic.sv \
+    src/rtl/cpu/alu/logic_unit.sv \
+    src/rtl/cpu/alu/shifter.sv \
+    src/rtl/cpu/alu/comparator.sv \
+    src/rtl/cpu/alu/alu.sv \
+    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/status_register.sv \
+    src/rtl/cpu/core/datapath.sv \
+    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/branch_unit.sv \
+    src/rtl/cpu/core/cpu_core.sv \
+    src/sim/testbench/cpu/cpu_core_tb.sv
 
 run_test "PROGRAM COUNTER TEST" program_counter_tb program_counter_sim program_counter.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/fetch/program_counter.sv \
-    sim/testbench/cpu/program_counter_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/fetch/program_counter.sv \
+    src/sim/testbench/cpu/program_counter_tb.sv
 
 run_test "BRANCH UNIT TEST" branch_unit_tb branch_unit_sim branch_unit.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/core/branch_unit.sv \
-    sim/testbench/cpu/branch_unit_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/core/branch_unit.sv \
+    src/sim/testbench/cpu/branch_unit_tb.sv
 
 run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch_sim instruction_fetch.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/fetch/program_counter.sv \
-    rtl/cpu/fetch/instruction_fetch.sv \
-    sim/testbench/cpu/instruction_fetch_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/fetch/program_counter.sv \
+    src/rtl/cpu/fetch/instruction_fetch.sv \
+    src/sim/testbench/cpu/instruction_fetch_tb.sv
 
 run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/memory/data_memory.sv \
-    sim/testbench/memory/data_memory_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/memory/data_memory.sv \
+    src/sim/testbench/memory/data_memory_tb.sv
 
 run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/bus/address_decoder.sv \
-    rtl/bus/bus_interconnect.sv \
-    sim/testbench/bus/bus_interconnect_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/bus/address_decoder.sv \
+    src/rtl/bus/bus_interconnect.sv \
+    src/sim/testbench/bus/bus_interconnect_tb.sv
 
 run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/alu/arithmetic.sv \
-    rtl/cpu/alu/logic_unit.sv \
-    rtl/cpu/alu/shifter.sv \
-    rtl/cpu/alu/comparator.sv \
-    rtl/cpu/alu/alu.sv \
-    rtl/cpu/core/register_file.sv \
-    rtl/cpu/core/status_register.sv \
-    rtl/cpu/core/datapath.sv \
-    rtl/cpu/core/decoder.sv \
-    rtl/cpu/core/branch_unit.sv \
-    rtl/cpu/core/cpu_core.sv \
-    rtl/cpu/fetch/program_counter.sv \
-    rtl/cpu/fetch/instruction_fetch.sv \
-    rtl/cpu/cpu.sv \
-    sim/testbench/cpu/cpu_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/alu/arithmetic.sv \
+    src/rtl/cpu/alu/logic_unit.sv \
+    src/rtl/cpu/alu/shifter.sv \
+    src/rtl/cpu/alu/comparator.sv \
+    src/rtl/cpu/alu/alu.sv \
+    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/status_register.sv \
+    src/rtl/cpu/core/datapath.sv \
+    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/branch_unit.sv \
+    src/rtl/cpu/core/cpu_core.sv \
+    src/rtl/cpu/fetch/program_counter.sv \
+    src/rtl/cpu/fetch/instruction_fetch.sv \
+    src/rtl/cpu/cpu.sv \
+    src/sim/testbench/cpu/cpu_tb.sv
 
 run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
-    rtl/packages/opcode_pkg.sv \
-    rtl/packages/cpu_pkg.sv \
-    rtl/packages/bus_pkg.sv \
-    rtl/cpu/alu/arithmetic.sv \
-    rtl/cpu/alu/logic_unit.sv \
-    rtl/cpu/alu/shifter.sv \
-    rtl/cpu/alu/comparator.sv \
-    rtl/cpu/alu/alu.sv \
-    rtl/cpu/core/register_file.sv \
-    rtl/cpu/core/status_register.sv \
-    rtl/cpu/core/datapath.sv \
-    rtl/cpu/core/decoder.sv \
-    rtl/cpu/core/branch_unit.sv \
-    rtl/cpu/core/cpu_core.sv \
-    rtl/cpu/fetch/program_counter.sv \
-    rtl/cpu/fetch/instruction_fetch.sv \
-    rtl/cpu/cpu.sv \
-    rtl/bus/address_decoder.sv \
-    rtl/bus/bus_interconnect.sv \
-    rtl/memory/instruction_memory.sv \
-    rtl/memory/data_memory.sv \
-    rtl/soc/cpu_system.sv \
-    sim/testbench/soc/cpu_system_tb.sv
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/cpu/alu/arithmetic.sv \
+    src/rtl/cpu/alu/logic_unit.sv \
+    src/rtl/cpu/alu/shifter.sv \
+    src/rtl/cpu/alu/comparator.sv \
+    src/rtl/cpu/alu/alu.sv \
+    src/rtl/cpu/core/register_file.sv \
+    src/rtl/cpu/core/status_register.sv \
+    src/rtl/cpu/core/datapath.sv \
+    src/rtl/cpu/core/decoder.sv \
+    src/rtl/cpu/core/branch_unit.sv \
+    src/rtl/cpu/core/cpu_core.sv \
+    src/rtl/cpu/fetch/program_counter.sv \
+    src/rtl/cpu/fetch/instruction_fetch.sv \
+    src/rtl/cpu/cpu.sv \
+    src/rtl/bus/address_decoder.sv \
+    src/rtl/bus/bus_interconnect.sv \
+    src/rtl/memory/instruction_memory.sv \
+    src/rtl/memory/data_memory.sv \
+    src/rtl/soc/cpu_system.sv \
+    src/sim/testbench/soc/cpu_system_tb.sv
 
 
 echo "========== ALL TESTS PASSED =========="
 
 # Use --no-gui for regression only.
-if [[ "${1:-}" == "--no-gui" ]]; then
+if [[ "$NO_GUI" == "1" ]]; then
     exit 0
 fi
 
 unset GTK_PATH GIO_MODULE_DIR LD_LIBRARY_PATH LD_PRELOAD
 
 gtkwave \
-    sim/waveforms/alu.vcd \
-    sim/waveforms/register_file.vcd \
-    sim/waveforms/datapath.vcd \
-    sim/waveforms/decoder_tb.vcd \
-    sim/waveforms/cpu_core.vcd \
-    sim/waveforms/program_counter.vcd \
-    sim/waveforms/branch_unit.vcd \
-    sim/waveforms/instruction_fetch.vcd \
-    sim/waveforms/data_memory.vcd \
-    sim/waveforms/bus_interconnect.vcd \
-    sim/waveforms/cpu.vcd \
-    sim/waveforms/cpu_system.vcd
+    src/sim/waveforms/alu.vcd \
+    src/sim/waveforms/register_file.vcd \
+    src/sim/waveforms/datapath.vcd \
+    src/sim/waveforms/decoder_tb.vcd \
+    src/sim/waveforms/cpu_core.vcd \
+    src/sim/waveforms/program_counter.vcd \
+    src/sim/waveforms/branch_unit.vcd \
+    src/sim/waveforms/instruction_fetch.vcd \
+    src/sim/waveforms/data_memory.vcd \
+    src/sim/waveforms/bus_interconnect.vcd \
+    src/sim/waveforms/cpu.vcd \
+    src/sim/waveforms/cpu_system.vcd

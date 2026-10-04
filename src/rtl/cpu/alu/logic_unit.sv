@@ -1,37 +1,103 @@
 `timescale 1ns/1ps
 // ============================================================
-// ALU bitwise-logic sub-unit
+// ALU bitwise-logic sub-unit (bit-serial, multi-cycle)
 //
-// Pure bitwise operations (no flags): AND/OR/XOR/NOT/NAND/NOR/
-// XNOR, plus the two operand pass-throughs used to implement
-// MOV (PASS_A) and MOVI (PASS_B).
+// One bit is processed per clock, LSB-first, so the unit is just a
+// two shift registers, a result register and a 1-bit logic function.
+// Operations: AND/OR/XOR/NOT/NAND/NOR/XNOR plus the PASS_A/PASS_B
+// paths used to implement MOV (PASS_A) and MOVI (PASS_B).
 // ============================================================
 
 module logic_unit (
+    input  logic clk,
+    input  logic rst,
+    input  logic start,
+
     input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
 
-    output cpu_pkg::word_t result
+    output cpu_pkg::word_t result,
+    output logic busy,
+    output logic done
 );
 
+    import cpu_pkg::*;
     import opcode_pkg::*;
 
+    localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
+
+    typedef enum logic [1:0] {
+        S_IDLE,
+        S_RUN,
+        S_DONE
+    } state_e;
+
+    state_e state;
+
+    logic [cpu_pkg::WORD_WIDTH-1:0] a_sr, b_sr, r_sr;
+    logic [COUNTER_WIDTH-1:0]       cnt;
+
+    logic a_bit, b_bit, out_bit;
+
+    assign a_bit = a_sr[0];
+    assign b_bit = b_sr[0];
+
+    assign result = r_sr;
+    assign busy   = (state != S_IDLE);
+    assign done   = (state == S_DONE);
+
     always_comb begin
-        result = '0;
-
         case (op)
-            ALU_AND:    result = operand_a & operand_b;
-            ALU_OR:     result = operand_a | operand_b;
-            ALU_XOR:    result = operand_a ^ operand_b;
-            ALU_NOT:    result = ~operand_a;
-            ALU_NAND:   result = ~(operand_a & operand_b);
-            ALU_NOR:    result = ~(operand_a | operand_b);
-            ALU_XNOR:   result = ~(operand_a ^ operand_b);
-            ALU_PASS_A: result = operand_a;
-            ALU_PASS_B: result = operand_b;
-
-            default: result = '0;
+            ALU_NOT:    out_bit = ~a_bit;
+            ALU_AND:    out_bit = a_bit & b_bit;
+            ALU_OR:     out_bit = a_bit | b_bit;
+            ALU_XOR:    out_bit = a_bit ^ b_bit;
+            ALU_NAND:   out_bit = ~(a_bit & b_bit);
+            ALU_NOR:    out_bit = ~(a_bit | b_bit);
+            ALU_XNOR:   out_bit = ~(a_bit ^ b_bit);
+            ALU_PASS_A: out_bit = a_bit;
+            ALU_PASS_B: out_bit = b_bit;
+            default:    out_bit = 1'b0;
         endcase
+    end
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state <= S_IDLE;
+            cnt   <= '0;
+            a_sr  <= '0;
+            b_sr  <= '0;
+            r_sr  <= '0;
+        end else begin
+            case (state)
+
+                S_IDLE: begin
+                    if (start) begin
+                        a_sr  <= operand_a;
+                        b_sr  <= operand_b;
+                        r_sr  <= '0;
+                        cnt   <= '0;
+                        state <= S_RUN;
+                    end
+                end
+
+                S_RUN: begin
+                    a_sr <= {1'b0, a_sr[cpu_pkg::WORD_WIDTH-1:1]};
+                    b_sr <= {1'b0, b_sr[cpu_pkg::WORD_WIDTH-1:1]};
+                    r_sr <= {out_bit, r_sr[cpu_pkg::WORD_WIDTH-1:1]};
+
+                    if (cnt == cpu_pkg::WORD_WIDTH - 1)
+                        state <= S_DONE;
+                    else
+                        cnt <= cnt + 1'b1;
+                end
+
+                S_DONE: state <= S_IDLE;
+
+                default: state <= S_IDLE;
+
+            endcase
+        end
     end
 
 endmodule

@@ -2,163 +2,162 @@
 // ============================================================
 // ALU top level
 //
-// Combinational ALU. All four functional sub-units evaluate in
-// parallel and the result multiplexer selects the one named by
-// `op`. Status flags are then derived centrally from the selected
-// result plus the arithmetic sub-unit's carry/overflow/div-zero.
+// Decodes the opcode, launches exactly one of the four multi-cycle
+// bit-serial sub-units (arithmetic, logic_unit, shifter, comparator)
+// and selects its result. Status flags are derived centrally from the
+// selected result plus the arithmetic sub-unit's carry/overflow/div
+// zero, exactly as the original combinational ALU did.
 //
 // Ports:
-//   operand_a, operand_b     : cpu_pkg::WORD_WIDTH-bit operands (operand_b is also the shift amount)
-//   op       : opcode_pkg::opcode_t, valid ALU encodings are 0x00..0x27
-//   carry_in : carry/borrow input for ADC / SBC
-//   result   : selected cpu_pkg::WORD_WIDTH-bit result
-//   flags    : cpu_pkg::flags_t (Z/N/C/V/DZ)
-//   valid    : low for an unrecognised opcode, high otherwise
+//   start : asserted for one cycle by the core to launch an op
+//   busy  : high while the selected sub-unit is running
+//   done  : one-cycle pulse when result/flags are valid
+//   valid : op is a recognised ALU encoding (combinational)
 //
-// An unrecognised opcode forces result = 0 and flags = 0 so that
-// downstream write enables (gated by `valid`) stay inactive.
+// An unrecognised opcode completes immediately with result = 0 and
+// flags = 0 so the enclosing core can consume it safely.
 // ============================================================
 
 module alu (
+    input  logic clk,
+    input  logic rst,
+
+    input  logic start,
+
     input  cpu_pkg::word_t operand_a, operand_b,
     input  opcode_pkg::opcode_t op,
     input  logic carry_in,
 
     output cpu_pkg::word_t result,
     output cpu_pkg::flags_t flags,
-    output logic valid
+    output logic valid,
+    output logic busy,
+    output logic done
 );
 
     import cpu_pkg::*;
     import opcode_pkg::*;
 
-    // Result produced by each functional sub-unit.
-    cpu_pkg::word_t arithmetic_result;
-    cpu_pkg::word_t logic_result;
-    cpu_pkg::word_t shift_result;
-    cpu_pkg::word_t compare_result;
+    assign valid = (op <= ALU_GES);
 
-    // Arithmetic-only side-channel status.
-    logic arithmetic_carry;
-    logic arithmetic_overflow;
-    logic arithmetic_div_zero;
+    // ------------------------------------------------------------
+    // Sub-unit selection
+    // ------------------------------------------------------------
+    logic sel_arith, sel_logic, sel_shift, sel_cmp;
 
-    // Status selected alongside the active result (C / V / DZ).
-    logic carry_sel;
-    logic overflow_sel;
-    logic div_zero_sel;
+    always_comb begin
+        sel_arith = (op <= ALU_MODS) || (op == ALU_ABS) || (op == ALU_NEG);
+        sel_logic = (op >= ALU_NOT) && (op <= ALU_PASS_B);
+        sel_shift = (op >= ALU_SHL) && (op <= ALU_ROR);
+        sel_cmp   = ((op >= ALU_EQ) && (op <= ALU_GES)) ||
+                    ((op >= ALU_MINU) && (op <= ALU_MAXS));
+    end
 
-    // Arithmetic: ADD/ADC/SUB/SBC/MUL/MULH/DIV/MOD/NEG/ABS/MIN/MAX.
+    // Only the selected sub-unit is started.
+    logic arith_start, logic_start, shift_start, cmp_start;
+
+    assign arith_start = start && sel_arith;
+    assign logic_start = start && sel_logic;
+    assign shift_start = start && sel_shift;
+    assign cmp_start   = start && sel_cmp;
+
+    // ------------------------------------------------------------
+    // Sub-units
+    // ------------------------------------------------------------
+    word_t arith_result, logic_result, shift_result, cmp_result;
+    logic  arith_busy, logic_busy, shift_busy, cmp_busy;
+    logic  arith_done, logic_done, shift_done, cmp_done;
+    logic  arith_carry, arith_overflow, arith_div_zero;
+
     arithmetic u_arithmetic (
+        .clk(clk),
+        .rst(rst),
+        .start(arith_start),
         .operand_a(operand_a),
         .operand_b(operand_b),
         .op(op),
         .carry_in(carry_in),
-        .result(arithmetic_result),
-        .carry(arithmetic_carry),
-        .overflow(arithmetic_overflow),
-        .div_zero(arithmetic_div_zero)
+        .result(arith_result),
+        .carry(arith_carry),
+        .overflow(arith_overflow),
+        .div_zero(arith_div_zero),
+        .busy(arith_busy),
+        .done(arith_done)
     );
 
-    // Bitwise logic: AND/OR/XOR/NOT/NAND/NOR/XNOR/PASS_A/PASS_B.
     logic_unit u_logic_unit (
+        .clk(clk),
+        .rst(rst),
+        .start(logic_start),
         .operand_a(operand_a),
         .operand_b(operand_b),
         .op(op),
-        .result(logic_result)
+        .result(logic_result),
+        .busy(logic_busy),
+        .done(logic_done)
     );
 
-    // Shifts and rotations: SHL/SHR/SAR/ROL/ROR.
     shifter u_shifter (
+        .clk(clk),
+        .rst(rst),
+        .start(shift_start),
         .operand_a(operand_a),
         .operand_b(operand_b),
         .op(op),
-        .result(shift_result)
+        .result(shift_result),
+        .busy(shift_busy),
+        .done(shift_done)
     );
 
-    // Comparisons: EQ/NE/LT/LE/GT/GE (signed and unsigned).
     comparator u_comparator (
+        .clk(clk),
+        .rst(rst),
+        .start(cmp_start),
         .operand_a(operand_a),
         .operand_b(operand_b),
         .op(op),
-        .result(compare_result)
+        .result(cmp_result),
+        .busy(cmp_busy),
+        .done(cmp_done)
     );
 
-    // Result multiplexer and validity check.
-    always_comb begin
+    // ------------------------------------------------------------
+    // Result and handshake
+    // ------------------------------------------------------------
+    assign result = sel_arith ? arith_result :
+                    sel_logic ? logic_result :
+                    sel_shift ? shift_result :
+                    sel_cmp   ? cmp_result   : '0;
 
-        // Defaults: zero result, opcode assumed valid.
-        result = '0;
-        valid  = 1'b1;
+    // An unrecognised opcode finishes in one cycle with a null result.
+    logic invalid_done;
 
-        carry_sel    = 1'b0;
-        overflow_sel = 1'b0;
-        div_zero_sel = 1'b0;
-
-        case (op)
-
-            // Arithmetic group.
-            ALU_ADD, ALU_ADC,
-            ALU_SUB, ALU_SBC,
-            ALU_MUL, ALU_MULH,
-            ALU_DIVU, ALU_MODU,
-            ALU_DIVS, ALU_MODS,
-            ALU_NEG, ALU_ABS,
-            ALU_MINU, ALU_MAXU,
-            ALU_MINS, ALU_MAXS: begin
-
-                result = arithmetic_result;
-
-                carry_sel    = arithmetic_carry;
-                overflow_sel = arithmetic_overflow;
-                div_zero_sel = arithmetic_div_zero;
-            end
-
-            // Bitwise-logic group.
-            ALU_AND, ALU_OR, ALU_XOR,
-            ALU_NOT, ALU_NAND, ALU_NOR,
-            ALU_XNOR, ALU_PASS_A, ALU_PASS_B: begin
-
-                result = logic_result;
-            end
-
-            // Shift / rotate group.
-            ALU_SHL, ALU_SHR, ALU_SAR,
-            ALU_ROL, ALU_ROR: begin
-
-                result = shift_result;
-            end
-
-            // Comparison group.
-            ALU_EQ, ALU_NE,
-            ALU_LTU, ALU_LEU,
-            ALU_GTU, ALU_GEU,
-            ALU_LTS, ALU_LES,
-            ALU_GTS, ALU_GES: begin
-
-                result = compare_result;
-            end
-
-            // Unrecognised encoding: null the result, flag invalid.
-            default: begin
-                result = '0;
-                valid  = 1'b0;
-            end
-
-        endcase
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            invalid_done <= 1'b0;
+        else
+            invalid_done <= start && !valid;
     end
 
-    // Flags describe whichever result the multiplexer selected.
+    assign busy = arith_busy | logic_busy | shift_busy | cmp_busy;
+    assign done = invalid_done | arith_done | logic_done |
+                  shift_done | cmp_done;
+
+    // ------------------------------------------------------------
+    // Flags describe the selected result
+    // ------------------------------------------------------------
     always_comb begin
-        // An invalid opcode leaves every flag cleared.
         flags = '0;
 
         if (valid) begin
-            flags.Z  = (result == '0);
-            flags.N  = result[cpu_pkg::WORD_WIDTH-1];
-            flags.C  = carry_sel;
-            flags.V  = overflow_sel;
-            flags.DZ = div_zero_sel;
+            flags.Z = (result == '0);
+            flags.N = result[cpu_pkg::WORD_WIDTH-1];
+
+            if (sel_arith) begin
+                flags.C  = arith_carry;
+                flags.V  = arith_overflow;
+                flags.DZ = arith_div_zero;
+            end
         end
     end
 

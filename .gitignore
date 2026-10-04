@@ -15,25 +15,9 @@
 # Gowin IDE generated outputs
 # ============================================================
 
-**/gwsynthesis/*.log
-**/gwsynthesis/*.vg
-**/gwsynthesis/*_syn_resource.html
-**/gwsynthesis/*_syn.rpt.html
-**/gwsynthesis/*_syn_rsc.xml
-**/pnr/*.log
-**/pnr/*.fs
-**/pnr/*.bin
-**/pnr/*.bit
-**/pnr/*.rpt
-**/pnr/*.html
-**/pnr/*.xml
-**/pnr/*.txt
-
-# PnR-generated orchestration (rewritten from the project config each run)
-**/pnr/cmd.do
-**/pnr/device.cfg
-**/temp/*
-**/gwsyn.log
+/impl/*
+!/impl/lacooda_process_config.json
+!/impl/project_process_config.json
 
 # Gowin IDE per-user project state (window/flow state, machine specific)
 *.gprj.user

@@ -168,6 +168,9 @@ module cpu_tb;
         @(posedge clk);
         @(posedge clk);
         #1;
+        // MOVI is an ALU instruction: wait for the multi-cycle result.
+        wait (execution_valid === 1'b1);
+        #1;
         check(dut.u_instruction_fetch.instruction_available &&
               instruction === program_words[0] && execution_valid,
               "accepted fetch (instruction + immediate) is buffered and executes");
@@ -185,6 +188,7 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b1;
         wait_for_buffered_pc(word_t'(2 * WORD_BYTES));
+        wait (execution_valid === 1'b1);
         #1;
         check(execution_valid && !d_req.valid,
               "ordinary instruction executes without D-BUS traffic");
@@ -195,6 +199,8 @@ module cpu_tb;
         // D-BUS STORE WAIT-STATE / HOLD GUARANTEE
         // ----------------------------------------------------
         wait_for_buffered_pc(word_t'(4 * WORD_BYTES));
+        // The effective address is computed by the multi-cycle ALU first.
+        wait (d_req.valid === 1'b1);
         #1;
         check(d_req.valid && (d_req.op == bus_pkg::BUS_WRITE) &&
               d_req.addr === word_t'(9 * WORD_BYTES) &&
@@ -237,6 +243,7 @@ module cpu_tb;
         run = 1'b1;
         d_rsp.rdata = word_t'(100);
         wait_for_buffered_pc(word_t'(6 * WORD_BYTES));
+        wait (d_req.valid === 1'b1);
         #1;
         check(d_req.valid && d_req.op == bus_pkg::BUS_READ &&
               d_req.addr === word_t'(9 * WORD_BYTES),
@@ -263,6 +270,7 @@ module cpu_tb;
 
         // BEQ must observe R3=100 and redirect to instruction 6 (word 12).
         wait_for_buffered_pc(word_t'(8 * WORD_BYTES));
+        wait (execution_valid === 1'b1);
         #1;
         check(execution_valid && !illegal_instruction,
               "BEQ executes after LOAD completion");
@@ -273,6 +281,7 @@ module cpu_tb;
 
         // Branch target MOVI R4,222 executes; instruction 5 is never fetched.
         wait_for_buffered_pc(word_t'(12 * WORD_BYTES));
+        wait (execution_valid === 1'b1);
         #1;
         check(execution_valid, "branch-target instruction executes");
         @(posedge clk);
@@ -299,7 +308,7 @@ module cpu_tb;
     end
 
     initial begin
-        #8000;
+        #400000;
         $fatal(1, "TIMEOUT");
     end
 

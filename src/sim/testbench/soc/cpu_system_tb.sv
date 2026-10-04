@@ -54,6 +54,9 @@ module cpu_system_tb;
     );
         begin
             wait_for_buffered_pc(expected_pc);
+            // The ALU (and any memory handshake) is multi-cycle: wait for
+            // the core to report the instruction complete.
+            wait (execution_valid === 1'b1);
             #1;
 
             assert (instruction === expected_instruction)
@@ -176,7 +179,7 @@ module cpu_system_tb;
     end
 
     initial begin
-        #6000;
+        #400000;
         $fatal(1, "TIMEOUT");
     end
 

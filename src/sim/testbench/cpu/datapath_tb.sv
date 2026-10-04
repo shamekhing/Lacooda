@@ -34,6 +34,9 @@ module datapath_tb;
     word_t result;
 
     logic valid;
+    logic alu_start;
+    logic alu_busy;
+    logic alu_done;
 
     cpu_pkg::flags_t alu_flags;
     cpu_pkg::status_t status_flags;
@@ -55,6 +58,7 @@ module datapath_tb;
 
         .alu_op(alu_op),
         .carry_in(carry_in),
+        .alu_start(alu_start),
 
         .imm_operand(immediate),
         .imm_sel(use_immediate),
@@ -70,6 +74,8 @@ module datapath_tb;
         .store_data(store_data),
         .alu_result(result),
         .alu_valid(valid),
+        .alu_busy(alu_busy),
+        .alu_done(alu_done),
 
         .flags(alu_flags),
         .status(status_flags)
@@ -106,8 +112,8 @@ module datapath_tb;
             use_immediate = imm_enable;
             immediate = imm;
 
-            register_write_enable = reg_write;
-            flags_write_enable = flag_write;
+            register_write_enable = 0;
+            flags_write_enable = 0;
 
             carry_in = cin;
 
@@ -115,10 +121,25 @@ module datapath_tb;
             memory_read_data = '0;
             writeback_from_memory = 1'b0;
 
-            #1;
+            // Launch the multi-cycle ALU and wait for it to finish.
+            wait (!alu_busy);
+
+            @(negedge clk);
+            alu_start = 1'b1;
+            @(negedge clk);
+            alu_start = 1'b0;
+
+            wait (alu_done === 1'b1);
+
+            // The write enables are asserted for the completion cycle only.
+            register_write_enable = reg_write;
+            flags_write_enable = flag_write;
 
             @(posedge clk);
             #1;
+
+            register_write_enable = 0;
+            flags_write_enable = 0;
 
         end
 
@@ -225,6 +246,7 @@ module datapath_tb;
 
         alu_op = ALU_ADD;
         carry_in = 0;
+        alu_start = 0;
 
         immediate = 0;
         use_immediate = 0;
@@ -458,13 +480,24 @@ module datapath_tb;
         rd  = reg_addr_t'(10);
         use_immediate = 1'b1;
         immediate = word_t'(8);
-        register_write_enable = 1'b1;
+        register_write_enable = 1'b0;
         flags_write_enable = 1'b0;
         carry_in = 1'b0;
-        memory_read_data = word_t'(16'hBEEF);
-        writeback_from_memory = 1'b1;
+        memory_read_data = '0;
+        writeback_from_memory = 1'b0;
+
+        // Launch the effective-address calculation and wait for it.
+        wait (!alu_busy);
+
+        @(negedge clk);
+        alu_start = 1'b1;
+        @(negedge clk);
+        alu_start = 1'b0;
+
+        wait (alu_done === 1'b1);
 
         #1;
+
         tests = tests + 1;
         if (result !== word_t'(108)) begin
             errors = errors + 1;
@@ -473,6 +506,12 @@ module datapath_tb;
         end else begin
             $display("[PASS] LOAD effective address = %h", result);
         end
+
+        // The register writeback value comes from memory on the
+        // completion cycle.
+        memory_read_data = word_t'(16'hBEEF);
+        writeback_from_memory = 1'b1;
+        register_write_enable = 1'b1;
 
         @(posedge clk);
         #1;

@@ -98,7 +98,8 @@ module cpu_core_tb;
         );
     endfunction
 
-    // Execute exactly one instruction at the next rising edge.
+    // Execute exactly one instruction. The ALU is multi-cycle, so the
+    // task waits for the core to report completion before sampling.
     task automatic execute(
         input instruction_t word,
         input logic expected_valid,
@@ -129,10 +130,9 @@ module cpu_core_tb;
         end
 
         if (expected_valid) begin
-            if (execution_valid !== 1'b1) begin
-                $display("FAIL: execution_valid is not asserted");
-                errors = errors + 1;
-            end
+            // Wait for the multi-cycle ALU to finish and retire.
+            wait (execution_valid === 1'b1);
+            #1;
 
             if (result !== expected_result) begin
                 $display(
@@ -328,12 +328,15 @@ module cpu_core_tb;
             STORE_TEST_VALUE
         );
 
-        // STORE R11, [R10 + WORD_BYTES]
+        // STORE R11, [R10 + WORD_BYTES]. The ALU first computes the
+        // effective address, then the request is issued on the bus.
         @(negedge clk);
         instruction = encode_store(reg_addr_t'(11), reg_addr_t'(10));
         immediate_word = word_t'(WORD_BYTES);
         instruction_enable = 1'b1;
         dbus_read_data = '0;
+
+        wait (dbus_valid === 1'b1);
         #1;
 
         tests = tests + 1;
@@ -363,6 +366,9 @@ module cpu_core_tb;
         instruction_enable = 1'b1;
         dbus_ready = 1'b0;
         dbus_read_data = STORE_TEST_VALUE;
+
+        // Wait until the ALU has produced the address and the request is out.
+        wait (dbus_valid === 1'b1);
         #1;
 
         tests = tests + 1;

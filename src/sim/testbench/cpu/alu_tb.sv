@@ -17,6 +17,9 @@ module alu_tb;
 
     logic [WIDTH-1:0] result;
     logic valid;
+    logic start;
+    logic busy;
+    logic done;
 
     cpu_pkg::flags_t flags;
     cpu_pkg::status_t status;
@@ -29,13 +32,18 @@ module alu_tb;
     // =========================================================
 
     alu dut (
+        .clk(clk),
+        .rst(rst),
+        .start(start),
         .operand_a(A),
         .operand_b(B),
         .op(op),
         .carry_in(carry_in),
         .result(result),
         .flags(flags),
-        .valid(valid)
+        .valid(valid),
+        .busy(busy),
+        .done(done)
     );
 
     // =========================================================
@@ -51,6 +59,41 @@ module alu_tb;
     );
 
     always #5 clk = ~clk;
+
+    // =========================================================
+    // LAUNCH TASK
+    //
+    // Present one operation, pulse start and block until the
+    // multi-cycle engine reports done.
+    // =========================================================
+
+    task automatic launch(
+        input logic [OPCODE_WIDTH-1:0] opcode,
+        input logic [WIDTH-1:0] a,
+        input logic [WIDTH-1:0] b,
+        input logic cin
+    );
+        begin
+            op       = opcode;
+            A        = a;
+            B        = b;
+            carry_in = cin;
+
+            // Make sure the engine is idle before launching it.
+            wait (!busy);
+
+            // Hold start across exactly one rising edge (set and cleared
+            // on falling edges) so there is no race with the ALU sampling it.
+            @(negedge clk);
+            start = 1'b1;
+            @(negedge clk);
+            start = 1'b0;
+
+            wait (done === 1'b1);
+            // Let the combinational result mux settle before sampling.
+            #1;
+        end
+    endtask
 
     // =========================================================
     // TEST TASK
@@ -75,12 +118,8 @@ module alu_tb;
 
         begin
 
-            op       = opcode;
-            A        = a;
-            B        = b;
-            carry_in = cin;
-
-            #2;
+            // Launch the multi-cycle ALU and wait for its result.
+            launch(opcode, a, b, cin);
 
             expected_z = expected_valid &&
                          (expected_result == 64'd0);
@@ -146,6 +185,9 @@ module alu_tb;
 
             end
 
+            // Leave the DONE cycle before the next launch.
+            @(negedge clk);
+
         end
 
     endtask
@@ -199,6 +241,7 @@ module alu_tb;
 
         rst          = 1;
         write_enable = 0;
+        start        = 0;
 
         A        = 0;
         B        = 0;
@@ -859,88 +902,50 @@ module alu_tb;
 
         $display("\n=== STATUS REGISTER ===");
 
-        // Store Z=1
-        @(negedge clk);
-
-        op = ALU_ADD;
-        A = 0;
-        B = 0;
-        carry_in = 0;
-
+        // Store Z=1 (0 + 0). write_enable is asserted while the ALU is
+        // in its done cycle, so the status register latches those flags.
+        launch(ALU_ADD, 0, 0, 0);
         write_enable = 1;
-
-        #1;
-
         @(posedge clk);
         #1;
-
         check_status(5'b00001);
 
         // Disable writes; previous flags must remain.
-        @(negedge clk);
-
+        launch(ALU_ADD, 5, 6, 0);
         write_enable = 0;
-
-        A = 5;
-        B = 6;
-
         @(posedge clk);
         #1;
-
         check_status(5'b00001);
 
         // Enable writes again.
-        @(negedge clk);
-
+        launch(ALU_ADD, 5, 6, 0);
         write_enable = 1;
-
         @(posedge clk);
         #1;
-
         check_status(5'b00000);
 
         // Store carry flag.
-        @(negedge clk);
-
-        op = ALU_ADD;
-
-        A = {WIDTH{1'b1}};
-        B = 1;
-
+        launch(ALU_ADD, {WIDTH{1'b1}}, 1, 0);
         @(posedge clk);
         #1;
-
         // Z=1, C=1
         check_status(5'b00101);
 
         // Store negative and overflow flags.
-        @(negedge clk);
-
-        A = {1'b0, {(WIDTH-1){1'b1}}};
-        B = 1;
-
+        launch(ALU_ADD, {1'b0, {(WIDTH-1){1'b1}}}, 1, 0);
         @(posedge clk);
         #1;
-
         // N=1, V=1
         check_status(5'b01010);
 
         // Store division-by-zero flag.
-        @(negedge clk);
-
-        op = ALU_DIVU;
-        A = 100;
-        B = 0;
-
+        launch(ALU_DIVU, 100, 0, 0);
         @(posedge clk);
         #1;
-
         // Z=1, DZ=1
         check_status(5'b10001);
 
         // Asynchronous reset.
-        @(negedge clk);
-
         write_enable = 0;
         rst = 1;
 

@@ -21,7 +21,7 @@ module alu_tb;
     logic busy;
     logic done;
 
-    cpu_pkg::flags_t flags;
+    cpu_pkg::flags_s flags;
     cpu_pkg::status_t status;
 
     integer tests = 0;

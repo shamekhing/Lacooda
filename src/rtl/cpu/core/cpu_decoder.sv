@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// Instruction decoder — Stage 7
+// Instruction cpu_decoder — Stage 7
 //
 // Decodes the existing ALU/control-flow instructions plus Stage-7
 // LOAD/STORE without changing the instruction layout.
@@ -14,10 +14,10 @@
 //
 // LOAD/STORE use ALU_ADD internally to calculate the effective byte
 // address. STORE still reads RS2 through the register file's second
-// read port; datapath exposes that raw value separately as store_data.
+// read port; cpu_datapath exposes that raw value separately as store_data.
 // ============================================================
 
-module decoder (
+module cpu_decoder (
     input  cpu_pkg::instruction_t instruction,
     input  cpu_pkg::word_t immediate_word,
 
@@ -48,7 +48,7 @@ module decoder (
     import cpu_pkg::*;
     import opcode_pkg::*;
 
-    instr_fields_t instr_fields;
+    instruction_s instr_fields;
 
     logic opcode_valid;
     logic format_valid;
@@ -158,7 +158,7 @@ module decoder (
     end
 
     // ------------------------------------------------------------
-    // Generate datapath/control-flow/memory controls.
+    // Generate cpu_datapath/control-flow/memory controls.
     // ------------------------------------------------------------
     always_comb begin
         // Safe defaults used for every illegal instruction.
@@ -187,7 +187,7 @@ module decoder (
             if (branch_qual) begin
                 // Source addresses feed the existing register file, so the
                 // branch unit receives the actual register values through
-                // datapath operand_a/operand_b.
+                // cpu_datapath operand_a/operand_b.
                 rs1 = instr_fields.rs1;
                 rs2 = instr_fields.rs2;
 

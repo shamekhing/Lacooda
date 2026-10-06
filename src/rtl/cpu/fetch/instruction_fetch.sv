@@ -36,8 +36,8 @@ module instruction_fetch (
     input  cpu_pkg::word_t redirect_target,
 
     // I-BUS master request/response.
-    output bus_pkg::bus_req_t ibus_req,
-    input  bus_pkg::bus_rsp_t ibus_rsp,
+    output bus_pkg::bus_req_s ibus_req,
+    input  bus_pkg::bus_rsp_s ibus_rsp,
 
     // Buffered instruction presented to the CPU core.
     output cpu_pkg::word_t pc,

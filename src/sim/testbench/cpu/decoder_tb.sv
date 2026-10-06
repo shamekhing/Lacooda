@@ -1,10 +1,10 @@
 `timescale 1ns/1ps
 
-// LACOODA Stage 7 decoder regression. Compatible with Icarus Verilog:
+// LACOODA Stage 7 cpu_decoder regression. Compatible with Icarus Verilog:
 // no integer-to-enum casts, no hardcoded instruction bit positions.
 // The immediate is NOT an instruction field: the tb drives it on the
 // separate immediate_word port, exactly like the fetch unit does.
-module decoder_tb;
+module cpu_decoder_tb;
     import cpu_pkg::*;
     import opcode_pkg::*;
 
@@ -23,9 +23,9 @@ module decoder_tb;
     integer errors = 0;
     logic [OPCODE_WIDTH:0] op_index;
     integer bit_index;
-    instr_fields_t fields;
+    instruction_s fields;
 
-    decoder dut (
+    cpu_decoder dut (
         .instruction(instruction), .immediate_word(immediate_word),
         .rs1(rs1), .rs2(rs2), .rd(rd),
         .alu_op(alu_op), .imm_operand(immediate), .imm_sel(use_immediate),
@@ -113,14 +113,14 @@ module decoder_tb;
     endtask
 
     initial begin
-        $dumpfile("decoder_tb.vcd");
-        $dumpvars(0, decoder_tb);
+        $dumpfile("cpu_decoder_tb.vcd");
+        $dumpvars(0, cpu_decoder_tb);
         instruction = '0;
         immediate_word = '0;
 
         $display("=== PACKAGE / ENCODER ===");
         check($bits(instruction_t) == WORD_WIDTH &&
-              $bits(instr_fields_t) == USED_INSTRUCTION_BITS,
+              $bits(instruction_s) == USED_INSTRUCTION_BITS,
               "instruction widths match");
         check($bits(reg_addr_t) == REG_FILE_ADDR_WIDTH &&
               $bits(word_t) == WORD_WIDTH,
@@ -352,13 +352,13 @@ module decoder_tb;
                      1'b0, 1'b1, '0);
 
         $display("========================================");
-        $display("LACOODA STAGE 7 DECODER TEST SUMMARY");
+        $display("LACOODA STAGE 7 cpu_decoder TEST SUMMARY");
         $display("Total tests : %0d", tests);
         $display("Passed      : %0d", tests-errors);
         $display("Failed      : %0d", errors);
         $display("========================================");
-        if (errors != 0) $fatal(1, "DECODER TEST FAILED");
-        $display("ALL DECODER TESTS PASSED");
+        if (errors != 0) $fatal(1, "cpu_decoder TEST FAILED");
+        $display("ALL cpu_decoder TESTS PASSED");
         $finish;
     end
 endmodule

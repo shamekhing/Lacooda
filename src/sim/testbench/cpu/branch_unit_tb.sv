@@ -3,7 +3,7 @@
 // ============================================================
 // LACOODA Stage 6 branch-unit regression
 //
-// Tests every branch condition independently from the decoder, PC,
+// Tests every branch condition independently from the cpu_decoder, PC,
 // instruction memory and CPU. This makes failures easy to localize.
 // ============================================================
 

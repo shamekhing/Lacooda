@@ -14,8 +14,8 @@ module data_memory_tb;
     logic clk = 1'b0;
     always #5 clk = ~clk;
 
-    bus_pkg::bus_req_t slave_req;
-    bus_pkg::bus_rsp_t slave_rsp;
+    bus_pkg::bus_req_s slave_req;
+    bus_pkg::bus_rsp_s slave_rsp;
 
     integer tests = 0;
     integer errors = 0;

@@ -24,10 +24,10 @@ module shifter (
 
     import cpu_pkg::*;
     import opcode_pkg::*;
+    import alu_pkg::*;
 
-    // Shift-amount width and a counter wide enough for rotate offsets.
-    localparam int SHIFT_WIDTH   = $clog2(cpu_pkg::WORD_WIDTH);
-    localparam int COUNTER_WIDTH = SHIFT_WIDTH + 1;
+    // Counter wide enough for rotate offsets (WORD_WIDTH + offset).
+    localparam int COUNTER_WIDTH = SERIAL_WIDTH + 1;
 
     logic is_shl, is_shr, is_sar, is_rol, is_rotate, is_shift;
 
@@ -40,21 +40,7 @@ module shifter (
         is_shift  = is_shl || is_shr || is_sar;
     end
 
-    function automatic logic [cpu_pkg::WORD_WIDTH-1:0] rev(
-        input logic [cpu_pkg::WORD_WIDTH-1:0] x);
-        integer i;
-        for (i = 0; i < cpu_pkg::WORD_WIDTH; i = i + 1)
-            rev[i] = x[cpu_pkg::WORD_WIDTH-1-i];
-        return rev;
-    endfunction
-
-    typedef enum logic [1:0] {
-        S_IDLE,
-        S_RUN,
-        S_DONE
-    } state_e;
-
-    state_e state;
+    alu_state_e state;
 
     logic [cpu_pkg::WORD_WIDTH-1:0] a_r, a_sr, r_sr;
     logic [COUNTER_WIDTH-1:0]       cnt, limit, rot_pre;
@@ -64,9 +50,9 @@ module shifter (
     // ------------------------------------------------------------
     logic [cpu_pkg::WORD_WIDTH-1:0]   ld_a_sr;
     logic [COUNTER_WIDTH-1:0]         ld_rot_pre, ld_limit;
-    logic [SHIFT_WIDTH-1:0]           rot_k;
+    logic [SERIAL_WIDTH-1:0]          rot_k;
 
-    assign rot_k     = operand_b[SHIFT_WIDTH-1:0];
+    assign rot_k     = operand_b[SERIAL_WIDTH-1:0];
     assign ld_a_sr   = (is_shr || is_sar) ? rev(operand_a) : operand_a;
     assign ld_rot_pre = is_rol
                         ? ((cpu_pkg::WORD_WIDTH - rot_k) &
@@ -106,13 +92,11 @@ module shifter (
         // Circular for rotate offsets, held during a shift fill.
         a_sr_nxt = is_rotate
                    ? {a_sr[0], a_sr[cpu_pkg::WORD_WIDTH-1:1]}
-                   : (shift_hold ? a_sr
-                                 : {1'b0, a_sr[cpu_pkg::WORD_WIDTH-1:1]});
+                   : (shift_hold ? a_sr : {1'b0, a_sr[cpu_pkg::WORD_WIDTH-1:1]});
 
         // LSB-first streams fill from the top; MSB-first from the bottom.
         if (is_rotate)
-            r_sr_nxt = emitting ? {out_bit, r_sr[cpu_pkg::WORD_WIDTH-1:1]}
-                                : r_sr;
+            r_sr_nxt = emitting ? {out_bit, r_sr[cpu_pkg::WORD_WIDTH-1:1]} : r_sr;
         else if (r_msb_first)
             r_sr_nxt = {r_sr[cpu_pkg::WORD_WIDTH-2:0], out_bit};
         else

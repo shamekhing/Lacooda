@@ -23,19 +23,12 @@ module logic_unit (
 
     import cpu_pkg::*;
     import opcode_pkg::*;
+    import alu_pkg::*;
 
-    localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
-
-    typedef enum logic [1:0] {
-        S_IDLE,
-        S_RUN,
-        S_DONE
-    } state_e;
-
-    state_e state;
+    alu_state_e state;
 
     logic [cpu_pkg::WORD_WIDTH-1:0] a_sr, b_sr, r_sr;
-    logic [COUNTER_WIDTH-1:0]       cnt;
+    logic [SERIAL_WIDTH-1:0]        cnt;
 
     logic a_bit, b_bit, out_bit;
 

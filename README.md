@@ -5,7 +5,7 @@
 **Project:** LACOODA\
 **Language:** SystemVerilog\
 **Target direction:** FPGA(N/A)\
-**CPU datapath:** 64-bit by default\
+**CPU cpu_datapath:** 64-bit by default\
 **Instruction word:** 64-bit by default\
 **Register file:** 64 × 64-bit by default\
 **Purpose:** A hands-on learning manual reconstructed from my stupid questions to AI.
@@ -31,7 +31,7 @@ questions that arise when the first modules are connected:
 -   Is SystemVerilog executed from top to bottom?
 -   Which module runs first?
 -   What is the difference between a port and a signal?
--   If the decoder and datapath are active simultaneously, how can
+-   If the cpu_decoder and cpu_datapath are active simultaneously, how can
     decoding happen "before" execution?
 -   Why does `assign fields = instruction;` work?
 -   Why does a register write need a clock but an ALU result does not?
@@ -55,9 +55,9 @@ master interfaces:
                  |     LACOODA CPU      |
                  |                      |
                  | PC / fetch buffer    |
-                 | decoder              |
+                 | cpu_decoder              |
                  | register file        |
-                 | ALU / datapath       |
+                 | ALU / cpu_datapath       |
                  | status flags         |
                  | branch unit          |
                  | LOAD / STORE control |
@@ -222,17 +222,17 @@ signal is connected.
 
 ## 3. One Parent Signal Can Connect Multiple Blocks
 
-This became important when connecting the LACOODA decoder to the
-datapath.
+This became important when connecting the LACOODA cpu_decoder to the
+cpu_datapath.
 
 ``` systemverilog
 logic [5:0] decoded_op;
 
-decoder u_decoder (
+cpu_decoder u_cpu_decoder (
     .alu_op(decoded_op)
 );
 
-datapath u_datapath (
+cpu_datapath u_cpu_datapath (
     .alu_op(decoded_op)
 );
 ```
@@ -251,7 +251,7 @@ Conceptually:
 
 ``` text
                   decoded_op
-decoder output -------------------- datapath input
+cpu_decoder output -------------------- cpu_datapath input
 ```
 
 ### Driver rule
@@ -273,7 +273,7 @@ Two categories dominate this CPU.
 
 Examples:
 
--   decoder logic,
+-   cpu_decoder logic,
 -   ALU,
 -   comparisons,
 -   muxes,
@@ -739,11 +739,11 @@ Stage 2 regression reached **8/8 tests passing**.
 
 ------------------------------------------------------------------------
 
-# Part V --- Stage 3: Build the Datapath
+# Part V --- Stage 3: Build the cpu_datapath
 
 ## 18. Connect Registers to the ALU
 
-The datapath connects:
+The cpu_datapath connects:
 
 ``` text
 register file
@@ -778,7 +778,7 @@ immediate ------>|      |
 
 ## 19. Write Authorization
 
-The datapath should not write a register merely because an ALU produced
+The cpu_datapath should not write a register merely because an ALU produced
 a value.
 
 The design progressively introduced conditions such as:
@@ -844,7 +844,7 @@ typedef struct packed {
 } instruction_fields_t;
 ```
 
-Then the decoder could do:
+Then the cpu_decoder could do:
 
 ``` systemverilog
 instruction_fields_t fields;
@@ -872,14 +872,14 @@ instruction[55:50] ---> fields.opcode
 
 The assignment is a bit-level wiring interpretation.
 
-The decoder still has to determine whether those fields form a legal
+The cpu_decoder still has to determine whether those fields form a legal
 instruction and what control signals they imply.
 
 ------------------------------------------------------------------------
 
 ## 22. Legal Encoding Is More Than a Valid Opcode
 
-The decoder enforced format rules.
+The cpu_decoder enforced format rules.
 
 Examples from the architecture:
 
@@ -937,15 +937,15 @@ same semantic instruction.
 
 ------------------------------------------------------------------------
 
-## 23. Decoder and Datapath: Which Comes First?
+## 23. cpu_decoder and cpu_datapath: Which Comes First?
 
 This was one of the central understanding gaps.
 
 The source might contain:
 
 ``` systemverilog
-decoder u_decoder (...);
-datapath u_datapath (...);
+cpu_decoder u_cpu_decoder (...);
+cpu_datapath u_cpu_datapath (...);
 ```
 
 But modules are not called one after another.
@@ -956,18 +956,18 @@ The actual dependency is:
 instruction bits
       |
       v
-   decoder
+   cpu_decoder
       |
       | control wires
       v
-   datapath
+   cpu_datapath
       |
       v
     result
 ```
 
-The decoder's combinational outputs respond to instruction bits. The
-datapath's combinational logic responds to those outputs.
+The cpu_decoder's combinational outputs respond to instruction bits. The
+cpu_datapath's combinational logic responds to those outputs.
 
 Physically and in RTL simulation, they form a connected combinational
 network.
@@ -981,8 +981,8 @@ At the clock edge, state updates are committed.
 The CPU core became the integration point for:
 
 ``` text
-decoder
-datapath
+cpu_decoder
+cpu_datapath
 branch logic later
 memory-operation control later
 ```
@@ -1003,7 +1003,7 @@ assign effective_flags_write =
 
 and an execution validity concept.
 
-The decoder says what an instruction *requests*. The integration layer
+The cpu_decoder says what an instruction *requests*. The integration layer
 decides whether the request is currently authorized to affect state.
 
 Stage 4 CPU-core regression reached **16 checks passing**.
@@ -1261,7 +1261,7 @@ The existing ALU could calculate:
 effective address = base register + immediate offset
 ```
 
-This is a good example of reusing the datapath instead of creating
+This is a good example of reusing the cpu_datapath instead of creating
 special arithmetic hardware for memory.
 
 ### LOAD flow
@@ -1544,7 +1544,7 @@ Parameters and constants are still typed bit patterns.
 Before introducing a bus, the CPU already had many connections:
 
 ``` text
-decoder -> datapath
+cpu_decoder -> cpu_datapath
 register file -> ALU
 ALU -> writeback
 branch unit -> redirect
@@ -1723,9 +1723,9 @@ verilog-staging/
 │   │   │   └── shifter.sv
 │   │   ├── core/
 │   │   │   ├── cpu_core.sv
-│   │   │   ├── decoder.sv
-│   │   │   ├── datapath.sv
-│   │   │   ├── register_file.sv
+│   │   │   ├── cpu_decoder.sv
+│   │   │   ├── cpu_datapath.sv
+│   │   │   ├── cpu_register.sv
 │   │   │   ├── status_register.sv
 │   │   │   └── branch_unit.sv
 │   │   └── fetch/
@@ -1733,7 +1733,7 @@ verilog-staging/
 │   │       └── program_counter.sv
 │   │
 │   ├── bus/
-│   │   ├── address_decoder.sv
+│   │   ├── address_cpu_decoder.sv
 │   │   └── bus_interconnect.sv
 │   │
 │   ├── memory/
@@ -1873,12 +1873,12 @@ The same atomicity principle was applied to instruction fetch.
 
 # Part XIII --- Bus Interconnect and Address Decoding
 
-## 53. Address Decoder
+## 53. Address cpu_decoder
 
 The CPU should emit an address without knowing which physical device
 owns it.
 
-The address decoder answers:
+The address cpu_decoder answers:
 
 ``` text
 Does this address belong to local RAM?
@@ -1925,7 +1925,7 @@ Conceptually:
                 | interconnect  |
                 +-------+-------+
                         |
-               address decoder
+               address cpu_decoder
                         |
           +-------------+-------------+
           |             |             |
@@ -1969,8 +1969,8 @@ The development journey progressively accumulated tests:
 ``` text
 ALU
 register file
-datapath
-decoder
+cpu_datapath
+cpu_decoder
 CPU core
 program counter
 branch unit
@@ -2399,7 +2399,7 @@ At a high level:
 3. Instruction source asserts ready.
 4. Instruction is buffered.
 5. Packed fields expose opcode/RD/RS1/RS2.
-6. Decoder validates encoding.
+6. cpu_decoder validates encoding.
 7. Register file exposes R1 and R2 values.
 8. ALU computes addition.
 9. Control authorizes R3 write.
@@ -2491,8 +2491,8 @@ fetch target instruction
 Wrong mental model:
 
 ``` text
-decoder runs
-then datapath runs
+cpu_decoder runs
+then cpu_datapath runs
 then ALU runs
 ```
 
@@ -2502,7 +2502,7 @@ Better:
 instruction
     |
     v
-decoder --control--> datapath --operands--> ALU
+cpu_decoder --control--> cpu_datapath --operands--> ALU
 ```
 
 The hardware coexists. Dependencies cause propagation.
@@ -2628,9 +2628,9 @@ The final answer became:
 CPU owns:
     PC
     instruction fetch control/buffer
-    decoder
+    cpu_decoder
     registers
-    ALU/datapath
+    ALU/cpu_datapath
     status
     branch logic
     LOAD/STORE transaction generation
@@ -2711,7 +2711,7 @@ Result:
 
 ------------------------------------------------------------------------
 
-## 87. Stage 3 --- Datapath
+## 87. Stage 3 --- cpu_datapath
 
 Built:
 
@@ -2737,14 +2737,14 @@ Result:
 
 ------------------------------------------------------------------------
 
-## 88. Stage 4 --- ISA/Decoder/CPU Core
+## 88. Stage 4 --- ISA/cpu_decoder/CPU Core
 
 Built:
 
 ``` text
 64-bit instruction format
 packed fields
-decoder
+cpu_decoder
 validation
 CPU core integration
 ```
@@ -2756,7 +2756,7 @@ machine encoding
 packed structs
 ports vs signals
 concurrent modules
-decode-to-datapath propagation
+decode-to-cpu_datapath propagation
 ```
 
 Result:
@@ -2845,7 +2845,7 @@ CPU wrapper
 instruction bus
 data bus
 instruction buffer
-address decoder
+address cpu_decoder
 bus interconnect
 minimal SoC wrapper
 ```
@@ -2898,9 +2898,9 @@ Trace it from:
 ``` text
 instruction bits
 -> packed fields
--> decoder
+-> cpu_decoder
 -> parent signal
--> datapath
+-> cpu_datapath
 -> ALU
 ```
 
@@ -3093,12 +3093,12 @@ The complete journey can be compressed into one picture:
 |                           LACOODA CPU                             |
 |                                                                  |
 |  +------+      +---------+      +----------+      +-----------+  |
-|  |  PC  |----->| I-fetch |----->| decoder  |----->| control   |  |
+|  |  PC  |----->| I-fetch |----->| cpu_decoder  |----->| control   |  |
 |  +------+      +---------+      +-----+----+      +-----+-----+  |
 |                                        |                 |        |
 |                                        v                 v        |
 |                                  +-----------+      +----------+  |
-|                                  | register  |----->| datapath |  |
+|                                  | register  |----->| cpu_datapath |  |
 |                                  | file      |      | + ALU    |  |
 |                                  +-----------+      +----+-----+  |
 |                                                           |       |
@@ -3115,7 +3115,7 @@ The complete journey can be compressed into one picture:
                               |                             |
                     +---------v---------+          +--------v--------+
                     | instruction side |          | interconnect    |
-                    | memory/system    |          | address decoder |
+                    | memory/system    |          | address cpu_decoder |
                     +------------------+          +--------+--------+
                                                            |
                                                    +-------+-------+
@@ -3171,7 +3171,7 @@ ibus:    WORD_WIDTH
 dbus:    XLEN
 imem:    WORD_WIDTH
 dmem:    XLEN
-decoder: XLEN
+cpu_decoder: XLEN
 ```
 
 The numbers happened to match because the current configuration is
@@ -3302,10 +3302,10 @@ inputs rather than stored history.
 **D-BUS** --- LACOODA data-side CPU interface for LOAD/STORE
 transactions.
 
-**Datapath** --- Hardware that carries and transforms instruction
+**cpu_datapath** --- Hardware that carries and transforms instruction
 operands and results.
 
-**Decoder** --- Logic that interprets instruction fields and produces
+**cpu_decoder** --- Logic that interprets instruction fields and produces
 control signals.
 
 **Elaboration** --- Tool phase in which parameters, generate structures,
@@ -3368,13 +3368,13 @@ when both signals are asserted.
 -   [ ] status flags verified
 -   [ ] register file verified
 -   [ ] R0 behavior verified
--   [ ] datapath verified
+-   [ ] cpu_datapath verified
 
 ## ISA
 
 -   [ ] instruction layout documented
 -   [ ] instruction encoder verified
--   [ ] decoder legal encodings verified
+-   [ ] cpu_decoder legal encodings verified
 -   [ ] illegal encodings suppress side effects
 -   [ ] immediate extension verified
 
@@ -3466,15 +3466,15 @@ single-purpose game circuit.
 # Closing
 
 The most important thing built during this journey was not the ALU,
-decoder, bus, or even the CPU.
+cpu_decoder, bus, or even the CPU.
 
 It was the hardware mental model.
 
 At the beginning, code such as:
 
 ``` systemverilog
-decoder u_decoder (...);
-datapath u_datapath (...);
+cpu_decoder u_cpu_decoder (...);
+cpu_datapath u_cpu_datapath (...);
 ```
 
 naturally invites the software question:
@@ -3537,7 +3537,7 @@ Whole design             9412 LUT
 +-- u_alu                7844 LUT     <- 83% of the design
 |   +-- u_arithmetic     7542 LUT
 |   +-- u_logic_unit        0 LUT
-+-- u_register_file       259 LUT
++-- u_cpu_register       259 LUT
 +-- u_data_memory         256 LUT
 +-- u_program_counter     107 LUT
 DSP blocks used             0
@@ -3977,7 +3977,7 @@ The self-stalling pipeline fell out of the same rule from Part XI.
 packages                 unchanged
 opcode map               unchanged
 instruction encoding      unchanged
-decoder                   unchanged
+cpu_decoder                   unchanged
 branch unit               unchanged (still combinational)
 fetch / PC hold           unchanged
 run.sh test file lists    restored to the four units
@@ -4041,7 +4041,7 @@ The serial units use the existing packages exactly as they are.
 ``` systemverilog
 cpu_pkg::WORD_WIDTH
 cpu_pkg::word_t
-cpu_pkg::flags_t
+cpu_pkg::flags_s
 opcode_pkg::opcode_t
 ```
 

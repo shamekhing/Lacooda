@@ -36,13 +36,7 @@ module arithmetic (
 
     import cpu_pkg::*;
     import opcode_pkg::*;
-
-    localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
-
-    localparam logic [cpu_pkg::WORD_WIDTH-1:0] MSB_ONE  =
-        {1'b1, {(cpu_pkg::WORD_WIDTH-1){1'b0}}};
-    localparam logic [cpu_pkg::WORD_WIDTH-1:0] ALL_ONES =
-        {cpu_pkg::WORD_WIDTH{1'b1}};
+    import alu_pkg::*;
 
     // ------------------------------------------------------------
     // Operation classification
@@ -67,35 +61,13 @@ module arithmetic (
     end
 
     // ------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------
-    function automatic logic [cpu_pkg::WORD_WIDTH-1:0] rev(
-        input logic [cpu_pkg::WORD_WIDTH-1:0] x);
-        integer i;
-        for (i = 0; i < cpu_pkg::WORD_WIDTH; i = i + 1)
-            rev[i] = x[cpu_pkg::WORD_WIDTH-1-i];
-        return rev;
-    endfunction
-
-    function automatic logic [cpu_pkg::WORD_WIDTH-1:0] twos_neg(
-        input logic [cpu_pkg::WORD_WIDTH-1:0] x);
-        return (~x) + 1'b1;
-    endfunction
-
-    // ------------------------------------------------------------
     // Engine state
     // ------------------------------------------------------------
-    typedef enum logic [1:0] {
-        S_IDLE,
-        S_RUN,
-        S_DONE
-    } state_e;
-
-    state_e state;
+    alu_state_e state;
 
     logic [cpu_pkg::WORD_WIDTH-1:0] a_r, b_r;
     logic [cpu_pkg::WORD_WIDTH-1:0] a_sr, b_sr, r_sr;
-    logic [COUNTER_WIDTH-1:0]       cnt;
+    logic [SERIAL_WIDTH-1:0]        cnt;
     logic                           carry_ff;
 
     logic [2*cpu_pkg::WORD_WIDTH-1:0] macc, mcand;

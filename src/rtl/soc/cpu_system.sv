@@ -26,16 +26,16 @@ module cpu_system (
 );
 
     // CPU instruction bus.
-    bus_pkg::bus_req_t instr_req;
-    bus_pkg::bus_rsp_t instr_rsp;
+    bus_pkg::bus_req_s instr_req;
+    bus_pkg::bus_rsp_s instr_rsp;
 
     // CPU data-bus master side.
-    bus_pkg::bus_req_t data_req;
-    bus_pkg::bus_rsp_t data_rsp;
+    bus_pkg::bus_req_s data_req;
+    bus_pkg::bus_rsp_s data_rsp;
 
     // Interconnect -> local data-memory slave side.
-    bus_pkg::bus_req_t  slave_req;
-    bus_pkg::bus_rsp_t  slave_rsp;
+    bus_pkg::bus_req_s  slave_req;
+    bus_pkg::bus_rsp_s  slave_rsp;
 
     cpu u_cpu (
         .clk            (clk),

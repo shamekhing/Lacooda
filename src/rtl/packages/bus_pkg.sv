@@ -15,20 +15,20 @@ package bus_pkg;
     typedef enum logic {
         BUS_READ  = 1'b0,
         BUS_WRITE = 1'b1
-    } bus_op_t;
+    } bus_op_e;
 
     // A single request completes when req.valid && rsp.ready.
     typedef struct packed {
         logic              valid;
-        bus_op_t    op;
+        bus_op_e    op;
         cpu_pkg::word_t addr;
         cpu_pkg::word_t    wdata;
-    } bus_req_t;
+    } bus_req_s;
 
     typedef struct packed {
         logic           ready;
         cpu_pkg::word_t rdata;
-    } bus_rsp_t;
+    } bus_rsp_s;
 
     // local data RAM occupies the first DATA_MEMORY_COUNT words
     // of the data address space. Future MMIO/DDR regions can be added here

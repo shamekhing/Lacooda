@@ -16,11 +16,11 @@ module status_register (
     input logic rst,
     input logic write_enable,
 
-    input  cpu_pkg::flags_t  flags_in,
+    input  cpu_pkg::flags_s  flags_in,
     output cpu_pkg::status_t status
 );
 
-    cpu_pkg::flags_t flags_reg;
+    cpu_pkg::flags_s flags_reg;
 
     always_ff @(posedge clk or posedge rst) begin
 

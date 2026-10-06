@@ -5,9 +5,9 @@
 //
 // Everything required to execute the ISA is inside this module:
 //   - program counter and instruction fetch buffering
-//   - decoder
+//   - cpu_decoder
 //   - register file
-//   - ALU/datapath
+//   - ALU/cpu_datapath
 //   - status register
 //   - branch unit
 //   - LOAD/STORE transaction handling
@@ -29,14 +29,14 @@ module cpu (
     input logic run,
 
     // Instruction-bus master interface (read-only).
-    output bus_pkg::bus_req_t instr_req,
-    input  bus_pkg::bus_rsp_t instr_rsp,
+    output bus_pkg::bus_req_s instr_req,
+    input  bus_pkg::bus_rsp_s instr_rsp,
 
     // Data-bus master interface.
     // dbus_write=0 -> LOAD/read
     // dbus_write=1 -> STORE/write
-    output bus_pkg::bus_req_t data_req,
-    input  bus_pkg::bus_rsp_t data_rsp,
+    output bus_pkg::bus_req_s data_req,
+    input  bus_pkg::bus_rsp_s data_rsp,
 
     // Observation outputs retained for simulation/debug.
     output cpu_pkg::word_t        pc,
@@ -56,7 +56,7 @@ module cpu (
     cpu_pkg::word_t operand_a;
     cpu_pkg::word_t operand_b;
 
-    cpu_pkg::flags_t  flags;
+    cpu_pkg::flags_s  flags;
     cpu_pkg::status_t status;
 
     logic redirect;

@@ -99,12 +99,12 @@ package cpu_pkg;
         logic C;
         logic V;
         logic DZ;
-    } flags_t;
+    } flags_s;
 
-    function automatic flags_t make_flags(
+    function automatic flags_s make_flags(
         input logic z, n, c, v, dz
     );
-        flags_t f;
+        flags_s f;
         f.Z  = z;
         f.N  = n;
         f.C  = c;
@@ -167,7 +167,7 @@ package cpu_pkg;
         reg_addr_t rd;
         reg_addr_t rs1;
         reg_addr_t rs2;
-    } instr_fields_t;
+    } instruction_s;
 
     // ------------------------------------------------------------
     // Immediate presence.
@@ -175,7 +175,7 @@ package cpu_pkg;
     // An instruction is followed by an immediate word when it is a
     // branch/jump, a LOAD/STORE, or an ALU op in immediate mode.
     // The predicate is a pure function of the instruction word so the
-    // fetch unit, the PC skip and the decoder can never disagree.
+    // fetch unit, the PC skip and the cpu_decoder can never disagree.
     // ------------------------------------------------------------
 
     function automatic logic uses_imm(
@@ -186,7 +186,7 @@ package cpu_pkg;
     endfunction
 
     function automatic logic instr_uses_imm(input instruction_t instruction);
-        instr_fields_t instr_fields;
+        instruction_s instr_fields;
         instr_fields = instruction;
         return uses_imm(instr_fields.opcode, instr_fields.immediate_mode);
     endfunction
@@ -198,7 +198,7 @@ package cpu_pkg;
         input reg_addr_t rd, rs1, rs2,
         input logic immediate_mode, update_status
     );
-        instr_fields_t instr_fields;
+        instruction_s instr_fields;
         instr_fields = '0;
         instr_fields.opcode = opcode;
         instr_fields.rd = rd;
@@ -216,7 +216,7 @@ package cpu_pkg;
         input reg_addr_t rs1,
         input reg_addr_t rs2
     );
-        instr_fields_t instr_fields;
+        instruction_s instr_fields;
         instr_fields = '0;
         instr_fields.opcode = opcode;
         instr_fields.rs1 = rs1;
@@ -235,7 +235,7 @@ package cpu_pkg;
         input reg_addr_t rd,
         input reg_addr_t base
     );
-        instr_fields_t instr_fields;
+        instruction_s instr_fields;
         instr_fields = '0;
         instr_fields.opcode = MEM_LOAD;
         instr_fields.rd = rd;
@@ -249,7 +249,7 @@ package cpu_pkg;
         input reg_addr_t source,
         input reg_addr_t base
     );
-        instr_fields_t instr_fields;
+        instruction_s instr_fields;
         instr_fields = '0;
         instr_fields.opcode = MEM_STORE;
         instr_fields.rs1 = base;

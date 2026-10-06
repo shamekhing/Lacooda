@@ -165,11 +165,11 @@ module cpu_system_tb;
         run = 1'b0;
         #1;
 
-        assert (dut.u_cpu.u_cpu_core.u_datapath.u_register_file.registers[1] === word_t'(100))
+        assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[1] === word_t'(100))
             else $fatal(1, "R1 wrong");
-        assert (dut.u_cpu.u_cpu_core.u_datapath.u_register_file.registers[3] === word_t'(100))
+        assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[3] === word_t'(100))
             else $fatal(1, "R3 LOAD result wrong");
-        assert (dut.u_cpu.u_cpu_core.u_datapath.u_register_file.registers[4] === word_t'(222))
+        assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222))
             else $fatal(1, "R4 branch result wrong");
         assert (dut.u_data_memory.mem[72 / WORD_BYTES] === word_t'(100))
             else $fatal(1, "Data memory word wrong");

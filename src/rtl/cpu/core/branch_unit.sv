@@ -4,7 +4,7 @@
 // LACOODA branch unit — Stage 6
 //
 // Pure combinational control-flow unit. It compares the two source
-// operands according to the condition selected by the decoder.
+// operands according to the condition selected by the cpu_decoder.
 //
 // If the condition is true and enable is asserted:
 //      redirect = 1
@@ -19,7 +19,7 @@
 
 module branch_unit (
     input  logic                       enable,
-    input  opcode_pkg::opcode_t opcode,
+    input  opcode_pkg::opcode_t        opcode,
     input  cpu_pkg::word_t             operand_a,
     input  cpu_pkg::word_t             operand_b,
     input  cpu_pkg::word_t             target,

@@ -25,11 +25,7 @@ module comparator (
 
     import cpu_pkg::*;
     import opcode_pkg::*;
-
-    localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
-
-    localparam logic [cpu_pkg::WORD_WIDTH-1:0] MSB_ONE =
-        {1'b1, {(cpu_pkg::WORD_WIDTH-1){1'b0}}};
+    import alu_pkg::*;
 
     logic is_signed, is_minmax, is_min;
 
@@ -40,25 +36,11 @@ module comparator (
         is_min    = (op == ALU_MINU) || (op == ALU_MINS);
     end
 
-    function automatic logic [cpu_pkg::WORD_WIDTH-1:0] rev(
-        input logic [cpu_pkg::WORD_WIDTH-1:0] x);
-        integer i;
-        for (i = 0; i < cpu_pkg::WORD_WIDTH; i = i + 1)
-            rev[i] = x[cpu_pkg::WORD_WIDTH-1-i];
-        return rev;
-    endfunction
-
-    typedef enum logic [1:0] {
-        S_IDLE,
-        S_RUN,
-        S_DONE
-    } state_e;
-
-    state_e state;
+    alu_state_e state;
 
     logic [cpu_pkg::WORD_WIDTH-1:0] a_r, b_r;
     logic [cpu_pkg::WORD_WIDTH-1:0] a_sr, b_sr;
-    logic [COUNTER_WIDTH-1:0]       cnt;
+    logic [SERIAL_WIDTH-1:0]        cnt;
 
     logic cmp_eq, cmp_gt, cmp_lt;
     logic [cpu_pkg::WORD_WIDTH-1:0] result_r;

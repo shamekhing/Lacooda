@@ -25,9 +25,11 @@
         <File path="src/rtl/memory/instruction_memory.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/bus_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/cpu_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/packages/alu_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/opcode_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/soc/cpu_system.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/soc/fpga_top.sv" type="file.verilog" enable="1"/>
         <File path="src/constraints/sipeed_tang_primer_20k.cst" type="file.cst" enable="1"/>
+        <File path="src/constraints/sipeed_tang_primer_20k.sdc" type="file.sdc" enable="1"/>
     </FileList>
 </Project>

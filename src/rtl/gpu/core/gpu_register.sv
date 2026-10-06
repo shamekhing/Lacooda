@@ -3,165 +3,329 @@
 // ============================================================
 // LACOODA GPU register block
 //
-// Stage 2 architectural GPU state.
+// CPU-visible GPU MMIO register bank.
 //
-// Writable:
-//   CONTROL
-//   FRAMEBUFFER_BASE
-//   FRAMEBUFFER_WIDTH
-//   FRAMEBUFFER_HEIGHT
-//   CLEAR_COLOR
+// This module is a direct LACOODA bus slave.
 //
-// Read-only:
-//   STATUS
+// Input:
 //
-// The actual rendering engine is not implemented yet.
+//     bus_pkg::bus_req_s
+//
+// Output:
+//
+//     bus_pkg::bus_rsp_s
+//
+// The bus interconnect has already:
+//
+//     1. determined that the address belongs to the GPU
+//     2. subtracted bus_pkg::GPU_BASE
+//
+// Therefore slave_req.addr is already a GPU-local byte address.
+//
+// Responsibilities:
+//
+//     - decode GPU register addresses
+//     - store CPU-writable GPU configuration
+//     - expose read-only GPU status
+//     - generate the bus response
+//
+// Not responsible for:
+//
+//     - rendering
+//     - rasterization
+//     - framebuffer memory
+//     - command execution
+//     - display output
+//
+// Those belong to later GPU stages.
 // ============================================================
 
 module gpu_register (
     input logic clk,
     input logic rst,
 
-    input logic control_wen,
+    // --------------------------------------------------------
+    // LACOODA slave bus
+    // --------------------------------------------------------
 
-    input logic framebuffer_base_wen,
-    input logic framebuffer_width_wen,
-    input logic framebuffer_height_wen,
+    input  bus_pkg::bus_req_s slave_req,
+    output bus_pkg::bus_rsp_s slave_rsp,
 
-    input logic clear_color_wen,
+    // --------------------------------------------------------
+    // GPU internal state
+    // --------------------------------------------------------
 
-    input cpu_pkg::word_t wdata,
+    input gpu_pkg::gpu_status_s status,
 
-    output cpu_pkg::word_t control,
-
-    output gpu_pkg::gpu_status_s status,
-
-    output cpu_pkg::word_t framebuffer_base,
-    output cpu_pkg::word_t framebuffer_width,
-    output cpu_pkg::word_t framebuffer_height,
-
-    output cpu_pkg::word_t clear_color
+    output gpu_pkg::gpu_config_s gpu_cfg
 );
 
-    // ========================================================
-    // Persistent configuration registers
-    // ========================================================
-
-    cpu_pkg::word_t control_reg;
-
-    cpu_pkg::word_t framebuffer_base_reg;
-    cpu_pkg::word_t framebuffer_width_reg;
-    cpu_pkg::word_t framebuffer_height_reg;
-
-    cpu_pkg::word_t clear_color_reg;
 
     // ========================================================
-    // Internal GPU state
+    // LOCAL ADDRESS
+    // ========================================================
+
+    gpu_pkg::gpu_addr_t local_addr;
+
+    assign local_addr = gpu_pkg::gpu_addr_t'(
+            slave_req.addr
+        );
+
+
+    // ========================================================
+    // CONFIGURATION REGISTER WRITE
     // ========================================================
     //
-    // Stage 2 contains no execution engine.
+    // All writable GPU registers are stored inside gpu_cfg.
     //
-    // Therefore the GPU remains idle.
+    // ID and STATUS are not stored here because they are
+    // read-only.
     //
-    // gpu_control will eventually own this state.
+    // Reserved register addresses simply ignore writes.
     // ========================================================
 
-    gpu_pkg::gpu_state_e gpu_state;
-
-    assign gpu_state =
-        gpu_pkg::GPU_IDLE;
-
-    // ========================================================
-    // Persistent register writes
-    // ========================================================
-
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or posedge rst) begin
 
         if (rst) begin
 
-            control_reg <= '0;
+            gpu_cfg <= '0;
 
-            framebuffer_base_reg   <= '0;
-            framebuffer_width_reg  <= '0;
-            framebuffer_height_reg <= '0;
+        end else if (
+            slave_req.valid && (slave_req.op == bus_pkg::BUS_WRITE)
+        ) begin
 
-            clear_color_reg <= '0;
+            case (local_addr)
 
-        end else begin
+                // --------------------------------------------
+                // CONTROL
+                // --------------------------------------------
 
-            if (control_wen)
-                control_reg <= wdata;
+                gpu_pkg::GPU_REG_CONTROL: begin
 
-            if (framebuffer_base_wen)
-                framebuffer_base_reg <= wdata;
+                    gpu_cfg.control <=
+                        slave_req.wdata;
 
-            if (framebuffer_width_wen)
-                framebuffer_width_reg <= wdata;
+                end
 
-            if (framebuffer_height_wen)
-                framebuffer_height_reg <= wdata;
 
-            if (clear_color_wen)
-                clear_color_reg <= wdata;
+                // --------------------------------------------
+                // FRAMEBUFFER BASE
+                // --------------------------------------------
+
+                gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
+
+                    gpu_cfg.framebuffer_base <=
+                        slave_req.wdata;
+
+                end
+
+
+                // --------------------------------------------
+                // FRAMEBUFFER WIDTH
+                // --------------------------------------------
+
+                gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
+
+                    gpu_cfg.framebuffer_width <=
+                        slave_req.wdata;
+
+                end
+
+
+                // --------------------------------------------
+                // FRAMEBUFFER HEIGHT
+                // --------------------------------------------
+
+                gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
+
+                    gpu_cfg.framebuffer_height <=
+                        slave_req.wdata;
+
+                end
+
+
+                // --------------------------------------------
+                // CLEAR COLOR
+                // --------------------------------------------
+
+                gpu_pkg::GPU_REG_CLEAR_COLOR: begin
+
+                    gpu_cfg.clear_color <=
+                        slave_req.wdata;
+
+                end
+
+
+                // --------------------------------------------
+                // READ-ONLY / RESERVED
+                // --------------------------------------------
+
+                default: begin
+
+                    // GPU_REG_ID:
+                    //     read-only
+                    //
+                    // GPU_REG_STATUS:
+                    //     read-only
+                    //
+                    // Unknown addresses:
+                    //     ignored
+
+                end
+
+            endcase
 
         end
 
     end
 
-    // ========================================================
-    // Register outputs
-    // ========================================================
-
-    assign control =
-        control_reg;
-
-    assign framebuffer_base =
-        framebuffer_base_reg;
-
-    assign framebuffer_width =
-        framebuffer_width_reg;
-
-    assign framebuffer_height =
-        framebuffer_height_reg;
-
-    assign clear_color =
-        clear_color_reg;
 
     // ========================================================
-    // STATUS construction
+    // BUS READ RESPONSE
     // ========================================================
     //
-    // STATUS is not stored independently.
+    // MMIO registers currently have no wait states.
     //
-    // It is constructed from the current GPU state.
+    // Therefore every valid GPU request completes immediately.
+    //
+    // Reserved addresses:
+    //
+    //     READ  -> zero
+    //     WRITE -> ignored
+    //
+    // This matches the simple invalid-access behavior already
+    // used elsewhere in the current LACOODA system.
     // ========================================================
 
     always_comb begin
 
-        status = '0;
+        slave_rsp = '0;
 
-        // CONTROL bit 0 enables the GPU.
-        status.enabled =
-            control_reg[0];
 
-        status.idle =
-            (gpu_state == gpu_pkg::GPU_IDLE);
+        // ----------------------------------------------------
+        // VALID REQUEST
+        // ----------------------------------------------------
 
-        status.busy =
-            (gpu_state == gpu_pkg::GPU_BUSY);
+        if (slave_req.valid) begin
 
-        status.error =
-            (gpu_state == gpu_pkg::GPU_ERROR);
+            slave_rsp.ready =
+                1'b1;
 
-        // Later stages will drive these.
-        status.command_done =
-            1'b0;
 
-        status.framebuffer_valid =
-            1'b0;
+            // ------------------------------------------------
+            // READ
+            // ------------------------------------------------
 
-        status.display_active =
-            1'b0;
+            if (
+                slave_req.op ==
+                bus_pkg::BUS_READ
+            ) begin
+
+                case (local_addr)
+
+
+                    // ========================================
+                    // ID
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_ID: begin
+
+                        slave_rsp.rdata =
+                            gpu_pkg::GPU_ID_VALUE;
+
+                    end
+
+
+                    // ========================================
+                    // CONTROL
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_CONTROL: begin
+
+                        slave_rsp.rdata =
+                            gpu_cfg.control;
+
+                    end
+
+
+                    // ========================================
+                    // STATUS
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_STATUS: begin
+
+                        slave_rsp.rdata =
+                            cpu_pkg::word_t'(
+                                status
+                            );
+
+                    end
+
+
+                    // ========================================
+                    // FRAMEBUFFER BASE
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
+
+                        slave_rsp.rdata =
+                            gpu_cfg.framebuffer_base;
+
+                    end
+
+
+                    // ========================================
+                    // FRAMEBUFFER WIDTH
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
+
+                        slave_rsp.rdata =
+                            gpu_cfg.framebuffer_width;
+
+                    end
+
+
+                    // ========================================
+                    // FRAMEBUFFER HEIGHT
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
+
+                        slave_rsp.rdata =
+                            gpu_cfg.framebuffer_height;
+
+                    end
+
+
+                    // ========================================
+                    // CLEAR COLOR
+                    // ========================================
+
+                    gpu_pkg::GPU_REG_CLEAR_COLOR: begin
+
+                        slave_rsp.rdata =
+                            gpu_cfg.clear_color;
+
+                    end
+
+
+                    // ========================================
+                    // RESERVED
+                    // ========================================
+
+                    default: begin
+
+                        slave_rsp.rdata =
+                            '0;
+
+                    end
+
+                endcase
+
+            end
+
+        end
 
     end
 

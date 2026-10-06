@@ -45,14 +45,10 @@ package gpu_pkg;
     //
     // These are GPU-LOCAL addresses.
     //
-    // They are an anonymous enum because we need the named
-    // constants, but do not currently need another named enum
-    // type.
-    //
     // The underlying width is gpu_addr_t.
     // ========================================================
 
-    enum gpu_addr_t {
+    typedef enum gpu_addr_t {
         GPU_REG_ID                 = 'h000,
         GPU_REG_CONTROL            = 'h004,
         GPU_REG_STATUS             = 'h008,
@@ -67,7 +63,7 @@ package gpu_pkg;
     // ========================================================
 
     localparam cpu_pkg::word_t GPU_ID_VALUE =
-        cpu_pkg::word_t'(32'h4750_5530);
+        cpu_pkg::word_t'(32'h4750_5530); // GPU0 in ASCII
 
     // ========================================================
     // GPU internal state

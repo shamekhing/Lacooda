@@ -148,7 +148,7 @@ run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_in
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/bus/address_cpu_decoder.sv \
+    src/rtl/bus/address_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/sim/testbench/bus/bus_interconnect_tb.sv
 
@@ -192,10 +192,11 @@ run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/rtl/cpu/cpu.sv \
-    src/rtl/bus/address_cpu_decoder.sv \
+    src/rtl/bus/address_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/rtl/memory/instruction_memory.sv \
     src/rtl/memory/data_memory.sv \
+    src/rtl/gpu/gpu.sv \
     src/rtl/soc/cpu_system.sv \
     src/sim/testbench/soc/cpu_system_tb.sv
 

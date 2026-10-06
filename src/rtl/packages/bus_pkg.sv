@@ -2,36 +2,16 @@
 `ifndef BUS_PKG_SV
 `define BUS_PKG_SV
 
-// ============================================================
-// LACOODA bus package
-//
-// Shared SoC-side definitions for the simple valid/ready bus.
-//
-// The CPU does not know which devices occupy which addresses.
-// It only produces byte addresses through its instruction/data
-// master interfaces.
-//
-// Address-map ownership belongs here rather than in cpu_pkg or
-// individual peripherals.
-// ============================================================
-
 package bus_pkg;
 
-    // --------------------------------------------------------
-    // Bus operation
-    // --------------------------------------------------------
+    // ========================================================
+    // Bus protocol
+    // ========================================================
 
     typedef enum logic {
         BUS_READ  = 1'b0,
         BUS_WRITE = 1'b1
     } bus_op_e;
-
-    // --------------------------------------------------------
-    // Bus request
-    //
-    // A master keeps this request stable until the selected
-    // slave completes the transaction with rsp.ready.
-    // --------------------------------------------------------
 
     typedef struct packed {
         logic           valid;
@@ -40,81 +20,95 @@ package bus_pkg;
         cpu_pkg::word_t wdata;
     } bus_req_s;
 
-    // --------------------------------------------------------
-    // Bus response
-    //
-    // A transaction completes when:
-    //
-    //     req.valid && rsp.ready
-    //
-    // rdata is meaningful for BUS_READ transactions.
-    // --------------------------------------------------------
-
     typedef struct packed {
         logic           ready;
         cpu_pkg::word_t rdata;
     } bus_rsp_s;
 
     // ========================================================
-    // LOCAL DATA MEMORY REGION
-    // ========================================================
+    // DATA MEMORY
     //
-    // Local data RAM begins at address zero and occupies exactly
-    // DATA_MEMORY_COUNT architectural words.
+    // Logical size:
+    //
+    //   32 KiB
+    //   32768 bytes decimal
+    //   0x00008000 bytes hexadecimal
     //
     // Address range:
     //
-    //     [DATA_MEMORY_BASE, DATA_MEMORY_LIMIT)
+    //   decimal: 0 .. 32767
+    //   hex:     0x00000000 .. 0x00007FFF
     //
-    // LIMIT is exclusive.
+    // LIMIT is exclusive:
+    //
+    //   decimal: 32768
+    //   hex:     0x00008000
     // ========================================================
 
-    localparam cpu_pkg::word_t DATA_MEMORY_BASE =
-        cpu_pkg::word_t'(0);
-
-    // Perform the calculation using the architectural word type.
-    //
-    // This avoids SystemVerilog int-width overflow when the
-    // address space is made larger.
-    localparam cpu_pkg::word_t DATA_MEMORY_SIZE =
-        cpu_pkg::word_t'(cpu_pkg::DATA_MEMORY_COUNT) *
-        cpu_pkg::word_t'(cpu_pkg::WORD_BYTES);
-
-    localparam cpu_pkg::word_t DATA_MEMORY_LIMIT =
-        DATA_MEMORY_BASE + DATA_MEMORY_SIZE;
+    localparam cpu_pkg::word_t DATA_MEMORY_BASE  = cpu_pkg::word_t'(0);
+    localparam cpu_pkg::word_t DATA_MEMORY_SIZE  = cpu_pkg::word_t'(cpu_pkg::DATA_MEMORY_COUNT) * cpu_pkg::word_t'(cpu_pkg::WORD_BYTES);
+    localparam cpu_pkg::word_t DATA_MEMORY_LIMIT = DATA_MEMORY_BASE + DATA_MEMORY_SIZE;
 
     // ========================================================
-    // GPU MMIO REGION
+    // GPU MMIO
+    //
+    // This reserves ADDRESS SPACE. It does not instantiate
+    // 4 KiB of RAM.
+    //
+    // Base:
+    //   decimal: 268435456
+    //   hex:     0x10000000
+    //
+    // Size:
+    //   decimal: 4096 bytes
+    //   hex:     0x00001000
+    //
+    // Last address:
+    //   decimal: 268439551
+    //   hex:     0x10000FFF
+    //
+    // Exclusive limit:
+    //   decimal: 268439552
+    //   hex:     0x10001000
     // ========================================================
+
+    localparam cpu_pkg::word_t GPU_BASE  = cpu_pkg::word_t'(32'h1000_0000);
+    localparam cpu_pkg::word_t GPU_SIZE  = cpu_pkg::word_t'(32'h0000_1000);
+    localparam cpu_pkg::word_t GPU_LIMIT = GPU_BASE + GPU_SIZE;
+
+    // ========================================================
+    // FUTURE EXTERNAL DDR3
     //
-    // Stage 1 reserves a 4 KiB address window for the GPU.
+    // Not connected in Stage 1.
     //
-    // The GPU does not yet contain architectural registers.
-    // This region simply gives the GPU a permanent place in the
-    // SoC address map so CPU LOAD/STORE transactions can reach it.
+    // Physical capacity:
+    //   128 MiB
+    //   134217728 bytes
+    //   1073741824 bits
     //
-    // CPU-visible address range:
+    // Base:
+    //   decimal: 2147483648
+    //   hex:     0x80000000
     //
-    //     0x1000_0000
-    //          ...
-    //     0x1000_0FFF
+    // Size:
+    //   decimal: 134217728
+    //   hex:     0x08000000
     //
-    // GPU_LIMIT is exclusive:
+    // Last address:
+    //   decimal: 2281701375
+    //   hex:     0x87FFFFFF
     //
-    //     0x1000_1000
+    // Exclusive limit:
+    //   decimal: 2281701376
+    //   hex:     0x88000000
     //
-    // The interconnect converts these CPU-visible addresses into
-    // GPU-local offsets before presenting them to gpu.sv.
+    // These constants reserve the intended future map only.
+    // They DO NOT make DDR3 functional.
     // ========================================================
 
-    localparam cpu_pkg::word_t GPU_BASE =
-        cpu_pkg::word_t'(32'h1000_0000);
-
-    localparam cpu_pkg::word_t GPU_SIZE =
-        cpu_pkg::word_t'(32'h0000_1000);
-
-    localparam cpu_pkg::word_t GPU_LIMIT =
-        GPU_BASE + GPU_SIZE;
+    localparam cpu_pkg::word_t DDR3_BASE  = cpu_pkg::word_t'(32'h8000_0000);
+    localparam cpu_pkg::word_t DDR3_SIZE  = cpu_pkg::word_t'(32'h0800_0000);
+    localparam cpu_pkg::word_t DDR3_LIMIT = DDR3_BASE + DDR3_SIZE;
 
 endpackage
 

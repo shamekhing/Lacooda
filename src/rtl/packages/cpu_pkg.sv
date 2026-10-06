@@ -62,12 +62,32 @@ package cpu_pkg;
     // R0 is architecturally hardwired to zero.
     localparam reg_addr_t ZERO_REG = '0;
 
-    // ------------------------------------------------------------
-    // Memory depth groups (width is the global word; only depth lives here).
-    // ------------------------------------------------------------
+        // ============================================================
+    // FPGA-local memory capacities
+    //
+    // Each CPU-local memory stores 32 KiB:
+    //
+    //   32 KiB = 32 * 1024 bytes
+    //          = 32768 bytes
+    //          = 262144 bits
+    //
+    // At WORD_WIDTH = 32:
+    //   WORD_BYTES = 4
+    //   32768 / 4 = 8192 words
+    //
+    // At WORD_WIDTH = 64:
+    //   WORD_BYTES = 8
+    //   32768 / 8 = 4096 words
+    //
+    // The byte capacity therefore remains constant when changing
+    // architectural word width.
+    // ============================================================
 
-    localparam int INSTRUCTION_MEMORY_COUNT = 256;
-    localparam int DATA_MEMORY_COUNT = 256;
+    localparam int INSTRUCTION_MEMORY_BYTES = 32 * 1024; // 32 KiB
+    localparam int DATA_MEMORY_BYTES        = 32 * 1024; // 32 KiB
+    localparam int INSTRUCTION_MEMORY_COUNT = INSTRUCTION_MEMORY_BYTES / WORD_BYTES;
+    localparam int DATA_MEMORY_COUNT        = DATA_MEMORY_BYTES / WORD_BYTES;
+
     // Program image. Word-size-dependent (branch targets are byte
     // addresses), so each global word has its own image.
     // Path is resolved by the tool flow relative to the repository root

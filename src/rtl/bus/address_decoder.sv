@@ -1,21 +1,5 @@
 `timescale 1ns/1ps
 
-// ============================================================
-// LACOODA data-bus address decoder
-//
-// Pure combinational address classification.
-//
-// The decoder does not move data and does not perform bus
-// transactions. Its only job is to determine which data-bus
-// slave owns the CPU-visible address.
-//
-// Stage 1 slaves:
-//   - local data memory
-//   - GPU MMIO
-//
-// Address ranges are defined centrally in bus_pkg.
-// ============================================================
-
 module address_cpu_decoder (
     input  cpu_pkg::word_t addr,
 
@@ -26,11 +10,12 @@ module address_cpu_decoder (
     always_comb begin
 
         // ----------------------------------------------------
-        // Local data memory
+        // Data BRAM
         //
-        // Half-open range:
+        // [0x00000000, 0x00008000)
         //
-        //   DATA_MEMORY_BASE <= addr < DATA_MEMORY_LIMIT
+        // decimal:
+        // [0, 32768)
         // ----------------------------------------------------
 
         data_memory_sel =
@@ -40,9 +25,10 @@ module address_cpu_decoder (
         // ----------------------------------------------------
         // GPU MMIO
         //
-        // Half-open range:
+        // [0x10000000, 0x10001000)
         //
-        //   GPU_BASE <= addr < GPU_LIMIT
+        // decimal:
+        // [268435456, 268439552)
         // ----------------------------------------------------
 
         gpu_sel =

@@ -21,6 +21,8 @@
         <File path="src/rtl/cpu/cpu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/instruction_fetch.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/program_counter.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/gpu/core/gpu_decoder.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/gpu/core/gpu_register.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/gpu/gpu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/data_memory.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/instruction_memory.sv" type="file.verilog" enable="1"/>
@@ -36,5 +38,7 @@
         <File path="src/constraints/sipeed_tang_primer_20k.sdc" type="file.sdc" enable="1"/>
         <File path="src/programs/data_memory_32.hex" type="file.other" enable="1"/>
         <File path="src/programs/data_memory_64.hex" type="file.other" enable="1"/>
+        <File path="src/programs/genesis_32.hex" type="file.other" enable="1"/>
+        <File path="src/programs/genesis_64.hex" type="file.other" enable="1"/>
     </FileList>
 </Project>

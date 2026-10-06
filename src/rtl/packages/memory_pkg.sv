@@ -3,100 +3,51 @@
 `define MEMORY_PKG_SV
 
 // ============================================================
-// Memory package
+// LACOODA memory package
 //
-// Single source of truth for local-memory configuration.
+// Central source of truth for memory and MMIO allocation sizes.
 //
-// Owns:
+// This package owns capacities/sizes.
 //
-//   - instruction-memory capacity
-//   - data-memory capacity
-//   - memory word counts
-//   - memory initialization files
-//
-// Does NOT own:
-//
-//   - CPU word width       -> cpu_pkg
-//   - bus protocol         -> bus_pkg
-//   - address map          -> currently bus_pkg
-//
-// Dependency:
-//
-//     cpu_pkg
-//       ↓
-//   memory_pkg
-//
-// Therefore memory_pkg may reference cpu_pkg, but cpu_pkg must
-// never reference memory_pkg.
+// It does NOT own:
+//   - CPU/GPU internal register definitions
+//   - bus protocol
+//   - absolute SoC base addresses
 // ============================================================
 
 package memory_pkg;
 
-
     // ========================================================
-    // MEMORY CAPACITY
-    // ========================================================
-    //
-    // Define physical/logical capacity in BYTES.
-    //
-    // This is preferable to defining the number of words
-    // directly because the capacity then remains constant when
-    // switching between 32-bit and 64-bit CPU configurations.
-    //
-    // Current allocation:
-    //
-    //     instruction memory = 32 KiB
-    //     data memory        = 32 KiB
+    // Local memories
     // ========================================================
 
-    localparam int INSTRUCTION_MEMORY_BYTES =
-        32 * 1024;
-
-    localparam int DATA_MEMORY_BYTES =
-        32 * 1024;
-
+    localparam int INSTRUCTION_MEMORY_BYTES = 32 * 1024;
+    localparam int DATA_MEMORY_BYTES        = 32 * 1024;
 
     // ========================================================
-    // MEMORY DEPTH
+    // MMIO region sizes
     // ========================================================
     //
-    // Number of architectural words stored in each memory.
+    // GPU receives 4 KiB of CPU-visible MMIO address space.
     //
-    // 32-bit:
-    //
-    //     WORD_BYTES = 4
-    //
-    //     32768 / 4
-    //       = 8192 words
-    //
-    // 64-bit:
-    //
-    //     WORD_BYTES = 8
-    //
-    //     32768 / 8
-    //       = 4096 words
-    //
-    // Capacity remains 32 KiB in either configuration.
+    // This is NOT framebuffer memory.
+    // It is the address space occupied by GPU registers.
+    // ========================================================
+
+    localparam int GPU_MMIO_BYTES = 4 * 1024;
+
+    // ========================================================
+    // Memory depths
     // ========================================================
 
     localparam int INSTRUCTION_MEMORY_COUNT =
-        INSTRUCTION_MEMORY_BYTES /
-        cpu_pkg::WORD_BYTES;
-
+        INSTRUCTION_MEMORY_BYTES / cpu_pkg::WORD_BYTES;
 
     localparam int DATA_MEMORY_COUNT =
-        DATA_MEMORY_BYTES /
-        cpu_pkg::WORD_BYTES;
-
+        DATA_MEMORY_BYTES / cpu_pkg::WORD_BYTES;
 
     // ========================================================
-    // INSTRUCTION MEMORY IMAGE
-    // ========================================================
-    //
-    // Program images are word-width dependent.
-    //
-    // Paths are relative to the repository root because the
-    // existing simulation and Gowin flows run from there.
+    // Initialization files
     // ========================================================
 
     localparam string PROGRAM_FILE =
@@ -104,54 +55,16 @@ package memory_pkg;
             ? "src/programs/genesis_32.hex"
             : "src/programs/genesis_64.hex";
 
-
-    // ========================================================
-    // DATA MEMORY IMAGE
-    // ========================================================
-    //
-    // Data memory uses a memory image rather than a huge:
-    //
-    //     for (...)
-    //         mem[i] = '0;
-    //
-    // initialization loop.
-    //
-    // For zero-filled images:
-    //
-    // 32-bit:
-    //
-    //     yes 00000000 | head -n 8192 \
-    //       > src/programs/data_memory_32.hex
-    //
-    // 64-bit:
-    //
-    //     yes 0000000000000000 | head -n 4096 \
-    //       > src/programs/data_memory_64.hex
-    //
-    // The file provides initial contents only.
-    // Data RAM remains writable at runtime.
-    // ========================================================
-
     localparam string DATA_MEMORY_FILE =
         (cpu_pkg::WORD_WIDTH == 32)
             ? "src/programs/data_memory_32.hex"
             : "src/programs/data_memory_64.hex";
 
-
     // ========================================================
-    // MEMORY CONFIGURATION VALIDATION
-    // ========================================================
-    //
-    // Memory checks moved here from cpu_pkg because memory_pkg
-    // now owns memory geometry.
+    // Configuration validation
     // ========================================================
 
     function automatic bit validate_configuration();
-
-
-        // ----------------------------------------------------
-        // Capacities must be positive.
-        // ----------------------------------------------------
 
         if (INSTRUCTION_MEMORY_BYTES <= 0)
             $fatal(
@@ -159,41 +72,29 @@ package memory_pkg;
                 "INSTRUCTION_MEMORY_BYTES must be positive"
             );
 
-
         if (DATA_MEMORY_BYTES <= 0)
             $fatal(
                 1,
                 "DATA_MEMORY_BYTES must be positive"
             );
 
+        if (GPU_MMIO_BYTES <= 0)
+            $fatal(
+                1,
+                "GPU_MMIO_BYTES must be positive"
+            );
 
-        // ----------------------------------------------------
-        // Capacity must contain an exact number of CPU words.
-        // ----------------------------------------------------
-
-        if (
-            (INSTRUCTION_MEMORY_BYTES %
-             cpu_pkg::WORD_BYTES) != 0
-        )
+        if ((INSTRUCTION_MEMORY_BYTES % cpu_pkg::WORD_BYTES) != 0)
             $fatal(
                 1,
                 "INSTRUCTION_MEMORY_BYTES must be divisible by WORD_BYTES"
             );
 
-
-        if (
-            (DATA_MEMORY_BYTES %
-             cpu_pkg::WORD_BYTES) != 0
-        )
+        if ((DATA_MEMORY_BYTES % cpu_pkg::WORD_BYTES) != 0)
             $fatal(
                 1,
                 "DATA_MEMORY_BYTES must be divisible by WORD_BYTES"
             );
-
-
-        // ----------------------------------------------------
-        // Derived memory depths must be valid.
-        // ----------------------------------------------------
 
         if (INSTRUCTION_MEMORY_COUNT <= 0)
             $fatal(
@@ -201,13 +102,11 @@ package memory_pkg;
                 "INSTRUCTION_MEMORY_COUNT must be positive"
             );
 
-
         if (DATA_MEMORY_COUNT <= 0)
             $fatal(
                 1,
                 "DATA_MEMORY_COUNT must be positive"
             );
-
 
         return 1'b1;
 

@@ -200,7 +200,17 @@ run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     src/rtl/soc/cpu_system.sv \
     src/sim/testbench/soc/cpu_system_tb.sv
 
-
+run_test "GPU MMIO REGISTER TEST" gpu_tb gpu_sim gpu.vcd \
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/packages/gpu_pkg.sv \
+    src/rtl/gpu/gpu_decoder.sv \
+    src/rtl/gpu/gpu_register.sv \
+    src/rtl/gpu/gpu.sv \
+    src/sim/testbench/gpu/gpu_tb.sv
+    
 echo "========== ALL TESTS PASSED =========="
 
 # Use --no-gui for regression only.

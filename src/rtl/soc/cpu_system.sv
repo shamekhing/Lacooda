@@ -3,14 +3,26 @@
 // ============================================================
 // LACOODA minimal SoC wrapper
 //
-// cpu.sv is the finished CPU boundary. This module is intentionally outside
-// the CPU and supplies the smallest system needed to run programs:
+// cpu.sv remains the CPU boundary.
 //
-//      CPU I-BUS  -> local instruction memory
-//      CPU D-BUS  -> bus interconnect -> local data memory
+// System structure after GPU Stage 1:
 //
-// Future DDR3/MMIO/video/peripheral slaves belong here or below rtl/bus/;
-// they do not require changing the CPU's I-BUS/D-BUS contract.
+//      CPU I-BUS
+//          |
+//          +-----------------> instruction_memory
+//
+//      CPU D-BUS
+//          |
+//          v
+//      bus_interconnect
+//          |
+//          +-----------------> data_memory
+//          |
+//          +-----------------> gpu
+//
+// The CPU still sees only its generic I-BUS and D-BUS.
+// Device selection belongs to the SoC/interconnect rather than
+// the processor core.
 // ============================================================
 
 module cpu_system (
@@ -25,17 +37,37 @@ module cpu_system (
     output cpu_pkg::word_t alu_result
 );
 
-    // CPU instruction bus.
+    // ========================================================
+    // CPU INSTRUCTION BUS
+    // ========================================================
+
     bus_pkg::bus_req_s instr_req;
     bus_pkg::bus_rsp_s instr_rsp;
 
-    // CPU data-bus master side.
+    // ========================================================
+    // CPU DATA BUS
+    // ========================================================
+
     bus_pkg::bus_req_s data_req;
     bus_pkg::bus_rsp_s data_rsp;
 
-    // Interconnect -> local data-memory slave side.
-    bus_pkg::bus_req_s  slave_req;
-    bus_pkg::bus_rsp_s  slave_rsp;
+    // ========================================================
+    // LOCAL DATA MEMORY BUS
+    // ========================================================
+
+    bus_pkg::bus_req_s data_memory_req;
+    bus_pkg::bus_rsp_s data_memory_rsp;
+
+    // ========================================================
+    // GPU BUS
+    // ========================================================
+
+    bus_pkg::bus_req_s gpu_req;
+    bus_pkg::bus_rsp_s gpu_rsp;
+
+    // ========================================================
+    // CPU
+    // ========================================================
 
     cpu u_cpu (
         .clk            (clk),
@@ -44,6 +76,7 @@ module cpu_system (
 
         .instr_req      (instr_req),
         .instr_rsp      (instr_rsp),
+
         .data_req       (data_req),
         .data_rsp       (data_rsp),
 
@@ -54,22 +87,51 @@ module cpu_system (
         .alu_result     (alu_result)
     );
 
+    // ========================================================
+    // INSTRUCTION MEMORY
+    // ========================================================
+
     instruction_memory u_instruction_memory (
         .slave_req (instr_req),
         .slave_rsp (instr_rsp)
     );
 
+    // ========================================================
+    // DATA-BUS INTERCONNECT
+    // ========================================================
+
     bus_interconnect u_bus_interconnect (
-        .d_req     (data_req),
-        .d_rsp     (data_rsp),
-        .slave_req (slave_req),
-        .slave_rsp (slave_rsp)
+        .d_req           (data_req),
+        .d_rsp           (data_rsp),
+
+        .data_memory_req (data_memory_req),
+        .data_memory_rsp (data_memory_rsp),
+
+        .gpu_req         (gpu_req),
+        .gpu_rsp         (gpu_rsp)
     );
+
+    // ========================================================
+    // LOCAL DATA MEMORY
+    // ========================================================
 
     data_memory u_data_memory (
         .clk       (clk),
-        .slave_req (slave_req),
-        .slave_rsp (slave_rsp)
+
+        .slave_req (data_memory_req),
+        .slave_rsp (data_memory_rsp)
+    );
+
+    // ========================================================
+    // GPU
+    // ========================================================
+
+    gpu u_gpu (
+        .clk       (clk),
+        .rst       (rst),
+
+        .slave_req (gpu_req),
+        .slave_rsp (gpu_rsp)
     );
 
 endmodule

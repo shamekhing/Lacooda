@@ -209,6 +209,117 @@ package gpu_pkg;
     localparam int GPU_STATUS_WIDTH =
         $bits(gpu_status_s);
 
+    // ============================================================
+    // PIXEL FORMAT
+    // ============================================================
+    //
+    // Initial GPU pixel format:
+    //
+    //     32-bit RGBA
+    //
+    // Memory representation:
+    //
+    //     [31:24] R
+    //     [23:16] G
+    //     [15:8]  B
+    //     [7:0]   A
+    //
+    // Keeping the pixel width fixed initially makes framebuffer
+    // addressing deterministic and simple.
+    // ============================================================
+
+    localparam int GPU_PIXEL_WIDTH = 32;
+    localparam int GPU_PIXEL_BYTES = GPU_PIXEL_WIDTH / 8;
+
+    typedef logic [GPU_PIXEL_WIDTH-1:0] gpu_pixel_t;
+
+
+    // ============================================================
+    // GPU COORDINATE
+    // ============================================================
+
+    localparam int GPU_COORD_WIDTH = 16;
+
+    typedef logic [GPU_COORD_WIDTH-1:0] gpu_coord_t;
+
+
+    // ============================================================
+    // PIXEL REQUEST
+    // ============================================================
+    //
+    // Internal request sent to the pixel engine.
+    //
+    // This is NOT a bus transaction.
+    // It describes a graphics operation.
+    // ============================================================
+
+    typedef struct packed {
+
+        logic       valid;
+
+        gpu_coord_t x;
+        gpu_coord_t y;
+
+        gpu_pixel_t color;
+
+    } gpu_pixel_req_s;
+
+
+    // ============================================================
+    // PIXEL WRITE
+    // ============================================================
+    //
+    // Result of pixel address generation.
+    //
+    // The future GPU memory interface converts this into the
+    // actual LACOODA bus transaction.
+    // ============================================================
+
+    typedef struct packed {
+
+        logic valid;
+
+        cpu_pkg::word_t addr;
+        gpu_pixel_t     data;
+
+    } gpu_pixel_write_s;
+
+    // ============================================================
+    // GPU MEMORY REQUEST
+    // ============================================================
+    //
+    // Internal GPU request for one native LACOODA memory word.
+    //
+    // Graphics engines do not directly construct bus_req_s.
+    // They submit memory operations through this interface.
+    //
+    // Address is a byte address.
+    // ============================================================
+
+    typedef struct packed {
+
+        logic valid;
+
+        bus_pkg::bus_op_e op;
+
+        cpu_pkg::word_t addr;
+        cpu_pkg::word_t wdata;
+
+    } gpu_mem_req_s;
+
+
+    // ============================================================
+    // GPU MEMORY RESPONSE
+    // ============================================================
+
+    typedef struct packed {
+
+        logic ready;
+
+        cpu_pkg::word_t rdata;
+
+    } gpu_mem_rsp_s;
+
 endpackage
 
 `endif

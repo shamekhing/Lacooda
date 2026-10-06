@@ -24,15 +24,12 @@ module instruction_memory (
     output bus_pkg::bus_rsp_s  slave_rsp
 );
 
-    cpu_pkg::instruction_t mem [0:cpu_pkg::INSTRUCTION_MEMORY_COUNT-1];
+    cpu_pkg::instruction_t mem [0:memory_pkg::INSTRUCTION_MEMORY_COUNT-1];
     logic addr_valid;
     cpu_pkg::word_t rdata;
 
     initial begin
-        for (int idx = 0; idx < cpu_pkg::INSTRUCTION_MEMORY_COUNT; idx++)
-            mem[idx] = '0;
-
-        $readmemh(cpu_pkg::PROGRAM_FILE, mem);
+        $readmemh(memory_pkg::PROGRAM_FILE, mem);
     end
 
     assign slave_rsp = {slave_req.valid, rdata};
@@ -40,7 +37,7 @@ module instruction_memory (
     always_comb begin
         addr_valid =
             (slave_req.addr % cpu_pkg::WORD_BYTES == 0) &&
-            ((slave_req.addr / cpu_pkg::WORD_BYTES) < cpu_pkg::INSTRUCTION_MEMORY_COUNT);
+            ((slave_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_MEMORY_COUNT);
     end
 
     always_comb begin

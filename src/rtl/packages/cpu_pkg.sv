@@ -5,114 +5,108 @@
 // ============================================================
 // CPU package
 //
-// Single source of truth for the LACOODA CPU-wide constants,
-// instruction layout, control-flow/memory encodings, and instruction
-// construction helpers.
+// Single source of truth for the LACOODA CPU architecture:
 //
-// There is exactly ONE architectural word: WORD_WIDTH (32 or 64 bits).
-// Registers, ALU operands, immediates, addresses, status, bus payloads,
-// data-memory words and instruction words are all that word. Nothing in
-// this package or the RTL may declare its own architectural width.
+//   - architectural word width
+//   - architectural word types
+//   - register-file geometry
+//   - STATUS representation
+//   - instruction layout
+//   - instruction construction helpers
 //
-// Instruction encoding (LSB first):
-//   RS2, RS1, RD, OPCODE, I (immediate mode), S (update status).
-// The immediate is NOT an instruction field. An instruction that needs
-// an immediate is followed by one full word in instruction memory; the
-// fetch unit reads it and the PC skips it on retirement.
+// Memory capacity and memory initialization files DO NOT belong
+// here. They are owned by memory_pkg.
+//
+// Dependency:
+//
+//     opcode_pkg
+//         ↓
+//       cpu_pkg
+//
+// cpu_pkg must therefore NEVER depend on memory_pkg.
 // ============================================================
 
 package cpu_pkg;
 
     import opcode_pkg::*;
 
-    // ------------------------------------------------------------
-    // THE global word.
+
+    // ========================================================
+    // GLOBAL ARCHITECTURAL WORD
+    // ========================================================
     //
-    // Selection: define LACOODA_WORD_WIDTH at compile time, e.g.
-    //   iverilog -DLACOODA_WORD_WIDTH=32 ...
-    // ------------------------------------------------------------
+    // Select at compile time, for example:
+    //
+    //   -DLACOODA_WORD_WIDTH=32
+    //
+    // or:
+    //
+    //   -DLACOODA_WORD_WIDTH=64
+    //
+    // Default = 32 bits.
+    // ========================================================
 
     `ifndef LACOODA_WORD_WIDTH
         `define LACOODA_WORD_WIDTH 32
     `endif
 
-    localparam int WORD_WIDTH = `LACOODA_WORD_WIDTH;
-    localparam int WORD_BYTES = WORD_WIDTH / 8;
+    localparam int WORD_WIDTH =
+        `LACOODA_WORD_WIDTH;
 
-    // ------------------------------------------------------------
-    // Architectural types
-    // ------------------------------------------------------------
+    localparam int WORD_BYTES =
+        WORD_WIDTH / 8;
 
-    // THE architectural word. Every architectural payload below is this
-    // word; there is no second width anywhere in the design.
+
+    // ========================================================
+    // ARCHITECTURAL TYPES
+    // ========================================================
+
     typedef logic [WORD_WIDTH-1:0] word_t;
 
-    // The instruction stream is also exactly one word.
+    // An instruction occupies exactly one architectural word.
     typedef word_t instruction_t;
 
-    // ------------------------------------------------------------
-    // Register file group.
-    // ------------------------------------------------------------
+
+    // ========================================================
+    // REGISTER FILE
+    // ========================================================
 
     localparam int REG_FILE_COUNT = 64;
-    localparam int REG_FILE_ADDR_WIDTH = $clog2(REG_FILE_COUNT);
+
+    localparam int REG_FILE_ADDR_WIDTH =
+        $clog2(REG_FILE_COUNT);
 
     typedef logic [REG_FILE_ADDR_WIDTH-1:0] reg_addr_t;
+
 
     // R0 is architecturally hardwired to zero.
     localparam reg_addr_t ZERO_REG = '0;
 
-        // ============================================================
-    // FPGA-local memory capacities
-    //
-    // Each CPU-local memory stores 32 KiB:
-    //
-    //   32 KiB = 32 * 1024 bytes
-    //          = 32768 bytes
-    //          = 262144 bits
-    //
-    // At WORD_WIDTH = 32:
-    //   WORD_BYTES = 4
-    //   32768 / 4 = 8192 words
-    //
-    // At WORD_WIDTH = 64:
-    //   WORD_BYTES = 8
-    //   32768 / 8 = 4096 words
-    //
-    // The byte capacity therefore remains constant when changing
-    // architectural word width.
-    // ============================================================
 
-    localparam int INSTRUCTION_MEMORY_BYTES = 32 * 1024; // 32 KiB
-    localparam int DATA_MEMORY_BYTES        = 32 * 1024; // 32 KiB
-    localparam int INSTRUCTION_MEMORY_COUNT = INSTRUCTION_MEMORY_BYTES / WORD_BYTES;
-    localparam int DATA_MEMORY_COUNT        = DATA_MEMORY_BYTES / WORD_BYTES;
-
-    // Program image. Word-size-dependent (branch targets are byte
-    // addresses), so each global word has its own image.
-    // Path is resolved by the tool flow relative to the repository root
-    // (iverilog regressions and GowinSynthesis both run from there), so the
-    // "src/" prefix matches where the images actually live.
-    localparam PROGRAM_FILE =
-        (WORD_WIDTH == 32) ? "src/programs/genesis_32.hex" : "src/programs/genesis_64.hex";
-
-    // ------------------------------------------------------------
-    // Architectural STATUS: a dedicated 32-bit register, independent
-    // of the global CPU word. Only [4:0] have implemented state:
-    //   [4] DZ, [3] V, [2] C, [1] N, [0] Z
-    // [31:5] are reserved and always read as zero.
-    // ------------------------------------------------------------
+    // ========================================================
+    // STATUS REGISTER
+    // ========================================================
+    //
+    // STATUS intentionally remains fixed at 32 bits even when
+    // WORD_WIDTH is 64.
+    //
+    // Implemented state:
+    //
+    //     [4] DZ
+    //     [3] V
+    //     [2] C
+    //     [1] N
+    //     [0] Z
+    //
+    // Bits [31:5] are reserved.
+    // ========================================================
 
     localparam int STATUS_WIDTH = 32;
 
     typedef logic [STATUS_WIDTH-1:0] status_t;
 
-    // ALU condition flags, packed MSB-first:
-    //   Z  : result is zero
-    //   N  : result sign bit (MSB)
-    //   C  : carry out / no borrow
-    //   V  : signed overflow
-    //   DZ : divide by zero
+
+    // ALU condition flags.
     typedef struct packed {
         logic Z;
         logic N;
@@ -121,161 +115,373 @@ package cpu_pkg;
         logic DZ;
     } flags_s;
 
+
     function automatic flags_s make_flags(
-        input logic z, n, c, v, dz
+        input logic z,
+        input logic n,
+        input logic c,
+        input logic v,
+        input logic dz
     );
+
         flags_s f;
+
         f.Z  = z;
         f.N  = n;
         f.C  = c;
         f.V  = v;
         f.DZ = dz;
+
         return f;
+
     endfunction
 
-    // ------------------------------------------------------------
-    // Bit positions of the packed instruction instr_fields (LSB first).
-    // There is no immediate field: the immediate is the word that
-    // follows an instruction that uses one.
-    // ------------------------------------------------------------
+
+    // ========================================================
+    // INSTRUCTION LAYOUT
+    // ========================================================
+    //
+    // LSB first:
+    //
+    //     RS2
+    //     RS1
+    //     RD
+    //     OPCODE
+    //     I
+    //     S
+    //     RESERVED
+    //
+    // For the current 64-register design:
+    //
+    //     [5:0]    RS2
+    //     [11:6]   RS1
+    //     [17:12]  RD
+    //     [23:18]  OPCODE
+    //     [24]     immediate mode
+    //     [25]     update STATUS
+    //
+    // The immediate is NOT packed into the instruction.
+    //
+    // Instructions requiring an immediate are followed by one
+    // complete architectural word containing that immediate.
+    // ========================================================
 
     localparam int RS2_LSB = 0;
-    localparam int RS2_MSB = RS2_LSB + REG_FILE_ADDR_WIDTH - 1;
-    localparam int RS1_LSB = RS2_MSB + 1;
-    localparam int RS1_MSB = RS1_LSB + REG_FILE_ADDR_WIDTH - 1;
-    localparam int RD_LSB = RS1_MSB + 1;
-    localparam int RD_MSB = RD_LSB + REG_FILE_ADDR_WIDTH - 1;
-    localparam int OPCODE_LSB = RD_MSB + 1;
-    localparam int OPCODE_MSB = OPCODE_LSB + OPCODE_WIDTH - 1;
-    localparam int IMM_MODE_BIT = OPCODE_MSB + 1;
-    localparam int UPDATE_STATUS_BIT = IMM_MODE_BIT + 1;
-    localparam int RESERVED_LSB = UPDATE_STATUS_BIT + 1;
-    localparam int RESERVED_MSB = WORD_WIDTH - 1;
-    localparam int USED_INSTRUCTION_BITS = RESERVED_LSB;
-    localparam int RESERVED_WIDTH = WORD_WIDTH - USED_INSTRUCTION_BITS;
 
-    // Run once at initialization, including standalone unit-test elaborations.
+    localparam int RS2_MSB =
+        RS2_LSB + REG_FILE_ADDR_WIDTH - 1;
+
+
+    localparam int RS1_LSB =
+        RS2_MSB + 1;
+
+    localparam int RS1_MSB =
+        RS1_LSB + REG_FILE_ADDR_WIDTH - 1;
+
+
+    localparam int RD_LSB =
+        RS1_MSB + 1;
+
+    localparam int RD_MSB =
+        RD_LSB + REG_FILE_ADDR_WIDTH - 1;
+
+
+    localparam int OPCODE_LSB =
+        RD_MSB + 1;
+
+    localparam int OPCODE_MSB =
+        OPCODE_LSB + OPCODE_WIDTH - 1;
+
+
+    localparam int IMM_MODE_BIT =
+        OPCODE_MSB + 1;
+
+
+    localparam int UPDATE_STATUS_BIT =
+        IMM_MODE_BIT + 1;
+
+
+    localparam int RESERVED_LSB =
+        UPDATE_STATUS_BIT + 1;
+
+    localparam int RESERVED_MSB =
+        WORD_WIDTH - 1;
+
+
+    // Number of low instruction bits currently assigned meaning.
+    localparam int USED_INSTRUCTION_BITS =
+        RESERVED_LSB;
+
+
+    localparam int RESERVED_WIDTH =
+        WORD_WIDTH - USED_INSTRUCTION_BITS;
+
+
+    // ========================================================
+    // CPU CONFIGURATION VALIDATION
+    // ========================================================
+    //
+    // IMPORTANT:
+    //
+    // Only CPU-owned configuration is checked here.
+    //
+    // Memory capacities are validated by memory_pkg.
+    //
+    // This avoids:
+    //
+    //     cpu_pkg -> memory_pkg -> cpu_pkg
+    //
+    // circular dependencies.
+    // ========================================================
+
     function automatic bit validate_configuration();
-        // Global word: the single root of every architectural width.
-        if (WORD_WIDTH != 32 && WORD_WIDTH != 64)
-            $fatal(1, "WORD_WIDTH must be 32 or 64");
-        if (WORD_WIDTH % 8 != 0)
-            $fatal(1, "WORD_WIDTH must be divisible by 8");
 
-        // Depths.
+        // ----------------------------------------------------
+        // Architectural word
+        // ----------------------------------------------------
+
+        if (
+            WORD_WIDTH != 32 &&
+            WORD_WIDTH != 64
+        )
+            $fatal(
+                1,
+                "WORD_WIDTH must be 32 or 64"
+            );
+
+
+        if ((WORD_WIDTH % 8) != 0)
+            $fatal(
+                1,
+                "WORD_WIDTH must be divisible by 8"
+            );
+
+
+        // ----------------------------------------------------
+        // Register file
+        // ----------------------------------------------------
+
         if (REG_FILE_COUNT < 2)
-            $fatal(1, "REG_FILE_COUNT must be at least 2 for a nonzero register-address width");
-        if (INSTRUCTION_MEMORY_COUNT <= 0)
-            $fatal(1, "INSTRUCTION_MEMORY_COUNT must be positive");
-        if (DATA_MEMORY_COUNT <= 0)
-            $fatal(1, "DATA_MEMORY_COUNT must be positive");
+            $fatal(
+                1,
+                "REG_FILE_COUNT must be at least 2"
+            );
 
-        // Instruction encoding must fit inside one global word.
+
+        // ----------------------------------------------------
+        // Opcode encoding
+        // ----------------------------------------------------
+
         if (OPCODE_WIDTH < $clog2('h31))
-            $fatal(1, "OPCODE_WIDTH cannot represent the existing Stage 7 opcodes");
+            $fatal(
+                1,
+                "OPCODE_WIDTH cannot represent existing opcodes"
+            );
+
+
+        // ----------------------------------------------------
+        // Instruction layout
+        // ----------------------------------------------------
+
         if (USED_INSTRUCTION_BITS > WORD_WIDTH)
-            $fatal(1, "Instruction instr_fields exceed the global word");
+            $fatal(
+                1,
+                "Instruction fields exceed WORD_WIDTH"
+            );
+
+
         return 1'b1;
+
     endfunction
 
-    // Packed payload occupies the low USED_INSTRUCTION_BITS of the instruction.
-    // Reserved bits stay outside the struct so RESERVED_WIDTH may legally be zero.
+
+    // ========================================================
+    // PACKED INSTRUCTION FIELDS
+    // ========================================================
+
     typedef struct packed {
-        logic update_status;
-        logic immediate_mode;
-        opcode_t opcode;
+
+        logic      update_status;
+        logic      immediate_mode;
+
+        opcode_t   opcode;
+
         reg_addr_t rd;
         reg_addr_t rs1;
         reg_addr_t rs2;
+
     } instruction_s;
 
-    // ------------------------------------------------------------
-    // Immediate presence.
+
+    // ========================================================
+    // IMMEDIATE PRESENCE
+    // ========================================================
     //
-    // An instruction is followed by an immediate word when it is a
-    // branch/jump, a LOAD/STORE, or an ALU op in immediate mode.
-    // The predicate is a pure function of the instruction word so the
-    // fetch unit, the PC skip and the cpu_decoder can never disagree.
-    // ------------------------------------------------------------
+    // An instruction has a following immediate word when it is:
+    //
+    //   - a branch/jump
+    //   - LOAD/STORE
+    //   - an ALU operation using immediate mode
+    // ========================================================
 
     function automatic logic uses_imm(
         input opcode_t opcode,
-        input logic immediate_mode
+        input logic    immediate_mode
     );
-        return is_branch_opcode(opcode) || is_memory_opcode(opcode) || immediate_mode;
+
+        return (
+            is_branch_opcode(opcode) ||
+            is_memory_opcode(opcode) ||
+            immediate_mode
+        );
+
     endfunction
 
-    function automatic logic instr_uses_imm(input instruction_t instruction);
+
+    function automatic logic instr_uses_imm(
+        input instruction_t instruction
+    );
+
         instruction_s instr_fields;
+
         instr_fields = instruction;
-        return uses_imm(instr_fields.opcode, instr_fields.immediate_mode);
+
+        return uses_imm(
+            instr_fields.opcode,
+            instr_fields.immediate_mode
+        );
+
     endfunction
 
-    // Assemble a normal ALU instruction from its instr_fields.
-    // The immediate value, if any, is written into the word that follows.
+
+    // ========================================================
+    // GENERIC INSTRUCTION ENCODER
+    // ========================================================
+
     function automatic instruction_t encode_instruction(
-        input opcode_t opcode,
-        input reg_addr_t rd, rs1, rs2,
-        input logic immediate_mode, update_status
+
+        input opcode_t   opcode,
+
+        input reg_addr_t rd,
+        input reg_addr_t rs1,
+        input reg_addr_t rs2,
+
+        input logic      immediate_mode,
+        input logic      update_status
+
     );
+
         instruction_s instr_fields;
+
         instr_fields = '0;
-        instr_fields.opcode = opcode;
-        instr_fields.rd = rd;
-        instr_fields.rs1 = rs1;
-        instr_fields.rs2 = rs2;
+
+        instr_fields.opcode         = opcode;
+        instr_fields.rd             = rd;
+        instr_fields.rs1            = rs1;
+        instr_fields.rs2            = rs2;
         instr_fields.immediate_mode = immediate_mode;
-        instr_fields.update_status = update_status;
+        instr_fields.update_status  = update_status;
+
         return instruction_t'(instr_fields);
+
     endfunction
 
-    // Assemble a conditional branch. The absolute byte-address target
-    // is written into the word that follows.
+
+    // ========================================================
+    // BRANCH ENCODER
+    // ========================================================
+
     function automatic instruction_t encode_branch(
-        input opcode_t opcode,
+
+        input opcode_t   opcode,
         input reg_addr_t rs1,
         input reg_addr_t rs2
+
     );
+
         instruction_s instr_fields;
+
         instr_fields = '0;
+
         instr_fields.opcode = opcode;
-        instr_fields.rs1 = rs1;
-        instr_fields.rs2 = rs2;
+        instr_fields.rs1    = rs1;
+        instr_fields.rs2    = rs2;
+
         return instruction_t'(instr_fields);
+
     endfunction
 
-    // Assemble an unconditional jump.
+
+    // ========================================================
+    // JUMP ENCODER
+    // ========================================================
+
     function automatic instruction_t encode_jump();
-        return encode_branch(CTRL_JMP, ZERO_REG, ZERO_REG);
+
+        return encode_branch(
+            CTRL_JMP,
+            ZERO_REG,
+            ZERO_REG
+        );
+
     endfunction
 
-    // Assemble LOAD rd, [base + offset]. The signed byte offset is
-    // written into the word that follows.
+
+    // ========================================================
+    // LOAD ENCODER
+    //
+    //     LOAD rd, [base + offset]
+    //
+    // The signed byte offset occupies the following word.
+    // ========================================================
+
     function automatic instruction_t encode_load(
+
         input reg_addr_t rd,
         input reg_addr_t base
+
     );
+
         instruction_s instr_fields;
+
         instr_fields = '0;
+
         instr_fields.opcode = MEM_LOAD;
-        instr_fields.rd = rd;
-        instr_fields.rs1 = base;
+        instr_fields.rd     = rd;
+        instr_fields.rs1    = base;
+
         return instruction_t'(instr_fields);
+
     endfunction
 
-    // Assemble STORE source, [base + offset]. The signed byte offset is
-    // written into the word that follows.
+
+    // ========================================================
+    // STORE ENCODER
+    //
+    //     STORE source, [base + offset]
+    //
+    // The signed byte offset occupies the following word.
+    // ========================================================
+
     function automatic instruction_t encode_store(
+
         input reg_addr_t source,
         input reg_addr_t base
+
     );
+
         instruction_s instr_fields;
+
         instr_fields = '0;
+
         instr_fields.opcode = MEM_STORE;
-        instr_fields.rs1 = base;
-        instr_fields.rs2 = source;
+        instr_fields.rs1    = base;
+        instr_fields.rs2    = source;
+
         return instruction_t'(instr_fields);
+
     endfunction
 
 endpackage
+
 `endif

@@ -46,7 +46,7 @@ package bus_pkg;
     // ========================================================
 
     localparam cpu_pkg::word_t DATA_MEMORY_BASE  = cpu_pkg::word_t'(0);
-    localparam cpu_pkg::word_t DATA_MEMORY_SIZE  = cpu_pkg::word_t'(cpu_pkg::DATA_MEMORY_COUNT) * cpu_pkg::word_t'(cpu_pkg::WORD_BYTES);
+    localparam cpu_pkg::word_t DATA_MEMORY_SIZE  = cpu_pkg::word_t'(memory_pkg::DATA_MEMORY_COUNT) * cpu_pkg::word_t'(cpu_pkg::WORD_BYTES);
     localparam cpu_pkg::word_t DATA_MEMORY_LIMIT = DATA_MEMORY_BASE + DATA_MEMORY_SIZE;
 
     // ========================================================

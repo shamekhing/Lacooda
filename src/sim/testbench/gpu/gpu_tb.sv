@@ -13,8 +13,8 @@ module gpu_tb;
     // GPU bus
     // ========================================================
 
-    bus_pkg::bus_req_s slave_req;
-    bus_pkg::bus_rsp_s slave_rsp;
+    bus_pkg::bus_req_s ibus_req;
+    bus_pkg::bus_rsp_s ibus_rsp;
 
     // ========================================================
     // Test values
@@ -31,8 +31,8 @@ module gpu_tb;
         .clk       (clk),
         .rst       (rst),
 
-        .slave_req (slave_req),
-        .slave_rsp (slave_rsp)
+        .ibus_req (ibus_req),
+        .ibus_rsp (ibus_rsp)
     );
 
     // ========================================================
@@ -58,14 +58,14 @@ module gpu_tb;
 
             @(negedge clk);
 
-            slave_req.valid = 1'b1;
-            slave_req.op    = bus_pkg::BUS_WRITE;
-            slave_req.addr  = cpu_pkg::word_t'(addr);
-            slave_req.wdata = data;
+            ibus_req.valid = 1'b1;
+            ibus_req.op    = bus_pkg::BUS_WRITE;
+            ibus_req.addr  = cpu_pkg::word_t'(addr);
+            ibus_req.wdata = data;
 
             #1;
 
-            if (!slave_rsp.ready)
+            if (!ibus_rsp.ready)
                 $fatal(
                     1,
                     "GPU write did not complete: addr=%h",
@@ -76,7 +76,7 @@ module gpu_tb;
 
             @(negedge clk);
 
-            slave_req = '0;
+            ibus_req = '0;
 
         end
 
@@ -95,25 +95,25 @@ module gpu_tb;
 
             @(negedge clk);
 
-            slave_req.valid = 1'b1;
-            slave_req.op    = bus_pkg::BUS_READ;
-            slave_req.addr  = cpu_pkg::word_t'(addr);
-            slave_req.wdata = '0;
+            ibus_req.valid = 1'b1;
+            ibus_req.op    = bus_pkg::BUS_READ;
+            ibus_req.addr  = cpu_pkg::word_t'(addr);
+            ibus_req.wdata = '0;
 
             #1;
 
-            if (!slave_rsp.ready)
+            if (!ibus_rsp.ready)
                 $fatal(
                     1,
                     "GPU read did not complete: addr=%h",
                     addr
                 );
 
-            data = slave_rsp.rdata;
+            data = ibus_rsp.rdata;
 
             @(negedge clk);
 
-            slave_req = '0;
+            ibus_req = '0;
 
         end
 
@@ -128,7 +128,7 @@ module gpu_tb;
         $dumpfile("gpu.vcd");
         $dumpvars(0, gpu_tb);
 
-        slave_req = '0;
+        ibus_req = '0;
         rst       = 1'b1;
 
         repeat (2)

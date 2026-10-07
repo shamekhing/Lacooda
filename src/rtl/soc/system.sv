@@ -25,7 +25,7 @@
 // the processor core.
 // ============================================================
 
-module cpu_system (
+module system (
     input logic clk,
     input logic rst,
     input logic run,
@@ -87,15 +87,7 @@ module cpu_system (
         .alu_result     (alu_result)
     );
 
-    // ========================================================
-    // INSTRUCTION MEMORY
-    // ========================================================
-
-    instruction_memory u_instruction_memory (
-        .slave_req (instr_req),
-        .slave_rsp (instr_rsp)
-    );
-
+   
     // ========================================================
     // DATA-BUS INTERCONNECT
     // ========================================================
@@ -118,8 +110,8 @@ module cpu_system (
     data_memory u_data_memory (
         .clk       (clk),
 
-        .slave_req (data_memory_req),
-        .slave_rsp (data_memory_rsp)
+        .ibus_req (data_memory_req),
+        .ibus_rsp (data_memory_rsp)
     );
 
     // ========================================================
@@ -130,8 +122,8 @@ module cpu_system (
         .clk       (clk),
         .rst       (rst),
 
-        .slave_req (gpu_req),
-        .slave_rsp (gpu_rsp)
+        .ibus_req (gpu_req),
+        .ibus_rsp (gpu_rsp)
     );
 
 endmodule

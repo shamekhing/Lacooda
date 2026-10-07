@@ -20,7 +20,7 @@
 //     1. determined that the address belongs to the GPU
 //     2. subtracted bus_pkg::GPU_BASE
 //
-// Therefore slave_req.addr is already a GPU-local byte address.
+// Therefore ibus_req.addr is already a GPU-local byte address.
 //
 // Responsibilities:
 //
@@ -48,8 +48,8 @@ module gpu_register (
     // LACOODA slave bus
     // --------------------------------------------------------
 
-    input  bus_pkg::bus_req_s slave_req,
-    output bus_pkg::bus_rsp_s slave_rsp,
+    input  bus_pkg::bus_req_s ibus_req,
+    output bus_pkg::bus_rsp_s ibus_rsp,
 
     // --------------------------------------------------------
     // GPU internal state
@@ -68,7 +68,7 @@ module gpu_register (
     gpu_pkg::gpu_addr_t local_addr;
 
     assign local_addr = gpu_pkg::gpu_addr_t'(
-            slave_req.addr
+            ibus_req.addr
         );
 
 
@@ -91,7 +91,7 @@ module gpu_register (
             gpu_cfg <= '0;
 
         end else if (
-            slave_req.valid && (slave_req.op == bus_pkg::BUS_WRITE)
+            ibus_req.valid && (ibus_req.op == bus_pkg::BUS_WRITE)
         ) begin
 
             case (local_addr)
@@ -103,7 +103,7 @@ module gpu_register (
                 gpu_pkg::GPU_REG_CONTROL: begin
 
                     gpu_cfg.control <=
-                        slave_req.wdata;
+                        ibus_req.wdata;
 
                 end
 
@@ -115,7 +115,7 @@ module gpu_register (
                 gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
                     gpu_cfg.framebuffer_base <=
-                        slave_req.wdata;
+                        ibus_req.wdata;
 
                 end
 
@@ -127,7 +127,7 @@ module gpu_register (
                 gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
                     gpu_cfg.framebuffer_width <=
-                        slave_req.wdata;
+                        ibus_req.wdata;
 
                 end
 
@@ -139,7 +139,7 @@ module gpu_register (
                 gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
                     gpu_cfg.framebuffer_height <=
-                        slave_req.wdata;
+                        ibus_req.wdata;
 
                 end
 
@@ -151,7 +151,7 @@ module gpu_register (
                 gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
                     gpu_cfg.clear_color <=
-                        slave_req.wdata;
+                        ibus_req.wdata;
 
                 end
 
@@ -199,16 +199,16 @@ module gpu_register (
 
     always_comb begin
 
-        slave_rsp = '0;
+        ibus_rsp = '0;
 
 
         // ----------------------------------------------------
         // VALID REQUEST
         // ----------------------------------------------------
 
-        if (slave_req.valid) begin
+        if (ibus_req.valid) begin
 
-            slave_rsp.ready =
+            ibus_rsp.ready =
                 1'b1;
 
 
@@ -217,7 +217,7 @@ module gpu_register (
             // ------------------------------------------------
 
             if (
-                slave_req.op ==
+                ibus_req.op ==
                 bus_pkg::BUS_READ
             ) begin
 
@@ -230,7 +230,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_ID: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_pkg::GPU_ID_VALUE;
 
                     end
@@ -242,7 +242,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_CONTROL: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_cfg.control;
 
                     end
@@ -254,7 +254,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_STATUS: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             cpu_pkg::word_t'(
                                 status
                             );
@@ -268,7 +268,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_cfg.framebuffer_base;
 
                     end
@@ -280,7 +280,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_cfg.framebuffer_width;
 
                     end
@@ -292,7 +292,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_cfg.framebuffer_height;
 
                     end
@@ -304,7 +304,7 @@ module gpu_register (
 
                     gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             gpu_cfg.clear_color;
 
                     end
@@ -316,7 +316,7 @@ module gpu_register (
 
                     default: begin
 
-                        slave_rsp.rdata =
+                        ibus_rsp.rdata =
                             '0;
 
                     end

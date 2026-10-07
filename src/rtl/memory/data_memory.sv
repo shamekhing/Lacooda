@@ -36,7 +36,7 @@
 //
 // Therefore data_memory does NOT repeat the range check.
 //
-// If slave_req.valid reaches this module, the interconnect has
+// If ibus_req.valid reaches this module, the interconnect has
 // already selected data memory.
 //
 // This module only checks whether the local byte address is
@@ -85,7 +85,7 @@
 //
 // A transaction completes when:
 //
-//     slave_req.valid && slave_rsp.ready
+//     ibus_req.valid && ibus_rsp.ready
 //
 // The CPU holds its request stable while ready is low.
 //
@@ -99,8 +99,8 @@ module data_memory (
     input  logic              clk,
     input  logic              rst,
 
-    input  bus_pkg::bus_req_s slave_req,
-    output bus_pkg::bus_rsp_s slave_rsp
+    input  bus_pkg::bus_req_s ibus_req,
+    output bus_pkg::bus_rsp_s ibus_rsp
 );
 
 
@@ -192,7 +192,7 @@ module data_memory (
     logic addr_valid;
 
     assign addr_valid =
-        (slave_req.addr % cpu_pkg::WORD_BYTES) == 0;
+        (ibus_req.addr % cpu_pkg::WORD_BYTES) == 0;
 
 
     // ========================================================
@@ -231,7 +231,7 @@ module data_memory (
     //     The request accepted on the previous rising edge has
     //     completed and its response is available.
     //
-    // slave_rsp.ready is generated from this state.
+    // ibus_rsp.ready is generated from this state.
     // ========================================================
 
     logic pending;
@@ -283,7 +283,7 @@ module data_memory (
             // previous response waiting.
             // ------------------------------------------------
 
-            if (slave_req.valid && !pending) begin
+            if (ibus_req.valid && !pending) begin
 
                 // --------------------------------------------
                 // The request will receive a response during
@@ -307,12 +307,12 @@ module data_memory (
                     // write is synchronous.
                     // ----------------------------------------
 
-                    if (slave_req.op == bus_pkg::BUS_WRITE) begin
+                    if (ibus_req.op == bus_pkg::BUS_WRITE) begin
 
                         mem[
-                            slave_req.addr
+                            ibus_req.addr
                             / cpu_pkg::WORD_BYTES
-                        ] <= slave_req.wdata;
+                        ] <= ibus_req.wdata;
 
                     end
 
@@ -330,7 +330,7 @@ module data_memory (
                     else begin
 
                         read_data <= mem[
-                            slave_req.addr
+                            ibus_req.addr
                             / cpu_pkg::WORD_BYTES
                         ];
 
@@ -392,8 +392,8 @@ module data_memory (
 
     always_comb begin
 
-        slave_rsp.ready = pending;
-        slave_rsp.rdata = read_data;
+        ibus_rsp.ready = pending;
+        ibus_rsp.rdata = read_data;
 
     end
 

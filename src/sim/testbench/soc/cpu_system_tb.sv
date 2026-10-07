@@ -11,7 +11,7 @@
 // its data addresses are word-size independent (base 64, offset 8).
 // ============================================================
 
-module cpu_system_tb;
+module system_tb;
     import cpu_pkg::*;
     import opcode_pkg::*;
 
@@ -27,7 +27,7 @@ module cpu_system_tb;
 
     always #5 clk = ~clk;
 
-    cpu_system dut (
+    system dut (
         .clk(clk),
         .rst(rst),
         .run(run),
@@ -79,8 +79,8 @@ module cpu_system_tb;
     endtask
 
     initial begin
-        $dumpfile("cpu_system.vcd");
-        $dumpvars(0, cpu_system_tb);
+        $dumpfile("system.vcd");
+        $dumpvars(0, system_tb);
 
         @(posedge clk);
         #1;

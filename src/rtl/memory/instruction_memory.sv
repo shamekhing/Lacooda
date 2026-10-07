@@ -20,8 +20,8 @@
 // ============================================================
 
 module instruction_memory (
-    input  bus_pkg::bus_req_s  slave_req,
-    output bus_pkg::bus_rsp_s  slave_rsp
+    input  bus_pkg::bus_req_s  ibus_req,
+    output bus_pkg::bus_rsp_s  ibus_rsp
 );
 
     cpu_pkg::instruction_t mem [0:memory_pkg::INSTRUCTION_MEMORY_COUNT-1];
@@ -32,19 +32,19 @@ module instruction_memory (
         $readmemh(memory_pkg::PROGRAM_FILE, mem);
     end
 
-    assign slave_rsp = {slave_req.valid, rdata};
+    assign ibus_rsp = {ibus_req.valid, rdata};
 
     always_comb begin
         addr_valid =
-            (slave_req.addr % cpu_pkg::WORD_BYTES == 0) &&
-            ((slave_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_MEMORY_COUNT);
+            (ibus_req.addr % cpu_pkg::WORD_BYTES == 0) &&
+            ((ibus_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_MEMORY_COUNT);
     end
 
     always_comb begin
         rdata = '0;
 
-        if (slave_req.valid && addr_valid)
-            rdata = cpu_pkg::word_t'(mem[slave_req.addr / cpu_pkg::WORD_BYTES]);
+        if (ibus_req.valid && addr_valid)
+            rdata = cpu_pkg::word_t'(mem[ibus_req.addr / cpu_pkg::WORD_BYTES]);
     end
 
 endmodule

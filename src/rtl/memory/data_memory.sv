@@ -26,8 +26,8 @@
 module data_memory (
     input  logic                   clk,
 
-    input  bus_pkg::bus_req_s  slave_req,
-    output bus_pkg::bus_rsp_s  slave_rsp
+    input  bus_pkg::bus_req_s  ibus_req,
+    output bus_pkg::bus_rsp_s  ibus_rsp
 );
 
     cpu_pkg::word_t mem [0:cpu_pkg::DATA_MEMORY_COUNT-1];
@@ -42,28 +42,28 @@ module data_memory (
 
     // The local memory itself never inserts wait states. Keeping ready tied
     // to valid makes the completion condition explicit: valid && ready.
-    assign slave_rsp = {slave_req.valid, rdata};
+    assign ibus_rsp = {ibus_req.valid, rdata};
 
     // Alignment/range check used by both reads and writes.
     always_comb begin
         addr_valid =
-            (slave_req.addr % cpu_pkg::WORD_BYTES == 0) &&
-            ((slave_req.addr / cpu_pkg::WORD_BYTES) < cpu_pkg::DATA_MEMORY_COUNT);
+            (ibus_req.addr % cpu_pkg::WORD_BYTES == 0) &&
+            ((ibus_req.addr / cpu_pkg::WORD_BYTES) < cpu_pkg::DATA_MEMORY_COUNT);
     end
 
     // LOAD response. STORE and idle cycles return zero on slave_read_data.
     always_comb begin
         rdata = '0;
 
-        if (slave_req.valid && slave_req.op == bus_pkg::BUS_READ && addr_valid)
-            rdata = mem[slave_req.addr / cpu_pkg::WORD_BYTES];
+        if (ibus_req.valid && ibus_req.op == bus_pkg::BUS_READ && addr_valid)
+            rdata = mem[ibus_req.addr / cpu_pkg::WORD_BYTES];
     end
 
     // STORE commits exactly once on an accepted write transaction.
     always_ff @(posedge clk) begin
-        if (slave_req.valid && slave_rsp.ready &&
-            slave_req.op == bus_pkg::BUS_WRITE && addr_valid)
-            mem[slave_req.addr / cpu_pkg::WORD_BYTES] <= slave_req.wdata;
+        if (ibus_req.valid && ibus_rsp.ready &&
+            ibus_req.op == bus_pkg::BUS_WRITE && addr_valid)
+            mem[ibus_req.addr / cpu_pkg::WORD_BYTES] <= ibus_req.wdata;
     end
 
 endmodule

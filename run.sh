@@ -173,7 +173,7 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     src/rtl/cpu/cpu.sv \
     src/sim/testbench/cpu/cpu_tb.sv
 
-run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
+run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
@@ -196,8 +196,8 @@ run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     src/rtl/bus/bus_interconnect.sv \
     src/rtl/memory/instruction_memory.sv \
     src/rtl/memory/data_memory.sv \
-    src/rtl/soc/cpu_system.sv \
-    src/sim/testbench/soc/cpu_system_tb.sv
+    src/rtl/soc/system.sv \
+    src/sim/testbench/soc/system_tb.sv
 
 
 echo "========== ALL TESTS PASSED =========="
@@ -221,4 +221,4 @@ gtkwave \
     src/sim/waveforms/data_memory.vcd \
     src/sim/waveforms/bus_interconnect.vcd \
     src/sim/waveforms/cpu.vcd \
-    src/sim/waveforms/cpu_system.vcd
+    src/sim/waveforms/system.vcd

@@ -13,7 +13,7 @@
 // they do not require changing the CPU's I-BUS/D-BUS contract.
 // ============================================================
 
-module cpu_system (
+module system (
     input logic clk,
     input logic rst,
     input logic run,
@@ -34,8 +34,8 @@ module cpu_system (
     bus_pkg::bus_rsp_s data_rsp;
 
     // Interconnect -> local data-memory slave side.
-    bus_pkg::bus_req_s  slave_req;
-    bus_pkg::bus_rsp_s  slave_rsp;
+    bus_pkg::bus_req_s  ibus_req;
+    bus_pkg::bus_rsp_s  ibus_rsp;
 
     cpu u_cpu (
         .clk            (clk),
@@ -54,22 +54,17 @@ module cpu_system (
         .alu_result     (alu_result)
     );
 
-    instruction_memory u_instruction_memory (
-        .slave_req (instr_req),
-        .slave_rsp (instr_rsp)
-    );
-
     bus_interconnect u_bus_interconnect (
         .d_req     (data_req),
         .d_rsp     (data_rsp),
-        .slave_req (slave_req),
-        .slave_rsp (slave_rsp)
+        .ibus_req (ibus_req),
+        .ibus_rsp (ibus_rsp)
     );
 
     data_memory u_data_memory (
         .clk       (clk),
-        .slave_req (slave_req),
-        .slave_rsp (slave_rsp)
+        .ibus_req (ibus_req),
+        .ibus_rsp (ibus_rsp)
     );
 
 endmodule

@@ -1741,7 +1741,7 @@ verilog-staging/
 │   │   └── data_memory.sv
 │   │
 │   └── soc/
-│       └── cpu_system.sv
+│       └── system.sv
 │
 ├── sim/
 │   └── testbench/

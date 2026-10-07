@@ -10,8 +10,8 @@ module bus_interconnect_tb;
 
     bus_req_s d_req;
     bus_rsp_s d_rsp;
-    bus_req_s slave_req;
-    bus_rsp_s slave_rsp;
+    bus_req_s ibus_req;
+    bus_rsp_s ibus_rsp;
 
     integer tests = 0;
     integer errors = 0;
@@ -19,8 +19,8 @@ module bus_interconnect_tb;
     bus_interconnect dut (
         .d_req(d_req),
         .d_rsp(d_rsp),
-        .slave_req(slave_req),
-        .slave_rsp(slave_rsp)
+        .ibus_req(ibus_req),
+        .ibus_rsp(ibus_rsp)
     );
 
     task automatic check(input logic condition, input string description);
@@ -45,11 +45,11 @@ module bus_interconnect_tb;
         d_req.op = BUS_READ;
         d_req.addr = '0;
         d_req.wdata = '0;
-        slave_rsp.ready = 1'b0;
-        slave_rsp.rdata = word_t'(16'h1234);
+        ibus_rsp.ready = 1'b0;
+        ibus_rsp.rdata = word_t'(16'h1234);
         #1;
 
-        check(!d_rsp.ready && !slave_req.valid,
+        check(!d_rsp.ready && !ibus_req.valid,
               "idle master produces no slave request");
 
         // Mapped request is forwarded and waits for the selected slave.
@@ -58,23 +58,23 @@ module bus_interconnect_tb;
         d_req.addr = DATA_MEMORY_BASE + word_t'(3 * WORD_BYTES);
         d_req.wdata = word_t'(16'h55AA);
         #1;
-        check(slave_req.valid && slave_req.op == BUS_WRITE,
+        check(ibus_req.valid && ibus_req.op == BUS_WRITE,
               "mapped STORE selects data memory");
-        check(slave_req.addr === word_t'(3 * WORD_BYTES) &&
-              slave_req.wdata === word_t'(16'h55AA),
+        check(ibus_req.addr === word_t'(3 * WORD_BYTES) &&
+              ibus_req.wdata === word_t'(16'h55AA),
               "mapped STORE payload is forwarded");
         check(!d_rsp.ready,
               "master waits while selected slave is not ready");
 
-        slave_rsp.ready = 1'b1;
+        ibus_rsp.ready = 1'b1;
         #1;
         check(d_rsp.ready,
               "selected slave ready is returned to master");
 
         d_req.op = BUS_READ;
-        slave_rsp.rdata = word_t'(16'hCAFE);
+        ibus_rsp.rdata = word_t'(16'hCAFE);
         #1;
-        check(slave_req.op == BUS_READ,
+        check(ibus_req.op == BUS_READ,
               "mapped READ op reaches the slave");
         check(d_rsp.rdata === word_t'(16'hCAFE),
               "selected slave read data is returned to master");
@@ -82,10 +82,10 @@ module bus_interconnect_tb;
         // First address after local RAM is unmapped. Current architectural
         // behavior completes such accesses immediately with zero data.
         d_req.addr = DATA_MEMORY_LIMIT;
-        slave_rsp.ready = 1'b0;
-        slave_rsp.rdata = word_t'(16'hFFFF);
+        ibus_rsp.ready = 1'b0;
+        ibus_rsp.rdata = word_t'(16'hFFFF);
         #1;
-        check(!slave_req.valid,
+        check(!ibus_req.valid,
               "unmapped address selects no data-memory slave");
         check(d_rsp.ready && d_rsp.rdata === '0,
               "unmapped access completes with zero response");

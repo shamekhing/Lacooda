@@ -18,8 +18,8 @@
 module bus_interconnect (
     input  bus_pkg::bus_req_s  d_req,
     output bus_pkg::bus_rsp_s  d_rsp,
-    output bus_pkg::bus_req_s  slave_req,
-    input  bus_pkg::bus_rsp_s  slave_rsp
+    output bus_pkg::bus_req_s  ibus_req,
+    input  bus_pkg::bus_rsp_s  ibus_rsp
 );
 
     logic slave_sel;
@@ -31,17 +31,17 @@ module bus_interconnect (
 
     // Requests are forwarded only to the selected slave. The address
     // presented to the slave is local to its mapped region.
-    assign slave_req.valid = d_req.valid && slave_sel;
-    assign slave_req.op = d_req.op;
-    assign slave_req.addr = d_req.addr - bus_pkg::DATA_MEMORY_BASE;
-    assign slave_req.wdata = d_req.wdata;
+    assign ibus_req.valid = d_req.valid && slave_sel;
+    assign ibus_req.op = d_req.op;
+    assign ibus_req.addr = d_req.addr - bus_pkg::DATA_MEMORY_BASE;
+    assign ibus_req.wdata = d_req.wdata;
 
     always_comb begin
         d_rsp = '0;
 
         if (d_req.valid) begin
             if (slave_sel) begin
-                d_rsp = slave_rsp;
+                d_rsp = ibus_rsp;
             end else begin
                 // Preserve the existing no-fault Stage-7 behavior for an
                 // unmapped address: complete the request and return zero.

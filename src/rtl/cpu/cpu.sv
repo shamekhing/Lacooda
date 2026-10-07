@@ -105,6 +105,12 @@ module cpu (
         .instruction_available (instruction_available)
     );
 
+
+    instruction_memory u_instruction_memory (
+        .ibus_req (instr_req),
+        .ibus_rsp (instr_rsp)
+    );
+
     // --------------------------------------------------------
     // EXECUTION CORE / D-BUS
     // --------------------------------------------------------

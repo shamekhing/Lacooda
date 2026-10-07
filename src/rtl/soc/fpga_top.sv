@@ -3,7 +3,7 @@
 // ============================================================
 // LACOODA Tang Primer 20K board wrapper
 //
-// cpu_system presents the wide simulation/debug observation ports
+// system presents the wide simulation/debug observation ports
 // (pc/instruction/alu_result are full words). Those cannot become physical
 // pins on the GW2A-18C, so this wrapper is the synthesizable FPGA top and
 // exposes only board-level I/O:
@@ -13,7 +13,7 @@
 //      btn_n1  -> run enable (active-low button)
 //      led0..5 -> retire_valid, illegal_instr, ALU parity, pc[2:0]
 //
-// cpu_system stays the unit under test in simulation; here it is driven by
+// system stays the unit under test in simulation; here it is driven by
 // the board pins and its state is exposed through the LEDs so the optimizer
 // cannot sweep the cpu_datapath away.
 // ============================================================
@@ -63,7 +63,7 @@ module fpga_top (
     logic retire_valid;
     logic illegal_instr;
 
-    cpu_system u_cpu_system (
+    system u_system (
         .clk           (clk27),
         .rst           (rst),
         .run           (run),

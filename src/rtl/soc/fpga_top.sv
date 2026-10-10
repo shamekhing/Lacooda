@@ -3,19 +3,16 @@
 // ============================================================
 // LACOODA Tang Primer 20K board wrapper
 //
-// system presents the wide simulation/debug observation ports
-// (pc/instruction/alu_result are full words). Those cannot become physical
-// pins on the GW2A-18C, so this wrapper is the synthesizable FPGA top and
-// exposes only board-level I/O:
+// This wrapper is the synthesizable FPGA top and exposes board-level I/O:
 //
 //      clk27   -> system clock (27 MHz onboard oscillator)
 //      btn_n0  -> synchronous active-high reset (active-low button)
 //      btn_n1  -> run enable (active-low button)
-//      led0..5 -> retire_valid, illegal_instr, ALU parity, pc[2:0]
+//      led0..1 -> retire_valid, illegal_instr
+//      led2..5 -> reserved
 //
 // system stays the unit under test in simulation; here it is driven by
-// the board pins and its state is exposed through the LEDs so the optimizer
-// cannot sweep the cpu_datapath away.
+// the board pins and retirement status is exposed through the LEDs.
 // ============================================================
 
 module fpga_top (
@@ -57,9 +54,6 @@ module fpga_top (
     // CPU system
     // ------------------------------------------------------------
     cpu_pkg::word_t        pc;
-    cpu_pkg::instruction_t instruction;
-    cpu_pkg::word_t        alu_result;
-
     logic retire_valid;
     logic illegal_instr;
 
@@ -69,23 +63,20 @@ module fpga_top (
         .run           (run),
 
         .pc            (pc),
-        .instruction   (instruction),
         .retire_valid  (retire_valid),
-        .illegal_instr (illegal_instr),
-        .alu_result    (alu_result)
+        .illegal_instr (illegal_instr)
     );
 
     // ------------------------------------------------------------
     // Observation LEDs.
     //
-    // retire_valid and the ALU result feed the visible signals, which keeps
-    // the fetch/decode/execute path live through optimization.
+    // Retirement status is visible; the remaining LEDs are reserved.
     // ------------------------------------------------------------
     assign led0 = retire_valid;
     assign led1 = illegal_instr;
-    assign led2 = ^alu_result;
-    assign led3 = pc[0];
-    assign led4 = pc[1];
-    assign led5 = pc[2];
+    assign led2 = 1'b0; // ALU parity not yet implemented
+    assign led3 = 1'b0; // ALU parity not yet implemented
+    assign led4 = 1'b0; // ALU parity not yet implemented
+    assign led5 = 1'b0; // ALU parity not yet implemented
 
 endmodule

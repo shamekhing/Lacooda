@@ -135,13 +135,13 @@ run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/sim/testbench/cpu/instruction_fetch_tb.sv
 
-run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
+run_test "DATA MEMORY BUS TEST" cpu_memory_tb cpu_memory_sim cpu_memory.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/memory/data_memory.sv \
-    src/sim/testbench/memory/data_memory_tb.sv
+    src/rtl/memory/cpu_memory.sv \
+    src/sim/testbench/memory/cpu_memory_tb.sv
 
 run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
     src/rtl/packages/opcode_pkg.sv \
@@ -195,7 +195,7 @@ run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/bus/address_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/rtl/memory/instruction_memory.sv \
-    src/rtl/memory/data_memory.sv \
+    src/rtl/memory/cpu_memory.sv \
     src/rtl/gpu/gpu.sv \
     src/rtl/soc/system.sv \
     src/sim/testbench/soc/system_tb.sv
@@ -229,7 +229,7 @@ gtkwave \
     src/sim/waveforms/program_counter.vcd \
     src/sim/waveforms/branch_unit.vcd \
     src/sim/waveforms/instruction_fetch.vcd \
-    src/sim/waveforms/data_memory.vcd \
+    src/sim/waveforms/cpu_memory.vcd \
     src/sim/waveforms/bus_interconnect.vcd \
     src/sim/waveforms/cpu.vcd \
     src/sim/waveforms/system.vcd

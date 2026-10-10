@@ -1,9 +1,9 @@
 `timescale 1ns/1ps
 
-module address_cpu_decoder (
+module address_decoder (
     input  cpu_pkg::word_t addr,
 
-    output logic data_memory_sel,
+    output logic cpu_memory_sel,
     output logic gpu_sel
 );
 
@@ -18,9 +18,7 @@ module address_cpu_decoder (
         // [0, 32768)
         // ----------------------------------------------------
 
-        data_memory_sel =
-            (addr >= bus_pkg::DATA_MEMORY_BASE) &&
-            (addr <  bus_pkg::DATA_MEMORY_LIMIT);
+        cpu_memory_sel = (addr >= bus_pkg::CPU_MEMORY_BASE) && (addr <  bus_pkg::CPU_MEMORY_LIMIT);
 
         // ----------------------------------------------------
         // GPU MMIO
@@ -31,9 +29,7 @@ module address_cpu_decoder (
         // [268435456, 268439552)
         // ----------------------------------------------------
 
-        gpu_sel =
-            (addr >= bus_pkg::GPU_BASE) &&
-            (addr <  bus_pkg::GPU_LIMIT);
+        gpu_sel = (addr >= bus_pkg::GPU_BASE) && (addr <  bus_pkg::GPU_LIMIT);
 
     end
 

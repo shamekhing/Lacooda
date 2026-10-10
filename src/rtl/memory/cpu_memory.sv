@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
-`ifndef DATA_MEMORY_SV
-`define DATA_MEMORY_SV
+`ifndef CPU_MEMORY_SV
+`define CPU_MEMORY_SV
 
 // ============================================================
 // Data memory
@@ -17,15 +17,10 @@
 //     RAM index:
 //         word address
 //
-// At the default 32-bit configuration:
+// At the fixed 32-bit configuration:
 //
 //     32 KiB
 //     8192 x 32-bit words
-//
-// At the 64-bit configuration:
-//
-//     32 KiB
-//     4096 x 64-bit words
 //
 // ------------------------------------------------------------
 // ADDRESS RESPONSIBILITY
@@ -34,9 +29,9 @@
 // The address decoder/interconnect is responsible for deciding
 // whether an address belongs to this memory region.
 //
-// Therefore data_memory does NOT repeat the range check.
+// Therefore cpu_memory does NOT repeat the range check.
 //
-// If ibus_req.valid reaches this module, the interconnect has
+// If dbus_req.valid reaches this module, the interconnect has
 // already selected data memory.
 //
 // This module only checks whether the local byte address is
@@ -85,7 +80,7 @@
 //
 // A transaction completes when:
 //
-//     ibus_req.valid && ibus_rsp.ready
+//     dbus_req.valid && dbus_rsp.ready
 //
 // The CPU holds its request stable while ready is low.
 //
@@ -95,12 +90,12 @@
 // valid does NOT have to fall between transactions.
 // ============================================================
 
-module data_memory (
+module cpu_memory (
     input  logic              clk,
     input  logic              rst,
 
-    input  bus_pkg::bus_req_s ibus_req,
-    output bus_pkg::bus_rsp_s ibus_rsp
+    input  bus_pkg::bus_req_s dbus_req,
+    output bus_pkg::bus_rsp_s dbus_rsp
 );
 
 
@@ -110,22 +105,13 @@ module data_memory (
     //
     // The array stores architectural words.
     //
-    // 32-bit:
-    //
     //     8192 x 32
-    //
-    // 64-bit:
-    //
-    //     4096 x 64
     //
     // The synchronous access pattern below is intentional for
     // FPGA block-RAM inference.
     // ========================================================
 
-    cpu_pkg::word_t mem [
-        0 : memory_pkg::DATA_MEMORY_COUNT-1
-    ];
-
+    cpu_pkg::word_t mem [0 : memory_pkg::CPU_MEMORY_COUNT-1];
 
     // ========================================================
     // INITIALIZATION
@@ -150,7 +136,7 @@ module data_memory (
     // ========================================================
 
     initial begin
-        $readmemh(memory_pkg::DATA_MEMORY_FILE, mem);
+        $readmemh(memory_pkg::CPU_MEMORY_FILE, mem);
     end
 
 
@@ -165,8 +151,6 @@ module data_memory (
     //
     // We only need to check word alignment.
     //
-    // 32-bit:
-    //
     //     WORD_BYTES = 4
     //
     //     valid:
@@ -179,12 +163,6 @@ module data_memory (
     //         0x00000002
     //         0x00000006
     //
-    // 64-bit:
-    //
-    //     WORD_BYTES = 8
-    //
-    //     valid addresses must be multiples of 8.
-    //
     // WORD_BYTES is a compile-time constant, so synthesis can
     // simplify this operation.
     // ========================================================
@@ -192,7 +170,7 @@ module data_memory (
     logic addr_valid;
 
     assign addr_valid =
-        (ibus_req.addr % cpu_pkg::WORD_BYTES) == 0;
+        (dbus_req.addr % cpu_pkg::WORD_BYTES) == 0;
 
 
     // ========================================================
@@ -231,7 +209,7 @@ module data_memory (
     //     The request accepted on the previous rising edge has
     //     completed and its response is available.
     //
-    // ibus_rsp.ready is generated from this state.
+    // dbus_rsp.ready is generated from this state.
     // ========================================================
 
     logic pending;
@@ -283,15 +261,12 @@ module data_memory (
             // previous response waiting.
             // ------------------------------------------------
 
-            if (ibus_req.valid && !pending) begin
-
+            if (dbus_req.valid && !pending) begin
                 // --------------------------------------------
                 // The request will receive a response during
                 // the following cycle.
                 // --------------------------------------------
-
                 pending <= 1'b1;
-
 
                 // ============================================
                 // ALIGNED ACCESS
@@ -307,12 +282,12 @@ module data_memory (
                     // write is synchronous.
                     // ----------------------------------------
 
-                    if (ibus_req.op == bus_pkg::BUS_WRITE) begin
+                    if (dbus_req.op == bus_pkg::BUS_WRITE) begin
 
                         mem[
-                            ibus_req.addr
+                            dbus_req.addr
                             / cpu_pkg::WORD_BYTES
-                        ] <= ibus_req.wdata;
+                        ] <= dbus_req.wdata;
 
                     end
 
@@ -330,7 +305,7 @@ module data_memory (
                     else begin
 
                         read_data <= mem[
-                            ibus_req.addr
+                            dbus_req.addr
                             / cpu_pkg::WORD_BYTES
                         ];
 
@@ -392,8 +367,8 @@ module data_memory (
 
     always_comb begin
 
-        ibus_rsp.ready = pending;
-        ibus_rsp.rdata = read_data;
+        dbus_rsp.ready = pending;
+        dbus_rsp.rdata = read_data;
 
     end
 

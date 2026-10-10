@@ -34,15 +34,13 @@ module instruction_memory (
 
     assign ibus_rsp = {ibus_req.valid, rdata};
 
-    always_comb begin
-        addr_valid =
-            (ibus_req.addr % cpu_pkg::WORD_BYTES == 0) &&
+    always_comb begin // check for valid in range address
+        addr_valid = (ibus_req.addr % cpu_pkg::WORD_BYTES == 0) &&
             ((ibus_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_MEMORY_COUNT);
     end
 
     always_comb begin
         rdata = '0;
-
         if (ibus_req.valid && addr_valid)
             rdata = cpu_pkg::word_t'(mem[ibus_req.addr / cpu_pkg::WORD_BYTES]);
     end

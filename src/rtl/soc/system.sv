@@ -7,22 +7,19 @@
 //
 // System structure after GPU Stage 1:
 //
-//      CPU I-BUS
-//          |
-//          +-----------------> instruction_memory
+//      CPU (including instruction_memory)
 //
 //      CPU D-BUS
 //          |
 //          v
 //      bus_interconnect
 //          |
-//          +-----------------> data_memory
+//          +-----------------> cpu_memory
 //          |
 //          +-----------------> gpu
 //
-// The CPU still sees only its generic I-BUS and D-BUS.
-// Device selection belongs to the SoC/interconnect rather than
-// the processor core.
+// The CPU's data bus reaches the SoC interconnect, which selects
+// cpu_memory or the GPU.
 // ============================================================
 
 module system (
@@ -31,32 +28,23 @@ module system (
     input logic run,
 
     output cpu_pkg::word_t pc,
-    output cpu_pkg::instruction_t instruction,
     output logic retire_valid,
-    output logic illegal_instr,
-    output cpu_pkg::word_t alu_result
+    output logic illegal_instr
 );
-
-    // ========================================================
-    // CPU INSTRUCTION BUS
-    // ========================================================
-
-    bus_pkg::bus_req_s instr_req;
-    bus_pkg::bus_rsp_s instr_rsp;
 
     // ========================================================
     // CPU DATA BUS
     // ========================================================
 
-    bus_pkg::bus_req_s data_req;
-    bus_pkg::bus_rsp_s data_rsp;
+    bus_pkg::bus_req_s cpu_req;
+    bus_pkg::bus_rsp_s cpu_rsp;
 
     // ========================================================
     // LOCAL DATA MEMORY BUS
     // ========================================================
 
-    bus_pkg::bus_req_s data_memory_req;
-    bus_pkg::bus_rsp_s data_memory_rsp;
+    bus_pkg::bus_req_s cpu_memory_req;
+    bus_pkg::bus_rsp_s cpu_memory_rsp;
 
     // ========================================================
     // GPU BUS
@@ -74,30 +62,24 @@ module system (
         .rst            (rst),
         .run            (run),
 
-        .instr_req      (instr_req),
-        .instr_rsp      (instr_rsp),
-
-        .data_req       (data_req),
-        .data_rsp       (data_rsp),
+        .cpu_req        (cpu_req),
+        .cpu_rsp        (cpu_rsp),
 
         .pc             (pc),
-        .instruction    (instruction),
         .retire_valid   (retire_valid),
-        .illegal_instr  (illegal_instr),
-        .alu_result     (alu_result)
+        .illegal_instr  (illegal_instr)
     );
 
-   
     // ========================================================
     // DATA-BUS INTERCONNECT
     // ========================================================
 
     bus_interconnect u_bus_interconnect (
-        .d_req           (data_req),
-        .d_rsp           (data_rsp),
+        .cpu_req         (cpu_req),
+        .cpu_rsp         (cpu_rsp),
 
-        .data_memory_req (data_memory_req),
-        .data_memory_rsp (data_memory_rsp),
+        .cpu_memory_req (cpu_memory_req),
+        .cpu_memory_rsp (cpu_memory_rsp),
 
         .gpu_req         (gpu_req),
         .gpu_rsp         (gpu_rsp)
@@ -107,11 +89,12 @@ module system (
     // LOCAL DATA MEMORY
     // ========================================================
 
-    data_memory u_data_memory (
+    cpu_memory u_cpu_memory (
         .clk       (clk),
+        .rst       (rst),
 
-        .ibus_req (data_memory_req),
-        .ibus_rsp (data_memory_rsp)
+        .dbus_req (cpu_memory_req),
+        .dbus_rsp (cpu_memory_rsp)
     );
 
     // ========================================================

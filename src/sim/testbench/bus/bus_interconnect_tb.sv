@@ -22,11 +22,11 @@ module bus_interconnect_tb;
     import cpu_pkg::*;
     import bus_pkg::*;
 
-    bus_req_s d_req;
-    bus_rsp_s d_rsp;
+    bus_req_s cpu_req;
+    bus_rsp_s cpu_rsp;
 
-    bus_req_s data_memory_req;
-    bus_rsp_s data_memory_rsp;
+    bus_req_s bram_memory_req;
+    bus_rsp_s bram_memory_rsp;
 
     bus_req_s gpu_req;
     bus_rsp_s gpu_rsp;
@@ -39,11 +39,11 @@ module bus_interconnect_tb;
     // --------------------------------------------------------
 
     bus_interconnect dut (
-        .d_req           (d_req),
-        .d_rsp           (d_rsp),
+        .cpu_req           (cpu_req),
+        .cpu_rsp           (cpu_rsp),
 
-        .data_memory_req (data_memory_req),
-        .data_memory_rsp (data_memory_rsp),
+        .bram_memory_req (bram_memory_req),
+        .bram_memory_rsp (bram_memory_rsp),
 
         .gpu_req         (gpu_req),
         .gpu_rsp         (gpu_rsp)
@@ -102,20 +102,20 @@ module bus_interconnect_tb;
         // Initial state
         // ----------------------------------------------------
 
-        d_req = '0;
+        cpu_req = '0;
 
-        data_memory_rsp = '0;
+        bram_memory_rsp = '0;
         gpu_rsp = '0;
 
         #1;
 
         check(
-            !d_rsp.ready,
+            !cpu_rsp.ready,
             "idle master receives no completion"
         );
 
         check(
-            !data_memory_req.valid &&
+            !bram_memory_req.valid &&
             !gpu_req.valid,
             "idle master selects no slave"
         );
@@ -124,20 +124,20 @@ module bus_interconnect_tb;
         // DATA MEMORY ROUTING
         // ====================================================
 
-        d_req.valid = 1'b1;
-        d_req.op    = BUS_WRITE;
+        cpu_req.valid = 1'b1;
+        cpu_req.op    = BUS_WRITE;
 
-        d_req.addr =
-            DATA_MEMORY_BASE +
+        cpu_req.addr =
+            BRAM_MEMORY_BASE +
             word_t'(3 * WORD_BYTES);
 
-        d_req.wdata =
+        cpu_req.wdata =
             word_t'(16'h55AA);
 
         #1;
 
         check(
-            data_memory_req.valid,
+            bram_memory_req.valid,
             "RAM address selects data memory"
         );
 
@@ -147,39 +147,39 @@ module bus_interconnect_tb;
         );
 
         check(
-            data_memory_req.op == BUS_WRITE,
+            bram_memory_req.op == BUS_WRITE,
             "RAM write operation forwarded"
         );
 
         check(
-            data_memory_req.addr ===
+            bram_memory_req.addr ===
                 word_t'(3 * WORD_BYTES),
             "RAM receives local address"
         );
 
         check(
-            data_memory_req.wdata ===
+            bram_memory_req.wdata ===
                 word_t'(16'h55AA),
             "RAM receives write data"
         );
 
         check(
-            !d_rsp.ready,
+            !cpu_rsp.ready,
             "CPU waits while RAM is not ready"
         );
 
-        data_memory_rsp.ready = 1'b1;
-        data_memory_rsp.rdata = word_t'(16'hCAFE);
+        bram_memory_rsp.ready = 1'b1;
+        bram_memory_rsp.rdata = word_t'(16'hCAFE);
 
         #1;
 
         check(
-            d_rsp.ready,
+            cpu_rsp.ready,
             "RAM ready reaches CPU"
         );
 
         check(
-            d_rsp.rdata === word_t'(16'hCAFE),
+            cpu_rsp.rdata === word_t'(16'hCAFE),
             "RAM response data reaches CPU"
         );
 
@@ -187,15 +187,15 @@ module bus_interconnect_tb;
         // GPU ROUTING
         // ====================================================
 
-        data_memory_rsp = '0;
+        bram_memory_rsp = '0;
 
-        d_req.valid = 1'b1;
-        d_req.op    = BUS_WRITE;
+        cpu_req.valid = 1'b1;
+        cpu_req.op    = BUS_WRITE;
 
-        d_req.addr =
+        cpu_req.addr =
             GPU_BASE + word_t'(12);
 
-        d_req.wdata =
+        cpu_req.wdata =
             word_t'(32'h1234_5678);
 
         #1;
@@ -206,7 +206,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            !data_memory_req.valid,
+            !bram_memory_req.valid,
             "GPU address does not select RAM"
         );
 
@@ -227,7 +227,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            !d_rsp.ready,
+            !cpu_rsp.ready,
             "CPU waits while GPU is not ready"
         );
 
@@ -239,12 +239,12 @@ module bus_interconnect_tb;
         #1;
 
         check(
-            d_rsp.ready,
+            cpu_rsp.ready,
             "GPU ready reaches CPU"
         );
 
         check(
-            d_rsp.rdata ===
+            cpu_rsp.rdata ===
                 word_t'(32'hA5A5_5A5A),
             "GPU response data reaches CPU"
         );
@@ -253,7 +253,7 @@ module bus_interconnect_tb;
         // GPU READ
         // ====================================================
 
-        d_req.op =
+        cpu_req.op =
             BUS_READ;
 
         #1;
@@ -265,7 +265,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            d_rsp.rdata ===
+            cpu_rsp.rdata ===
                 word_t'(32'hA5A5_5A5A),
             "GPU read response returned to CPU"
         );
@@ -274,7 +274,7 @@ module bus_interconnect_tb;
         // LAST GPU ADDRESS
         // ====================================================
 
-        d_req.addr =
+        cpu_req.addr =
             GPU_LIMIT - word_t'(1);
 
         #1;
@@ -288,7 +288,7 @@ module bus_interconnect_tb;
         // FIRST ADDRESS AFTER GPU
         // ====================================================
 
-        d_req.addr =
+        cpu_req.addr =
             GPU_LIMIT;
 
         gpu_rsp = '0;
@@ -296,14 +296,14 @@ module bus_interconnect_tb;
         #1;
 
         check(
-            !data_memory_req.valid &&
+            !bram_memory_req.valid &&
             !gpu_req.valid,
             "address after GPU region selects no slave"
         );
 
         check(
-            d_rsp.ready &&
-            d_rsp.rdata === '0,
+            cpu_rsp.ready &&
+            cpu_rsp.rdata === '0,
             "unmapped access completes with zero"
         );
 
@@ -311,17 +311,17 @@ module bus_interconnect_tb;
         // IDLE
         // ====================================================
 
-        d_req.valid = 1'b0;
+        cpu_req.valid = 1'b0;
 
         #1;
 
         check(
-            !d_rsp.ready,
+            !cpu_rsp.ready,
             "ready drops when CPU request disappears"
         );
 
         check(
-            !data_memory_req.valid &&
+            !bram_memory_req.valid &&
             !gpu_req.valid,
             "all slave valid signals drop when idle"
         );

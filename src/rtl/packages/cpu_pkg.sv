@@ -35,26 +35,11 @@ package cpu_pkg;
     // GLOBAL ARCHITECTURAL WORD
     // ========================================================
     //
-    // Select at compile time, for example:
-    //
-    //   -DLACOODA_WORD_WIDTH=32
-    //
-    // or:
-    //
-    //   -DLACOODA_WORD_WIDTH=64
-    //
-    // Default = 32 bits.
+    // The architectural word is 32 bits.
     // ========================================================
 
-    `ifndef LACOODA_WORD_WIDTH
-        `define LACOODA_WORD_WIDTH 32
-    `endif
-
-    localparam int WORD_WIDTH =
-        `LACOODA_WORD_WIDTH;
-
-    localparam int WORD_BYTES =
-        WORD_WIDTH / 8;
+    localparam int WORD_WIDTH = 32;
+    localparam int WORD_BYTES = 4;
 
 
     // ========================================================
@@ -87,8 +72,7 @@ package cpu_pkg;
     // STATUS REGISTER
     // ========================================================
     //
-    // STATUS intentionally remains fixed at 32 bits even when
-    // WORD_WIDTH is 64.
+    // STATUS occupies one architectural word.
     //
     // Implemented state:
     //
@@ -239,23 +223,6 @@ package cpu_pkg;
         // ----------------------------------------------------
         // Architectural word
         // ----------------------------------------------------
-
-        if (
-            WORD_WIDTH != 32 &&
-            WORD_WIDTH != 64
-        )
-            $fatal(
-                1,
-                "WORD_WIDTH must be 32 or 64"
-            );
-
-
-        if ((WORD_WIDTH % 8) != 0)
-            $fatal(
-                1,
-                "WORD_WIDTH must be divisible by 8"
-            );
-
 
         // ----------------------------------------------------
         // Register file

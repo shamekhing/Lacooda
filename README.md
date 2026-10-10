@@ -1500,8 +1500,8 @@ This is a major hardware lesson:
 Another parameter probe found:
 
 ``` systemverilog
-localparam int DATA_MEMORY_SIZE_BYTES =
-    DATA_MEMORY_DEPTH * DATA_BYTES;
+localparam int cpu_memory_SIZE_BYTES =
+    cpu_memory_DEPTH * DATA_BYTES;
 ```
 
 This used a SystemVerilog `int`, which is a 32-bit signed type.
@@ -1522,11 +1522,11 @@ signed `int`.
 The fix was to perform the calculation at architectural address width:
 
 ``` systemverilog
-localparam data_t DATA_MEMORY_SIZE_BYTES =
-    data_t'(DATA_MEMORY_DEPTH) * data_t'(DATA_BYTES);
+localparam data_t cpu_memory_SIZE_BYTES =
+    data_t'(cpu_memory_DEPTH) * data_t'(DATA_BYTES);
 
-localparam data_t DATA_MEMORY_LIMIT =
-    DATA_MEMORY_BASE + DATA_MEMORY_SIZE_BYTES;
+localparam data_t cpu_memory_LIMIT =
+    BRAM_MEMORY_BASE + cpu_memory_SIZE_BYTES;
 ```
 
 ### Understanding gap
@@ -1738,7 +1738,7 @@ verilog-staging/
 │   │
 │   ├── memory/
 │   │   ├── instruction_memory.sv
-│   │   └── data_memory.sv
+│   │   └── cpu_memory.sv
 │   │
 │   └── soc/
 │       └── system.sv
@@ -3538,7 +3538,7 @@ Whole design             9412 LUT
 |   +-- u_arithmetic     7542 LUT
 |   +-- u_logic_unit        0 LUT
 +-- u_cpu_register       259 LUT
-+-- u_data_memory         256 LUT
++-- u_cpu_memory         256 LUT
 +-- u_program_counter     107 LUT
 DSP blocks used             0
 ```

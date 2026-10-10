@@ -117,11 +117,11 @@ module system_tb;
             encode_store(reg_addr_t'(1), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.data_req.valid && dut.data_req.op == bus_pkg::BUS_WRITE && dut.data_rsp.ready)
+        assert (dut.cpu_req.valid && dut.cpu_req.op == bus_pkg::BUS_WRITE && dut.cpu_rsp.ready)
             else $fatal(1, "STORE D-BUS handshake wrong");
-        assert (dut.data_req.addr === word_t'(72))
-            else $fatal(1, "STORE address wrong: %0d", dut.data_req.addr);
-        assert (dut.data_req.wdata === word_t'(100))
+        assert (dut.cpu_req.addr === word_t'(72))
+            else $fatal(1, "STORE address wrong: %0d", dut.cpu_req.addr);
+        assert (dut.cpu_req.wdata === word_t'(100))
             else $fatal(1, "STORE data wrong");
         @(posedge clk); // Commit STORE and retire instruction.
         #1;
@@ -132,10 +132,10 @@ module system_tb;
             encode_load(reg_addr_t'(3), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.data_req.valid && dut.data_req.op == bus_pkg::BUS_READ && dut.data_rsp.ready)
+        assert (dut.cpu_req.valid && dut.cpu_req.op == bus_pkg::BUS_READ && dut.cpu_rsp.ready)
             else $fatal(1, "LOAD D-BUS handshake wrong");
-        assert (dut.data_rsp.rdata === word_t'(100))
-            else $fatal(1, "LOAD data expected 100, got %0d", dut.data_rsp.rdata);
+        assert (dut.cpu_rsp.rdata === word_t'(100))
+            else $fatal(1, "LOAD data expected 100, got %0d", dut.cpu_rsp.rdata);
         @(posedge clk); // Commit LOAD writeback and retire.
         #1;
 
@@ -171,7 +171,7 @@ module system_tb;
             else $fatal(1, "R3 LOAD result wrong");
         assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222))
             else $fatal(1, "R4 branch result wrong");
-        assert (dut.u_data_memory.mem[72 / WORD_BYTES] === word_t'(100))
+        assert (dut.u_cpu_memory.mem[72 / WORD_BYTES] === word_t'(100))
             else $fatal(1, "Data memory word wrong");
 
         $display("PASS: final CPU + external I-BUS memory + D-BUS interconnect/system");

@@ -22,7 +22,7 @@ package memory_pkg;
     // ========================================================
 
     localparam int INSTRUCTION_MEMORY_BYTES = 32 * 1024;
-    localparam int DATA_MEMORY_BYTES        = 32 * 1024;
+    localparam int CPU_MEMORY_BYTES         = 32 * 1024;
 
     // ========================================================
     // MMIO region sizes
@@ -43,22 +43,15 @@ package memory_pkg;
     localparam int INSTRUCTION_MEMORY_COUNT =
         INSTRUCTION_MEMORY_BYTES / cpu_pkg::WORD_BYTES;
 
-    localparam int DATA_MEMORY_COUNT =
-        DATA_MEMORY_BYTES / cpu_pkg::WORD_BYTES;
+    localparam int CPU_MEMORY_COUNT =
+        CPU_MEMORY_BYTES / cpu_pkg::WORD_BYTES;
 
     // ========================================================
     // Initialization files
     // ========================================================
 
-    localparam string PROGRAM_FILE =
-        (cpu_pkg::WORD_WIDTH == 32)
-            ? "src/programs/genesis_32.hex"
-            : "src/programs/genesis_64.hex";
-
-    localparam string DATA_MEMORY_FILE =
-        (cpu_pkg::WORD_WIDTH == 32)
-            ? "src/programs/data_memory_32.hex"
-            : "src/programs/data_memory_64.hex";
+    localparam PROGRAM_FILE = "src/programs/genesis_32.hex";
+    localparam CPU_MEMORY_FILE = "src/programs/data_memory_32.hex";
 
     // ========================================================
     // Configuration validation
@@ -72,10 +65,10 @@ package memory_pkg;
                 "INSTRUCTION_MEMORY_BYTES must be positive"
             );
 
-        if (DATA_MEMORY_BYTES <= 0)
+        if (CPU_MEMORY_BYTES <= 0)
             $fatal(
                 1,
-                "DATA_MEMORY_BYTES must be positive"
+                "CPU_MEMORY_BYTES must be positive"
             );
 
         if (GPU_MMIO_BYTES <= 0)
@@ -90,10 +83,10 @@ package memory_pkg;
                 "INSTRUCTION_MEMORY_BYTES must be divisible by WORD_BYTES"
             );
 
-        if ((DATA_MEMORY_BYTES % cpu_pkg::WORD_BYTES) != 0)
+        if ((CPU_MEMORY_BYTES % cpu_pkg::WORD_BYTES) != 0)
             $fatal(
                 1,
-                "DATA_MEMORY_BYTES must be divisible by WORD_BYTES"
+                "CPU_MEMORY_BYTES must be divisible by WORD_BYTES"
             );
 
         if (INSTRUCTION_MEMORY_COUNT <= 0)
@@ -102,10 +95,10 @@ package memory_pkg;
                 "INSTRUCTION_MEMORY_COUNT must be positive"
             );
 
-        if (DATA_MEMORY_COUNT <= 0)
+        if (CPU_MEMORY_COUNT <= 0)
             $fatal(
                 1,
-                "DATA_MEMORY_COUNT must be positive"
+                "CPU_MEMORY_COUNT must be positive"
             );
 
         return 1'b1;

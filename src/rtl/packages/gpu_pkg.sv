@@ -55,8 +55,6 @@ package gpu_pkg;
     // Therefore every GPU MMIO register occupies one complete
     // architectural word.
     //
-    // 32-bit CPU:
-    //
     //     ID                  0x00
     //     CONTROL             0x04
     //     STATUS              0x08
@@ -65,17 +63,7 @@ package gpu_pkg;
     //     FRAMEBUFFER_HEIGHT  0x14
     //     CLEAR_COLOR         0x18
     //
-    // 64-bit CPU:
-    //
-    //     ID                  0x00
-    //     CONTROL             0x08
-    //     STATUS              0x10
-    //     FRAMEBUFFER_BASE    0x18
-    //     FRAMEBUFFER_WIDTH   0x20
-    //     FRAMEBUFFER_HEIGHT  0x28
-    //     CLEAR_COLOR         0x30
-    //
-    // Do not hard-code a 4-byte register stride.
+    // The register stride is one 32-bit word.
     // ========================================================
 
     typedef enum gpu_addr_t {

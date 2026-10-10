@@ -26,8 +26,8 @@ module cpu_tb;
     bus_pkg::bus_req_s i_req;
     bus_pkg::bus_rsp_s i_rsp;
     logic ibus_allow;
-    bus_pkg::bus_req_s d_req;
-    bus_pkg::bus_rsp_s d_rsp;
+    bus_pkg::bus_req_s cpu_req;
+    bus_pkg::bus_rsp_s cpu_rsp;
 
     word_t pc;
     instruction_t instruction;
@@ -47,8 +47,8 @@ module cpu_tb;
 
         .instr_req(i_req),
         .instr_rsp(i_rsp),
-        .data_req(d_req),
-        .data_rsp(d_rsp),
+        .cpu_req(cpu_req),
+        .cpu_rsp(cpu_rsp),
 
         .pc(pc),
         .instruction(instruction),
@@ -123,8 +123,8 @@ module cpu_tb;
         program_words[13] = word_t'(222);
 
         ibus_allow = 1'b0;
-        d_rsp.ready = 1'b0;
-        d_rsp.rdata = '0;
+        cpu_rsp.ready = 1'b0;
+        cpu_rsp.rdata = '0;
 
         // Reset architectural state.
         @(posedge clk);
@@ -190,7 +190,7 @@ module cpu_tb;
         wait_for_buffered_pc(word_t'(2 * WORD_BYTES));
         wait (execution_valid === 1'b1);
         #1;
-        check(execution_valid && !d_req.valid,
+        check(execution_valid && !cpu_req.valid,
               "ordinary instruction executes without D-BUS traffic");
         @(posedge clk); // Retire MOVI R2.
         #1;
@@ -200,11 +200,11 @@ module cpu_tb;
         // ----------------------------------------------------
         wait_for_buffered_pc(word_t'(4 * WORD_BYTES));
         // The effective address is computed by the multi-cycle ALU first.
-        wait (d_req.valid === 1'b1);
+        wait (cpu_req.valid === 1'b1);
         #1;
-        check(d_req.valid && (d_req.op == bus_pkg::BUS_WRITE) &&
-              d_req.addr === word_t'(9 * WORD_BYTES) &&
-              d_req.wdata === word_t'(100),
+        check(cpu_req.valid && (cpu_req.op == bus_pkg::BUS_WRITE) &&
+              cpu_req.addr === word_t'(9 * WORD_BYTES) &&
+              cpu_req.wdata === word_t'(100),
               "STORE presents complete D-BUS request");
         check(!execution_valid,
               "STORE does not retire while D-BUS ready is low");
@@ -212,25 +212,25 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(d_req.valid && d_req.op == bus_pkg::BUS_WRITE,
+        check(cpu_req.valid && cpu_req.op == bus_pkg::BUS_WRITE,
               "in-flight STORE survives run deassertion");
 
         @(posedge clk);
         #1;
         check(pc === word_t'(4 * WORD_BYTES) &&
-              d_req.valid &&
-              d_req.addr === word_t'(9 * WORD_BYTES) &&
-              d_req.wdata === word_t'(100),
+              cpu_req.valid &&
+              cpu_req.addr === word_t'(9 * WORD_BYTES) &&
+              cpu_req.wdata === word_t'(100),
               "STORE PC/request remain stable while waiting");
 
         @(negedge clk);
-        d_rsp.ready = 1'b1;
+        cpu_rsp.ready = 1'b1;
         #1;
-        check(d_req.valid && execution_valid,
+        check(cpu_req.valid && execution_valid,
               "STORE completes when D-BUS ready is asserted");
         @(posedge clk); // Retire STORE.
         #1;
-        d_rsp.ready = 1'b0;
+        cpu_rsp.ready = 1'b0;
         check(pc === word_t'(6 * WORD_BYTES),
               "PC advances after STORE handshake");
         check(!i_req.valid,
@@ -241,12 +241,12 @@ module cpu_tb;
         // ----------------------------------------------------
         @(negedge clk);
         run = 1'b1;
-        d_rsp.rdata = word_t'(100);
+        cpu_rsp.rdata = word_t'(100);
         wait_for_buffered_pc(word_t'(6 * WORD_BYTES));
-        wait (d_req.valid === 1'b1);
+        wait (cpu_req.valid === 1'b1);
         #1;
-        check(d_req.valid && d_req.op == bus_pkg::BUS_READ &&
-              d_req.addr === word_t'(9 * WORD_BYTES),
+        check(cpu_req.valid && cpu_req.op == bus_pkg::BUS_READ &&
+              cpu_req.addr === word_t'(9 * WORD_BYTES),
               "LOAD presents D-BUS read request");
         check(!execution_valid,
               "LOAD does not retire while D-BUS ready is low");
@@ -257,14 +257,14 @@ module cpu_tb;
               "stalled LOAD does not write R3 early");
 
         @(negedge clk);
-        d_rsp.ready = 1'b1;
+        cpu_rsp.ready = 1'b1;
         #1;
-        check(d_req.valid && d_req.op == bus_pkg::BUS_READ && execution_valid,
+        check(cpu_req.valid && cpu_req.op == bus_pkg::BUS_READ && execution_valid,
               "LOAD completes on D-BUS handshake");
         @(posedge clk); // Retire LOAD and write R3.
         #1;
-        d_rsp.ready = 1'b0;
-        d_rsp.rdata = '0;
+        cpu_rsp.ready = 1'b0;
+        cpu_rsp.rdata = '0;
         check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[3] === word_t'(100),
               "LOAD writes D-BUS data to R3");
 

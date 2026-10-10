@@ -8,7 +8,7 @@
 // and the preserved invalid-ibus_req.addr behavior.
 // ============================================================
 
-module data_memory_tb;
+module cpu_memory_tb;
     import cpu_pkg::*;
 
     logic clk = 1'b0;
@@ -20,7 +20,7 @@ module data_memory_tb;
     integer tests = 0;
     integer errors = 0;
 
-    data_memory dut (
+    cpu_memory dut (
         .clk(clk),
         .ibus_req(ibus_req),
         .ibus_rsp(ibus_rsp)
@@ -39,8 +39,8 @@ module data_memory_tb;
     endtask
 
     initial begin
-        $dumpfile("data_memory.vcd");
-        $dumpvars(0, data_memory_tb);
+        $dumpfile("cpu_memory.vcd");
+        $dumpvars(0, cpu_memory_tb);
 
         ibus_req.valid = 1'b0;
         ibus_req.op = bus_pkg::BUS_READ;
@@ -104,7 +104,7 @@ module data_memory_tb;
         check(ibus_rsp.rdata === '0, "misaligned STORE is ignored");
 
         // First ibus_req.addr immediately beyond configured memory is invalid.
-        ibus_req.addr = word_t'(DATA_MEMORY_COUNT * WORD_BYTES);
+        ibus_req.addr = word_t'(CPU_MEMORY_COUNT * WORD_BYTES);
         #1;
         check(ibus_rsp.ready === 1'b1, "out-of-range LOAD still completes");
         check(ibus_rsp.rdata === '0, "out-of-range LOAD returns zero");

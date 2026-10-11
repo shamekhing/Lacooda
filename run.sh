@@ -52,6 +52,7 @@ run_test "ALU TEST" alu_tb alu_sim alu.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
@@ -65,14 +66,16 @@ run_test "REGISTER FILE TEST" cpu_register_tb cpu_register_sim cpu_register.vcd 
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/core/cpu_register.sv \
-    src/sim/testbench/cpu/cpu_register_tb.sv
+    src/sim/testbench/cpu/register_file_tb.sv
 
 run_test "cpu_datapath TEST" cpu_datapath_tb cpu_datapath_sim cpu_datapath.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
@@ -82,20 +85,22 @@ run_test "cpu_datapath TEST" cpu_datapath_tb cpu_datapath_sim cpu_datapath.vcd \
     src/rtl/cpu/core/cpu_register.sv \
     src/rtl/cpu/core/status_register.sv \
     src/rtl/cpu/core/cpu_datapath.sv \
-    src/sim/testbench/cpu/cpu_datapath_tb.sv
+    src/sim/testbench/cpu/datapath_tb.sv
 
 run_test "cpu_decoder TEST" cpu_decoder_tb cpu_decoder_sim cpu_decoder_tb.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/core/cpu_decoder.sv \
-    src/sim/testbench/cpu/cpu_decoder_tb.sv
+    src/sim/testbench/cpu/decoder_tb.sv
 
 run_test "CPU CORE TEST" cpu_core_tb cpu_core_sim cpu_core.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
@@ -114,6 +119,7 @@ run_test "PROGRAM COUNTER TEST" program_counter_tb program_counter_sim program_c
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/fetch/program_counter.sv \
     src/sim/testbench/cpu/program_counter_tb.sv
@@ -122,6 +128,7 @@ run_test "BRANCH UNIT TEST" branch_unit_tb branch_unit_sim branch_unit.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/core/branch_unit.sv \
     src/sim/testbench/cpu/branch_unit_tb.sv
@@ -130,6 +137,7 @@ run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
@@ -139,6 +147,7 @@ run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/memory/data_memory.sv \
     src/sim/testbench/memory/data_memory_tb.sv
@@ -147,8 +156,9 @@ run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_in
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/bus/address_cpu_decoder.sv \
+    src/rtl/bus/address_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/sim/testbench/bus/bus_interconnect_tb.sv
 
@@ -156,6 +166,7 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
@@ -173,11 +184,13 @@ run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
     src/rtl/cpu/cpu.sv \
     src/sim/testbench/cpu/cpu_tb.sv
 
-run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
+run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
+    src/rtl/packages/gpu_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
     src/rtl/cpu/alu/shifter.sv \
@@ -192,14 +205,27 @@ run_test "CPU SYSTEM TEST" cpu_system_tb cpu_system_sim cpu_system.vcd \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/rtl/cpu/cpu.sv \
-    src/rtl/bus/address_cpu_decoder.sv \
+    src/rtl/bus/address_decoder.sv \
     src/rtl/bus/bus_interconnect.sv \
     src/rtl/memory/instruction_memory.sv \
     src/rtl/memory/data_memory.sv \
-    src/rtl/soc/cpu_system.sv \
+    src/rtl/memory/memory_subsystem.sv \
+    src/rtl/gpu/core/gpu_register.sv \
+    src/rtl/gpu/gpu.sv \
+    src/rtl/soc/system.sv \
     src/sim/testbench/soc/cpu_system_tb.sv
 
-
+run_test "GPU MMIO REGISTER TEST" gpu_tb gpu_sim gpu.vcd \
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/packages/gpu_pkg.sv \
+    src/rtl/gpu/core/gpu_decoder.sv \
+    src/rtl/gpu/core/gpu_register.sv \
+    src/rtl/gpu/gpu.sv \
+    src/sim/testbench/gpu/gpu_tb.sv
+    
 echo "========== ALL TESTS PASSED =========="
 
 # Use --no-gui for regression only.
@@ -221,4 +247,4 @@ gtkwave \
     src/sim/waveforms/data_memory.vcd \
     src/sim/waveforms/bus_interconnect.vcd \
     src/sim/waveforms/cpu.vcd \
-    src/sim/waveforms/cpu_system.vcd
+    src/sim/waveforms/system.vcd

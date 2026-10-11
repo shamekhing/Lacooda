@@ -1,0 +1,34 @@
+{
+  // Project source roots used by the Verilog tooling for include search and navigation.
+  "verilog.includes": [
+    "src/rtl",
+    "src/rtl/packages",
+    "src/rtl/bus",
+    "src/rtl/cpu",
+    "src/rtl/cpu/alu",
+    "src/rtl/cpu/core",
+    "src/rtl/cpu/fetch",
+    "src/rtl/memory",
+    "src/rtl/soc",
+    "src/constraints",
+    "src/sim/testbench"
+  ],
+  "verilog.ctags.path": "ctags",
+  "verilog.lint.slang.enabled": true,
+  "verilog.lint.slang.args": "--error-limit 200",
+  "verilog.lint.slang.path": "slang",
+  "verilog.lint.verilator.projectEnabled": true,
+  "verilog.lint.verilator.path": "verilator",
+  "verilog.svFormat.formatter": "verible-verilog-format",
+  "verilog.svFormat.verible.path": "verible-verilog-format",
+  "verilog.svFormat.verible.args": "",
+  "verilog.formatDirs": [
+    "src/rtl",
+    "src/sim/testbench"
+  ],
+  "files.associations": {
+    "*.sv": "systemverilog",
+    "*.svh": "systemverilog"
+  },
+  "editor.formatOnSave": true
+}

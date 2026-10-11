@@ -70,51 +70,37 @@ module instruction_fetch (
     // very next word in instruction memory.
     assign ibus_req.valid = (fetch_state != FETCH_IDLE);
     assign ibus_req.op    = bus_pkg::BUS_READ;
-    assign ibus_req.addr  = (fetch_state == FETCH_IMM)
-                            ? pc + cpu_pkg::word_t'(cpu_pkg::WORD_BYTES)
-                            : pc;
+    assign ibus_req.addr  = (fetch_state == FETCH_IMM) ? pc + cpu_pkg::word_t'(cpu_pkg::WORD_BYTES) : pc;
     assign ibus_req.wdata = '0;
 
     // How many words the buffered instruction occupies. The pc uses this
     // when the instruction retires so the immediate word is never executed.
-    assign has_imm = instruction_available &&
-                     cpu_pkg::instr_uses_imm(instruction);
+    assign has_imm = instruction_available && cpu_pkg::instr_uses_imm(instruction);
 
     always_ff @(posedge clk or posedge rst) begin
-        if (rst) begin
+        if (rst || retire) begin
             fetch_state           <= FETCH_IDLE;
             instruction_available <= 1'b0;
             instruction           <= '0;
             immediate_word        <= '0;
-        end else begin
-            // Retiring the current instruction frees the one-entry buffer.
-            // If run remains asserted, immediately start the next fetch after
-            // the same edge; the pc also advances on this retirement edge.
-            if (retire) begin
-                instruction_available <= 1'b0;
-                if (run)
-                    fetch_state <= FETCH_INSTR;
-            end else if ((fetch_state == FETCH_IDLE) &&
-                         !instruction_available && run) begin
-                // Start the first request, or restart after a paused CPU.
-                fetch_state <= FETCH_INSTR;
-            end
-
-            // A started instruction request remains active until the slave
-            // accepts it. The accept decides whether an immediate follows:
-            // with one, the instruction completes only after the immediate
-            // word is buffered; without one, it is immediately available.
-            if ((fetch_state == FETCH_INSTR) && ibus_rsp.ready) begin
-                instruction           <= cpu_pkg::instruction_t'(ibus_rsp.rdata);
-                fetch_state           <= cpu_pkg::instr_uses_imm(ibus_rsp.rdata)
-                                         ? FETCH_IMM : FETCH_IDLE;
-                instruction_available <= !cpu_pkg::instr_uses_imm(ibus_rsp.rdata);
-            end else if ((fetch_state == FETCH_IMM) && ibus_rsp.ready) begin
-                immediate_word        <= ibus_rsp.rdata;
-                fetch_state           <= FETCH_IDLE;
-                instruction_available <= 1'b1;
-            end
+        end else if (run) begin
+            case (fetch_state)
+                FETCH_IDLE: begin
+                    if (!instruction_available) fetch_state <= FETCH_INSTR;
+                end
+                FETCH_INSTR: begin
+                    instruction <= cpu_pkg::instruction_t'(ibus_rsp.rdata);
+                    fetch_state <= cpu_pkg::instr_uses_imm(ibus_rsp.rdata) ? FETCH_IMM : FETCH_IDLE;
+                    instruction_available <= !cpu_pkg::instr_uses_imm(ibus_rsp.rdata);
+                end
+                FETCH_IMM: begin
+                    if (ibus_rsp.ready) begin
+                        immediate_word <= ibus_rsp.rdata;
+                        fetch_state <= FETCH_IDLE;
+                        instruction_available <= 1'b1;
+                    end
+                end
+            endcase
         end
     end
-
 endmodule

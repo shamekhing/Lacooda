@@ -18,16 +18,9 @@ module program_counter (
 );
 
     always_ff @(posedge clk) begin
-        if (rst)
-            pc <= '0;
-
+        if (rst) pc <= '0;
         else if (enable) begin
-            // Targets are loaded directly; alignment is checked by instruction memory.
-            if (redirect)
-                pc <= target;
-            else
-                pc <= pc + cpu_pkg::word_t'((has_imm ? 2 : 1) *
-                                            cpu_pkg::WORD_BYTES);
+            pc <= redirect ? target : pc + cpu_pkg::word_t'((has_imm ? 2 : 1) * cpu_pkg::WORD_BYTES);
         end
     end
 

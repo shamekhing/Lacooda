@@ -11,7 +11,7 @@
 // its data addresses are word-size independent (base 64, offset 8).
 // ============================================================
 
-module cpu_system_tb;
+module system_tb;
     import cpu_pkg::*;
     import opcode_pkg::*;
 
@@ -27,16 +27,17 @@ module cpu_system_tb;
 
     always #5 clk = ~clk;
 
-    cpu_system dut (
+    system dut (
         .clk(clk),
         .rst(rst),
         .run(run),
         .pc(pc),
-        .instruction(instruction),
         .retire_valid(execution_valid),
-        .illegal_instr(illegal_instruction),
-        .alu_result(result)
+        .illegal_instr(illegal_instruction)
     );
+
+    assign instruction = dut.u_cpu.instruction;
+    assign result = dut.u_cpu.alu_result;
 
     task automatic wait_for_buffered_pc(input word_t expected_pc);
         begin
@@ -79,8 +80,8 @@ module cpu_system_tb;
     endtask
 
     initial begin
-        $dumpfile("cpu_system.vcd");
-        $dumpvars(0, cpu_system_tb);
+        $dumpfile("system.vcd");
+        $dumpvars(0, system_tb);
 
         @(posedge clk);
         #1;
@@ -117,11 +118,11 @@ module cpu_system_tb;
             encode_store(reg_addr_t'(1), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.data_req.valid && dut.data_req.op == bus_pkg::BUS_WRITE && dut.data_rsp.ready)
+        assert (dut.dbus_req.valid && dut.dbus_req.op == bus_pkg::BUS_WRITE && dut.dbus_rsp.ready)
             else $fatal(1, "STORE D-BUS handshake wrong");
-        assert (dut.data_req.addr === word_t'(72))
-            else $fatal(1, "STORE address wrong: %0d", dut.data_req.addr);
-        assert (dut.data_req.wdata === word_t'(100))
+        assert (dut.dbus_req.addr === word_t'(72))
+            else $fatal(1, "STORE address wrong: %0d", dut.dbus_req.addr);
+        assert (dut.dbus_req.wdata === word_t'(100))
             else $fatal(1, "STORE data wrong");
         @(posedge clk); // Commit STORE and retire instruction.
         #1;
@@ -132,10 +133,10 @@ module cpu_system_tb;
             encode_load(reg_addr_t'(3), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.data_req.valid && dut.data_req.op == bus_pkg::BUS_READ && dut.data_rsp.ready)
+        assert (dut.dbus_req.valid && dut.dbus_req.op == bus_pkg::BUS_READ && dut.dbus_rsp.ready)
             else $fatal(1, "LOAD D-BUS handshake wrong");
-        assert (dut.data_rsp.rdata === word_t'(100))
-            else $fatal(1, "LOAD data expected 100, got %0d", dut.data_rsp.rdata);
+        assert (dut.dbus_rsp.rdata === word_t'(100))
+            else $fatal(1, "LOAD data expected 100, got %0d", dut.dbus_rsp.rdata);
         @(posedge clk); // Commit LOAD writeback and retire.
         #1;
 
@@ -171,7 +172,7 @@ module cpu_system_tb;
             else $fatal(1, "R3 LOAD result wrong");
         assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222))
             else $fatal(1, "R4 branch result wrong");
-        assert (dut.u_data_memory.mem[72 / WORD_BYTES] === word_t'(100))
+        assert (dut.u_memory.u_data_memory.mem[72 / WORD_BYTES] === word_t'(100))
             else $fatal(1, "Data memory word wrong");
 
         $display("PASS: final CPU + external I-BUS memory + D-BUS interconnect/system");

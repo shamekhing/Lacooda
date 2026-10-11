@@ -1500,8 +1500,8 @@ This is a major hardware lesson:
 Another parameter probe found:
 
 ``` systemverilog
-localparam int DATA_MEMORY_SIZE_BYTES =
-    DATA_MEMORY_DEPTH * DATA_BYTES;
+localparam int cpu_memory_SIZE_BYTES =
+    cpu_memory_DEPTH * DATA_BYTES;
 ```
 
 This used a SystemVerilog `int`, which is a 32-bit signed type.
@@ -1522,11 +1522,11 @@ signed `int`.
 The fix was to perform the calculation at architectural address width:
 
 ``` systemverilog
-localparam data_t DATA_MEMORY_SIZE_BYTES =
-    data_t'(DATA_MEMORY_DEPTH) * data_t'(DATA_BYTES);
+localparam data_t cpu_memory_SIZE_BYTES =
+    data_t'(cpu_memory_DEPTH) * data_t'(DATA_BYTES);
 
-localparam data_t DATA_MEMORY_LIMIT =
-    DATA_MEMORY_BASE + DATA_MEMORY_SIZE_BYTES;
+localparam data_t cpu_memory_LIMIT =
+    BRAM_MEMORY_BASE + cpu_memory_SIZE_BYTES;
 ```
 
 ### Understanding gap
@@ -1738,10 +1738,10 @@ verilog-staging/
 │   │
 │   ├── memory/
 │   │   ├── instruction_memory.sv
-│   │   └── data_memory.sv
+│   │   └── cpu_memory.sv
 │   │
 │   └── soc/
-│       └── cpu_system.sv
+│       └── system.sv
 │
 ├── sim/
 │   └── testbench/
@@ -3538,7 +3538,7 @@ Whole design             9412 LUT
 |   +-- u_arithmetic     7542 LUT
 |   +-- u_logic_unit        0 LUT
 +-- u_cpu_register       259 LUT
-+-- u_data_memory         256 LUT
++-- u_cpu_memory         256 LUT
 +-- u_program_counter     107 LUT
 DSP blocks used             0
 ```
@@ -4070,3 +4070,45 @@ The lesson is:
 
 Correctness is where the design starts, not where it ends.
 
+
+------------------------------------------------------------------------
+
+## F. CPU Bus Names and Memory Subsystem
+
+The SoC now names bus ports by their role:
+
+| Interface | Purpose |
+| --- | --- |
+| `ibus_req` / `ibus_rsp` | CPU instruction fetch requests and responses |
+| `dbus_req` / `dbus_rsp` | CPU load/store requests and responses |
+| `gpu_mmio_req` / `gpu_mmio_rsp` | CPU access to GPU control and status registers |
+| `data_mem_req` / `data_mem_rsp` | Interconnect access to local data memory |
+| `mem_req` / `mem_rsp` | Local request and response at the data RAM slave |
+
+The GPU register block previously called its CPU-facing MMIO port `ibus`.
+That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
+`mmio_rsp`. The former `cpu_memory` RAM is now `data_memory`, with matching
+`DATA_MEMORY_*` constants in the memory and bus packages.
+
+`cpu` now exposes both instruction and data master ports. It no longer
+instantiates the instruction ROM. In `system.sv`, `u_memory` is an instance of
+`memory_subsystem`; it owns the existing `instruction_memory` ROM and the
+synchronous `data_memory` BRAM. These remain physically separate memories,
+so instruction fetch does not contend with local data access. The data bus
+still passes through `bus_interconnect`, which maps local data RAM and GPU
+MMIO into the CPU address space. This refactor does not change the bus
+transaction format or make the reserved DDR3 address range operational.
+
+The Tang Primer 20K has limited on-chip block RAM and onboard DDR3. A future
+GPU framebuffer or TPU tensor store will need an actual DDR3 controller and
+a shared-memory path. When GPU or TPU engines become bus masters, the
+interconnect will also need arbitration and ports for those masters; the
+current interconnect accepts only the CPU data port. GPU MMIO is a slave
+control interface and does not provide GPU memory access by itself.
+
+The affected testbenches, `run.sh`, and `lacooda.gprj` were updated for these
+names and the new module. Focused SoC, bus interconnect, GPU MMIO, and
+synchronous data RAM simulations pass. The full `run.sh --no-gui` regression
+still stops at the instruction-fetch test, which has four failing checks;
+the separate CPU interface test times out. Those tests need follow-up before
+the complete regression can be considered passing.

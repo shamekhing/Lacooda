@@ -1,22 +1,36 @@
 `timescale 1ns/1ps
 
-// ============================================================
-// LACOODA data-bus addr cpu_decoder
-//
-// Pure combinational addr classification. At the current system stage
-// there is one mapped data-bus slave: local data memory. More regions can
-// be added later without changing the CPU master interface.
-// ============================================================
-
-module address_cpu_decoder (
+module address_decoder (
     input  cpu_pkg::word_t addr,
-    output logic slave_sel
+
+    output logic data_mem_sel,
+    output logic gpu_mmio_sel
 );
 
     always_comb begin
-        slave_sel =
-            (addr >= bus_pkg::DATA_MEMORY_BASE) &&
-            (addr <  bus_pkg::DATA_MEMORY_LIMIT);
+
+        // ----------------------------------------------------
+        // Data BRAM
+        //
+        // [0x00000000, 0x00008000)
+        //
+        // decimal:
+        // [0, 32768)
+        // ----------------------------------------------------
+
+        data_mem_sel = (addr >= bus_pkg::DATA_MEMORY_BASE) && (addr <  bus_pkg::DATA_MEMORY_LIMIT);
+
+        // ----------------------------------------------------
+        // GPU MMIO
+        //
+        // [0x10000000, 0x10001000)
+        //
+        // decimal:
+        // [268435456, 268439552)
+        // ----------------------------------------------------
+
+        gpu_mmio_sel = (addr >= bus_pkg::GPU_BASE) && (addr <  bus_pkg::GPU_LIMIT);
+
     end
 
 endmodule

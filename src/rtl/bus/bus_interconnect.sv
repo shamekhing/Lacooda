@@ -1,53 +1,83 @@
 `timescale 1ns/1ps
 
-// ============================================================
-// LACOODA data-bus interconnect
-//
-// One CPU data-bus master is routed to the currently implemented local
-// data-memory slave. This module owns address selection and response
-// routing; neither the CPU nor the memory needs to know about the other.
-//
-// Protocol:
-//   - Master holds valid/address/write/write_data until ready.
-//   - Selected slave receives the request.
-//   - Slave ready/read_data are returned to the master.
-//   - Unmapped accesses complete immediately with read_data=0. This keeps
-//     the Stage-7 behavior where invalid accesses do not deadlock the CPU.
-// ============================================================
-
 module bus_interconnect (
-    input  bus_pkg::bus_req_s  d_req,
-    output bus_pkg::bus_rsp_s  d_rsp,
-    output bus_pkg::bus_req_s  slave_req,
-    input  bus_pkg::bus_rsp_s  slave_rsp
+    // CPU D-BUS
+    input  bus_pkg::bus_req_s dbus_req,
+    output bus_pkg::bus_rsp_s dbus_rsp,
+
+    // Internal data BRAM
+    output bus_pkg::bus_req_s data_mem_req,
+    input  bus_pkg::bus_rsp_s data_mem_rsp,
+
+    // GPU MMIO
+    output bus_pkg::bus_req_s gpu_mmio_req,
+    input  bus_pkg::bus_rsp_s gpu_mmio_rsp
 );
 
-    logic slave_sel;
+    logic data_mem_sel;
+    logic gpu_mmio_sel;
 
-    address_cpu_decoder u_address_cpu_decoder (
-        .addr      (d_req.addr),
-        .slave_sel (slave_sel)
+    // ========================================================
+    // Address decoder
+    // ========================================================
+
+    address_decoder u_address_decoder (
+        .addr            (dbus_req.addr),
+        .data_mem_sel (data_mem_sel),
+        .gpu_mmio_sel         (gpu_mmio_sel)
     );
 
-    // Requests are forwarded only to the selected slave. The address
-    // presented to the slave is local to its mapped region.
-    assign slave_req.valid = d_req.valid && slave_sel;
-    assign slave_req.op = d_req.op;
-    assign slave_req.addr = d_req.addr - bus_pkg::DATA_MEMORY_BASE;
-    assign slave_req.wdata = d_req.wdata;
+    // ========================================================
+    // Data-memory request
+    // Global D-BUS address -> memory-local byte address.
+    // ========================================================
 
     always_comb begin
-        d_rsp = '0;
+        data_mem_req = '0;
+        data_mem_req.valid = dbus_req.valid && data_mem_sel;
+        data_mem_req.op = dbus_req.op;
+        data_mem_req.addr = dbus_req.addr - bus_pkg::DATA_MEMORY_BASE;
+        data_mem_req.wdata = dbus_req.wdata;
+    end
 
-        if (d_req.valid) begin
-            if (slave_sel) begin
-                d_rsp = slave_rsp;
+    // ========================================================
+    // GPU request
+    // Global address -> GPU-local address.
+    //
+    // Example:
+    //
+    // 0x10000020 - 0x10000000 = 0x20
+    //
+    // Decimal:
+    //
+    // 268435488 - 268435456 = 32
+    // ========================================================
+
+    always_comb begin
+        gpu_mmio_req = '0;
+        gpu_mmio_req.valid = dbus_req.valid && gpu_mmio_sel;
+        gpu_mmio_req.op = dbus_req.op;
+        gpu_mmio_req.addr = dbus_req.addr - bus_pkg::GPU_BASE;
+        gpu_mmio_req.wdata = dbus_req.wdata;
+    end
+
+    // ========================================================
+    // Response multiplexer
+    // ========================================================
+
+    always_comb begin
+        dbus_rsp = '0;
+        if (dbus_req.valid) begin
+            if (data_mem_sel) begin
+                dbus_rsp = data_mem_rsp;
+            end else if (gpu_mmio_sel) begin
+                dbus_rsp = gpu_mmio_rsp;
             end else begin
-                // Preserve the existing no-fault Stage-7 behavior for an
-                // unmapped address: complete the request and return zero.
-                d_rsp.ready = 1'b1;
+                // unmapped access completes immediately and
+                // returns zero rather than raising a bus fault.
+                dbus_rsp.ready = 1'b1;
+                dbus_rsp.rdata = '0;
             end
         end
     end
-
 endmodule

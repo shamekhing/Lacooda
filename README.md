@@ -1,4114 +1,1089 @@
-# Build a CPU by Hand with SystemVerilog
+# LACOODA — As-Built Architecture Reference
 
-## The Development Journey 
+This document is the **code-grounded map of the LACOODA hardware as it is
+wired today**. It walks the design from the FPGA board top (`fpga_top`) down to
+the smallest operations inside the ALU (a single 1-bit adder), naming the real
+files, modules, ports and constants at every step.
 
-**Project:** LACOODA\
-**Language:** SystemVerilog\
-**Target direction:** FPGA(N/A)\
-**CPU cpu_datapath:** 64-bit by default\
-**Instruction word:** 64-bit by default\
-**Register file:** 64 × 64-bit by default\
-**Purpose:** A hands-on learning manual reconstructed from my stupid questions to AI.
+It is a *reference*, not a tutorial. `README.md` teaches the design story; this
+file answers "what is in the tree right now, how is it connected, and how does
+one instruction flow end to end".
 
-------------------------------------------------------------------------
+**Scope rule used throughout:** only modules that are actually instantiated in
+the live hierarchy rooted at `fpga_top` are documented in detail. Modules that
+exist in the tree but are **not wired** (`gpu_core`, `pixel_engine`,
+`gpu_memory`, reserved DDR3, the empty `gpu_decoder.sv`) are listed once in
+[Appendix F](#appendix-f--not-wired--reserved).
 
-# Preface
+---
 
-This is not a SystemVerilog tutorial nor a standard README but mostly my learning journey to build game from hardware from scratch.
+## Table of Contents
 
-The goal is to learn SystemVerilog by building a processor, discovering
-the places where a software-programming mental model stops working, and
-then progressively turning a collection of arithmetic modules into a CPU
-with instructions, state, program flow, memory, a handshake bus, and a
-clean system boundary.
+1. [System Summary](#1-system-summary)
+2. [Repository Layout](#2-repository-layout)
+3. [The Layered Mental Model](#3-the-layered-mental-model)
+4. [Foundation: The Packages](#4-foundation-the-packages)
+5. [The Bus Contract](#5-the-bus-contract)
+6. [Memory Subsystem](#6-memory-subsystem)
+7. [CPU — Top to Bottom](#7-cpu--top-to-bottom)
+8. [The ALU — Unit to Bit Operations](#8-the-alu--unit-to-bit-operations)
+9. [GPU (Wired Part)](#9-gpu-wired-part)
+10. [Board Top and Build](#10-board-top-and-build)
+11. [Reference Appendices](#11-reference-appendices)
 
-The processor is **LACOODA**. from the 3 hump lacooda ygo card but it is a long story so i will save you the details.
+---
 
-The order matters. We do not begin with a complete CPU diagram and
-pretend every block is already obvious. We begin with the exact
-questions that arise when the first modules are connected:
+## 1. System Summary
 
--   Is SystemVerilog executed from top to bottom?
--   Which module runs first?
--   What is the difference between a port and a signal?
--   If the cpu_decoder and cpu_datapath are active simultaneously, how can
-    decoding happen "before" execution?
--   Why does `assign fields = instruction;` work?
--   Why does a register write need a clock but an ALU result does not?
--   What is the difference between a conceptual CPU stage and a pipeline
-    stage?
--   Why can internal CPU wiring work without `valid/ready`, while
-    external memory needs a handshake?
--   What does it mean for an instruction to retire?
--   Why can `777` become `9`?
--   How can a huge memory map accidentally become zero?
--   What does simulation prove, and what does only synthesis/timing
-    analysis prove?
+LACOODA is a small 32-bit RISC-like SoC written in SystemVerilog and targeted at
+the **Sipeed Tang Primer 20K** (Gowin `GW2A-18C`), clocked by the onboard
+**27 MHz** oscillator.
 
-Those are not side questions. They are part of the curriculum.
+It is built from five subsystems:
 
-The finished CPU boundary developed in this journey exposes two external
-master interfaces:
+| Subsystem | Top module | Role |
+| --- | --- | --- |
+| CPU | `cpu` | Fetch, decode, execute; I-BUS + D-BUS bus master |
+| Bus | `bus_interconnect` (+ `address_decoder`) | Routes CPU data accesses to slaves |
+| Memory | `memory_subsystem` | Instruction ROM + data BRAM |
+| GPU | `gpu` | CPU-visible MMIO register block |
+| Board | `fpga_top` | Pins, buttons, LEDs; wraps `system` |
 
-``` text
-                 +----------------------+
-                 |     LACOODA CPU      |
-                 |                      |
-                 | PC / fetch buffer    |
-                 | cpu_decoder              |
-                 | register file        |
-                 | ALU / cpu_datapath       |
-                 | status flags         |
-                 | branch unit          |
-                 | LOAD / STORE control |
-                 +----------+-----------+
-                            |
-                    +-------+-------+
-                    |               |
-                  I-BUS           D-BUS
-                    |               |
-====================|===============|================ CPU boundary
-                    |               |
-             instruction      bus/interconnect
-                memory              |
-                                  data
-                                  memory
+Key architectural facts:
+
+* **Architectural word = 32 bits** (`cpu_pkg::WORD_WIDTH`). The design is locked
+  to 32 bits.
+* **64 registers**, R0 hardwired to zero.
+* **Fixed-shape instructions**: register/opcode fields packed in the low 26 bits
+  of one word; an optional **immediate word follows** the instruction as a
+  second full word.
+* **Multi-cycle, bit-serial ALU**: every ALU op takes roughly `WORD_WIDTH` clock
+  cycles and shares a single 1-bit adder.
+* **Single bus master** (the CPU data port). Memory and MMIO are slaves.
+* Memory-mapped I/O: data RAM at `0x00000000`, GPU registers at `0x10000000`.
+
+---
+
+## 2. Repository Layout
+
+| Path | Contents |
+| --- | --- |
+| `src/rtl/packages/` | Shared types/constants (`opcode_pkg`, `cpu_pkg`, `memory_pkg`, `bus_pkg`, `gpu_pkg`, `alu_pkg`) |
+| `src/rtl/bus/` | `address_decoder`, `bus_interconnect` |
+| `src/rtl/cpu/` | `cpu` top; `fetch/`, `core/`, `alu/` sub-folders |
+| `src/rtl/memory/` | `instruction_memory`, `data_memory`, `memory_subsystem` (plus unused `gpu_memory`) |
+| `src/rtl/gpu/` | `gpu` top, `core/gpu_register` (plus unused `gpu_core`, `pixel_engine`, empty `gpu_decoder`) |
+| `src/rtl/soc/` | `system` (SoC), `fpga_top` (board wrapper) |
+| `src/sim/testbench/` | Unit + integration testbenches (`cpu/`, `bus/`, `memory/`, `gpu/`, `soc/`) |
+| `src/sim/build/`, `src/sim/waveforms/` | Compiled sims and VCD dumps (git-ignored) |
+| `src/programs/` | Hex memory images (`genesis_*.hex`, `data_memory_*.hex`) |
+| `src/constraints/` | `sipeed_tang_primer_20k.cst` (pins), `.sdc` (clock) |
+| `run.sh` | Icarus Verilog regression + GTKWave launcher |
+| `lacooda.gprj` | Gowin IDE project file list |
+
+Build/verification tooling: **Icarus Verilog** (`iverilog -g2012 -Wall`) for
+simulation, **Gowin** for synthesis/PnR, `.vscode/settings.json` configures
+`slang`/`verilator` lint and `verible` formatting.
+
+---
+
+## 3. The Layered Mental Model
+
+The design is best read as a stack. Each layer is a strict container of the one
+below it:
+
+```
+L0  Board      fpga_top
+                  └─ system
+L1  SoC          ├─ cpu
+                 ├─ bus_interconnect → address_decoder
+                 ├─ memory_subsystem → instruction_memory | data_memory
+                 └─ gpu → gpu_register
+L2  CPU edge       cpu → instruction_fetch (I-BUS) | cpu_core (D-BUS)
+L3  Datapath         cpu_core → cpu_decoder | cpu_datapath | branch_unit
+L4  Storage          cpu_datapath → cpu_register | status_register
+L5  ALU unit         cpu_datapath → alu → arithmetic | logic_unit | shifter | comparator
+L6  Bit ops          1-bit adder · shift-add multiply · restoring divide · serial compare · bit logic
+-1  Foundation       packages: opcode_pkg → cpu_pkg → memory_pkg → bus_pkg / gpu_pkg ; alu_pkg
 ```
 
-Everything beyond that boundary---DDR3, MMIO, controllers, GPU, HDMI,
-audio---is a system concern rather than something that should be hidden
-inside `cpu.sv`.
+The layers below `cpu` are pure *combinational wiring plus small FSMs*; the only
+sequential elements are the register file, the status register, the program
+counter, the fetch buffer, the ALU sub-unit shift registers, and the
+data-memory response pipeline.
 
-------------------------------------------------------------------------
+Full instantiation tree (file paths in [Appendix D](#appendix-d--module-tree)):
 
-# How to Use This Manual
-
-Each major part uses the same learning pattern:
-
-1.  **Mental model** --- what hardware idea is being introduced.
-2.  **SystemVerilog mechanism** --- the language feature used to
-    describe it.
-3.  **LACOODA implementation** --- how the real processor uses it.
-4.  **Understanding gap** --- a misconception worth confronting
-    directly.
-5.  **Experiment** --- something to modify or inspect.
-6.  **Verification** --- what the testbench must prove.
-7.  **Exit condition** --- what should be understood before continuing.
-
-The manual follows the development journey rather than reorganizing
-everything into a conventional university syllabus.
-
-------------------------------------------------------------------------
-
-# Part I --- Stop Thinking Like a Software Interpreter
-
-## 1. SystemVerilog Describes Hardware
-
-A C++ statement usually describes an operation that executes after a
-previous operation.
-
-``` cpp
-a = b + c;
-d = a ^ e;
+```
+fpga_top  (src/rtl/soc/fpga_top.sv)
+└─ system  (src/rtl/soc/system.sv)
+   ├─ u_cpu : cpu
+   │  ├─ u_instruction_fetch : instruction_fetch
+   │  │  └─ u_program_counter : program_counter
+   │  └─ u_cpu_core : cpu_core
+   │     ├─ u_cpu_decoder : cpu_decoder
+   │     ├─ u_cpu_datapath : cpu_datapath
+   │     │  ├─ u_cpu_register : cpu_register
+   │     │  ├─ u_alu : alu
+   │     │  │  ├─ u_arithmetic : arithmetic
+   │     │  │  ├─ u_logic_unit : logic_unit
+   │     │  │  ├─ u_shifter : shifter
+   │     │  │  └─ u_comparator : comparator
+   │     │  └─ u_status_register : status_register
+   │     └─ u_branch_unit : branch_unit
+   ├─ u_bus_interconnect : bus_interconnect
+   │  └─ u_address_decoder : address_decoder
+   ├─ u_memory : memory_subsystem
+   │  ├─ u_instruction_memory : instruction_memory
+   │  └─ u_data_memory : data_memory
+   └─ u_gpu : gpu
+      └─ u_gpu_register : gpu_register
 ```
 
-The natural software interpretation is:
+---
 
-1.  calculate `a`,
-2.  then calculate `d`.
+## 4. Foundation: The Packages
 
-A continuous SystemVerilog description is different:
+Everything in LACOODA is typed by a small set of packages. They are the
+"single source of truth" and carry a strict dependency order:
 
-``` systemverilog
-assign a = b + c;
-assign d = a ^ e;
+```
+opcode_pkg  (no dependencies)
+    ↓
+cpu_pkg     (imports opcode_pkg; NEVER imports memory_pkg)
+    ↓
+memory_pkg  (uses cpu_pkg::WORD_BYTES)
+    ↓
+bus_pkg     (uses cpu_pkg + memory_pkg)      gpu_pkg (uses cpu_pkg + bus_pkg + memory_pkg)
+                                             alu_pkg (uses cpu_pkg)
 ```
 
-These describe two pieces of hardware that exist at the same time.
+The dependency arrow is deliberately one-way to avoid circular package imports:
+`cpu_pkg` must never depend on `memory_pkg`, so memory sizes live in
+`memory_pkg`, not `cpu_pkg`.
 
-There is an adder driving `a`. There is XOR logic consuming `a` and `e`
-and driving `d`.
+### 4.1 `opcode_pkg` — `src/rtl/packages/opcode_pkg.sv`
 
-The dependency still matters:
+Owns the opcode field width, the complete opcode map, and the classification
+helpers. It has **no dependencies**, so any module can import it.
 
-``` text
-b ----\
-       ADD ---- a ----\
-c ----/                XOR ---- d
-e --------------------/
+* `localparam int OPCODE_WIDTH = 6;`
+* `typedef enum logic [5:0] { ... } opcode_e;` with the full map:
+
+| Range | Meaning | Examples |
+| --- | --- | --- |
+| `0x00–0x09` | Arithmetic add/sub/mul/div/mod | `ALU_ADD=0x00`, `ALU_SUB=0x02`, `ALU_MUL=0x04`, `ALU_MODS=0x09` |
+| `0x0A–0x0D` | Min/Max | `ALU_MINU=0x0A`, `ALU_MAXS=0x0D` |
+| `0x0E–0x0F` | Unary arithmetic | `ALU_ABS=0x0E`, `ALU_NEG=0x0F` |
+| `0x10–0x18` | Bitwise logic + pass | `ALU_NOT=0x10`, `ALU_AND=0x11`, `ALU_PASS_A=0x17`, `ALU_PASS_B=0x18` |
+| `0x19–0x1D` | Shifts/rotates | `ALU_SHL=0x19`, `ALU_SHR=0x1A`, `ALU_SAR=0x1B`, `ALU_ROL=0x1C`, `ALU_ROR=0x1D` |
+| `0x1E–0x27` | Comparisons | `ALU_EQ=0x1E`, `ALU_LTU=0x20`, `ALU_GES=0x27` |
+| `0x28–0x2E` | Control flow | `CTRL_JMP=0x28`, `CTRL_BEQ=0x29`, …, `CTRL_BGEU=0x2E` |
+| `0x2F–0x30` | Memory | `MEM_LOAD=0x2F`, `MEM_STORE=0x30` |
+
+* `typedef logic [5:0] opcode_t;` — the raw field type used on ports/structs.
+* `ALU_OPCODE_COUNT = int'(ALU_GES) + 1;` — encodings the ALU executes.
+* Classification helpers (take raw bits so call sites stay cast-free):
+  `is_valid_opcode`, `is_alu_opcode`, `is_unary_opcode`, `is_mov_op`,
+  `is_movi_op`, `is_branch_opcode`, `is_memory_opcode`.
+
+### 4.2 `cpu_pkg` — `src/rtl/packages/cpu_pkg.sv`
+
+The architectural contract. Owns the word width, register-file geometry, STATUS
+representation, instruction layout, and the instruction encoders.
+
+**Word and types**
+
+* `WORD_WIDTH = 32`, `WORD_BYTES = 4`.
+* `typedef logic [31:0] word_t;`
+* `typedef word_t instruction_t;` — one instruction = one architectural word.
+
+**Register file**
+
+* `REG_FILE_COUNT = 64`, `REG_FILE_ADDR_WIDTH = $clog2(64) = 6`.
+* `typedef logic [5:0] reg_addr_t;`
+* `ZERO_REG = '0` — R0 is architecturally hardwired to zero.
+
+**STATUS / flags**
+
+* `STATUS_WIDTH = 32`; `typedef logic [31:0] status_t;`
+* `typedef struct packed { logic Z; logic N; logic C; logic V; logic DZ; } flags_s;`
+* Implemented STATUS bits: `[4]=DZ`, `[3]=V`, `[2]=C`, `[1]=N`, `[0]=Z`; bits
+  `[31:5]` reserved.
+* `function make_flags(z, n, c, v, dz)` builds a `flags_s`.
+
+**Instruction layout** (LSB first — this is the exact bit map used throughout):
+
+```
+[5:0]    RS2
+[11:6]   RS1
+[17:12]  RD
+[23:18]  OPCODE
+[24]     I   (immediate mode)
+[25]     S   (update STATUS)
+[31:26]  RESERVED
 ```
 
-But the dependency is not created because the first `assign` appears
-earlier in the file. It is created by the wiring.
+* `USED_INSTRUCTION_BITS = 26` (everything above must be zero for a legal
+  instruction — enforced by `cpu_decoder`).
+* **The immediate is NOT packed into the instruction.** Instructions that need
+  one are followed by **one extra full word** (the *immediate word*).
 
-### Understanding gap: "Which one executes first?"
+**Struct overlay & immediate rule**
 
-For combinational hardware, that is usually the wrong question.
-
-The better question is:
-
-> What signals depend on what other signals?
-
-When `b` changes, the adder output eventually changes. That change
-propagates to the XOR input. The XOR output then settles. Simulation
-models this propagation according to SystemVerilog semantics; physical
-FPGA logic has actual propagation delays.
-
-Source-code order is not the CPU execution order.
-
-------------------------------------------------------------------------
-
-## 2. Modules Are Hardware Blocks
-
-A module defines a hardware block and its connection points.
-
-``` systemverilog
-module example (
-    input  logic a,
-    input  logic b,
-    output logic y
-);
-
-    assign y = a & b;
-
-endmodule
-```
-
-The ports are the block's boundary.
-
-``` text
-a ----> +---------+
-        | example | ----> y
-b ----> +---------+
-```
-
-When a parent module instantiates it:
-
-``` systemverilog
-logic left;
-logic right;
-logic result;
-
-example u_example (
-    .a(left),
-    .b(right),
-    .y(result)
-);
-```
-
-the left-hand names in `.a(left)` and `.b(right)` are **child ports**.
-The right-hand names are **signals in the parent**.
-
-### Understanding gap: port vs signal
-
-Think of:
-
-``` systemverilog
-.a(left)
-```
-
-as:
-
-``` text
-child connection point "a"
-          |
-          +---- parent wire "left"
-```
-
-A port is not "the data." It is an interface point through which a
-signal is connected.
-
-------------------------------------------------------------------------
-
-## 3. One Parent Signal Can Connect Multiple Blocks
-
-This became important when connecting the LACOODA cpu_decoder to the
-cpu_datapath.
-
-``` systemverilog
-logic [5:0] decoded_op;
-
-cpu_decoder u_cpu_decoder (
-    .alu_op(decoded_op)
-);
-
-cpu_datapath u_cpu_datapath (
-    .alu_op(decoded_op)
-);
-```
-
-No extra:
-
-``` systemverilog
-assign ...
-```
-
-is required between those instances.
-
-The signal `decoded_op` is already the connection.
-
-Conceptually:
-
-``` text
-                  decoded_op
-cpu_decoder output -------------------- cpu_datapath input
-```
-
-### Driver rule
-
-The important question is not how many modules see a signal.
-
-The important question is how many things **drive** it.
-
-A single driver can feed many consumers. Multiple conflicting drivers
-are usually a design error unless the signal is intentionally resolved.
-
-------------------------------------------------------------------------
-
-## 4. Combinational vs Sequential Hardware
-
-Two categories dominate this CPU.
-
-### Combinational
-
-Examples:
-
--   cpu_decoder logic,
--   ALU,
--   comparisons,
--   muxes,
--   address calculations.
-
-Typical constructs:
-
-``` systemverilog
-assign ...
-```
-
-or:
-
-``` systemverilog
-always_comb begin
-    ...
-end
-```
-
-The output responds to the current input values.
-
-### Sequential
-
-Examples:
-
--   program counter,
--   general-purpose registers,
--   status register,
--   instruction buffer.
-
-Typical construct:
-
-``` systemverilog
-always_ff @(posedge clk) begin
-    ...
-end
-```
-
-State changes at a clock edge.
-
-### Mental model
-
-During a cycle:
-
-``` text
-stored state
-    |
-    v
-combinational logic settles
-    |
-    v
-next values become ready
-    |
-    v
-posedge clk
-    |
-    v
-new state is captured
-```
-
-This single model explains most of the CPU.
-
-------------------------------------------------------------------------
-
-# Part II --- The SystemVerilog Needed for LACOODA
-
-## 5. Packed Vectors
-
-A 64-bit value:
-
-``` systemverilog
-logic [63:0] value;
-```
-
-Bit 63 is the most significant bit. Bit 0 is the least significant bit.
-
-Slices:
-
-``` systemverilog
-value[31:0]
-value[63:32]
-```
-
-A CPU is full of packed bit vectors because registers, instructions,
-addresses, flags, and opcodes all have exact widths.
-
-------------------------------------------------------------------------
-
-## 6. Concatenation
-
-Curly braces concatenate fields:
-
-``` systemverilog
-{a, b}
-```
-
-If `a` is 8 bits and `b` is 8 bits, the result is 16 bits:
-
-``` text
-[ a ][ b ]
-```
-
-This is central to instruction encoding and extension operations.
-
-------------------------------------------------------------------------
-
-## 7. Replication
-
-SystemVerilog can repeat a bit pattern:
-
-``` systemverilog
-{4{1'b1}}
-```
-
-produces:
-
-``` text
-1111
-```
-
-This explains the sign-extension expression that caused confusion during
-development:
-
-``` systemverilog
-return {
-    {(DATA_WIDTH-IMMEDIATE_WIDTH){value[IMMEDIATE_WIDTH-1]}},
-    value
-};
-```
-
-Read it from inside out.
-
-First:
-
-``` systemverilog
-value[IMMEDIATE_WIDTH-1]
-```
-
-is the immediate's sign bit.
-
-Then:
-
-``` systemverilog
-{(DATA_WIDTH-IMMEDIATE_WIDTH){sign_bit}}
-```
-
-repeats that sign bit enough times to fill the upper part of the
-destination.
-
-Finally:
-
-``` systemverilog
-{ repeated_sign_bits, value }
-```
-
-concatenates the extension and original immediate.
-
-For a 32-bit immediate extended to 64 bits:
-
-``` text
-negative immediate:
-
-bit 31 = 1
-
-11111111111111111111111111111111 | original 32 bits
-<----------- 32 bits ----------->   <--- 32 bits --->
-```
-
-------------------------------------------------------------------------
-
-## 8. Types and `typedef`
-
-Instead of spreading raw widths everywhere:
-
-``` systemverilog
-logic [63:0]
-logic [5:0]
-logic [31:0]
-```
-
-LACOODA defines architectural types.
-
-Conceptually:
-
-``` systemverilog
-typedef logic [DATA_WIDTH-1:0] data_t;
-typedef logic [REG_ADDR_WIDTH-1:0] reg_addr_t;
-typedef logic [IMMEDIATE_WIDTH-1:0] imm_t;
-typedef logic [INSTRUCTION_WIDTH-1:0] instruction_t;
-```
-
-This matters because architecture changes should propagate from root
-parameters.
-
-------------------------------------------------------------------------
-
-## 9. Casting
-
-A sized architectural cast:
-
-``` systemverilog
-data_t'(100)
-```
-
-means:
-
-> represent this value using the width and signedness rules of `data_t`.
-
-Likewise:
-
-``` systemverilog
-imm_t'(777)
-```
-
-does **not** promise that 777 fits.
-
-If:
-
-``` text
-IMMEDIATE_WIDTH = 8
-```
-
-then:
-
-``` text
-777 decimal = 0x309
-8-bit field keeps 0x09
-0x09 = 9
-```
-
-This exact issue later exposed a parameterized testbench bug.
-
-------------------------------------------------------------------------
-
-## 10. Packages
-
-LACOODA separates shared architectural definitions into packages.
-
-The important conceptual split became:
-
-``` text
-alu_pkg
-  |
-  +-- ALU opcode definitions
-  +-- flag type
-  +-- ALU-related shared definitions
-
-cpu_pkg
-  |
-  +-- data width
-  +-- register count
-  +-- instruction width
-  +-- immediate width
-  +-- instruction fields
-  +-- encoders/helpers
-  +-- CPU-wide architectural types
-
-bus_pkg
-  |
-  +-- system-side address map
-  +-- bus mapping constants
-```
-
-The CPU should not duplicate the same architectural number in ten files.
-
-------------------------------------------------------------------------
-
-# Part III --- Stage 1: Build the ALU
-
-## 11. Why Start with the ALU?
-
-The ALU is a good first subsystem because it is mostly combinational.
-
-Inputs:
-
-``` text
-operand A
-operand B
-operation
-carry input
-```
-
-Outputs:
-
-``` text
-result
-flags
-validity/status
-```
-
-The first LACOODA stage implemented a broad 64-bit ALU instruction set,
-including arithmetic, signed operations, logic, shifts, rotations,
-comparisons, pass-through operations, and status flags.
-
-The development regression reached **134/134 ALU checks passing**.
-
-------------------------------------------------------------------------
-
-## 12. Split the ALU into Functional Units
-
-Instead of one giant expression, LACOODA was organized into functional
-blocks:
-
-``` text
-                    +----------------+
-operand A --------->| arithmetic     |
-operand B --------->|                |
-                    +----------------+
-
-                    +----------------+
-operand A --------->| logic unit     |
-operand B --------->|                |
-                    +----------------+
-
-                    +----------------+
-operand A --------->| shifter        |
-operand B --------->|                |
-                    +----------------+
-
-                    +----------------+
-operand A --------->| comparator     |
-operand B --------->|                |
-                    +----------------+
-
-                         |
-                         v
-                   operation selects
-                         |
-                         v
-                       result
-```
-
-All of those blocks can exist concurrently.
-
-### Understanding gap: "Does the ALU call the arithmetic unit?"
-
-Not in the software sense.
-
-The arithmetic, logic, shift, and comparison hardware can all evaluate.
-Control logic selects the appropriate result.
-
-------------------------------------------------------------------------
-
-## 13. Flags
-
-LACOODA used five important flags:
-
-``` text
-Z  zero
-N  negative
-C  carry
-V  signed overflow
-DZ divide-by-zero
-```
-
-These teach a critical distinction:
-
-``` text
-ALU result = combinational output
-architectural status register = stored state
-```
-
-The ALU can calculate candidate flags continuously. The status register
-captures them only when control says the instruction should update
-architectural status.
-
-------------------------------------------------------------------------
-
-## 14. Simulation Warning vs Failure
-
-Icarus produced warnings such as:
-
-``` text
-constant selects in always_* processes are not currently supported
-(all bits will be included)
-```
-
-The important lesson was not to classify every warning as a broken CPU.
-
-A simulator warning may describe a simulator limitation or conservative
-sensitivity handling.
-
-Verification discipline means asking:
-
-1.  Did elaboration succeed?
-2.  Did simulation run?
-3.  Did checks pass?
-4.  Is the warning about semantics, synthesis, portability, or merely
-    tool behavior?
-
-------------------------------------------------------------------------
-
-# Part IV --- Stage 2: The Register File
-
-## 15. Registers Create Architectural State
-
-The register file introduced persistent CPU state.
-
-Default architecture:
-
-``` text
-64 registers
-64 bits per register
-R0 hardwired to zero
-```
-
-Two asynchronous read ports and one synchronous write port were used.
-
-Conceptually:
-
-``` text
-             rs1 ----> [ register file ] ----> value A
-             rs2 ----> [               ] ----> value B
-
-             rd  ----> [               ]
-             data ----> [               ]
-             we  ----> [               ]
-             clk -----> [               ]
-```
-
-------------------------------------------------------------------------
-
-## 16. Why Reads Can Be Immediate but Writes Wait
-
-A combinational read can be modeled as:
-
-``` systemverilog
-assign read_data = registers[read_address];
-```
-
-A write changes state:
-
-``` systemverilog
-always_ff @(posedge clk) begin
-    if (write_enable)
-        registers[write_address] <= write_data;
-end
-```
-
-### Understanding gap
-
-> Why can the CPU "see" a register immediately but only change it on the
-> clock?
-
-Because those are two different hardware paths.
-
-Read logic observes stored bits. Write logic changes the storage
-elements.
-
-------------------------------------------------------------------------
-
-## 17. R0
-
-R0 was defined to read as zero and ignore writes.
-
-This is an example of an **architectural rule**, not merely a coding
-trick.
-
-The register file must enforce the rule even if an instruction tries to
-write R0.
-
-Stage 2 regression reached **8/8 tests passing**.
-
-------------------------------------------------------------------------
-
-# Part V --- Stage 3: Build the cpu_datapath
-
-## 18. Connect Registers to the ALU
-
-The cpu_datapath connects:
-
-``` text
-register file
-     |
-     +---- operand A --------\
-     |                        \
-     +---- register B ----+    ALU ---> result ---> writeback
-                          |
-immediate ----------------+--> B mux
-```
-
-A key line was:
-
-``` systemverilog
-assign operand_b =
-    use_immediate ? immediate : register_b;
-```
-
-This is a hardware multiplexer.
-
-``` text
-                 +------+
-register B ----->|      |
-                 | MUX  |----> operand B
-immediate ------>|      |
-                 +--+---+
-                    ^
-             use_immediate
-```
-
-------------------------------------------------------------------------
-
-## 19. Write Authorization
-
-The cpu_datapath should not write a register merely because an ALU produced
-a value.
-
-The design progressively introduced conditions such as:
-
-``` systemverilog
-register_write_enable
-valid
-reset state
-instruction validity
-```
-
-This led to an important CPU design principle:
-
-> Calculating a value and committing architectural state are separate
-> events.
-
-Stage 3 regression reached **21/21 tests passing**.
-
-------------------------------------------------------------------------
-
-# Part VI --- Stage 4: Instruction Encoding and Decoding
-
-## 20. The 64-bit Instruction Word
-
-The CPU developed in this journey used this instruction layout:
-
-``` text
-63                                                   0
-+--------+---+---+--------+--------+--------+--------+----------------+
-|reserved| S | I | opcode |   rd   |  rs1   |  rs2   |     imm32      |
-+--------+---+---+--------+--------+--------+--------+----------------+
-  6 bits   1   1   6 bits   6 bits   6 bits   6 bits      32 bits
-
-63:58 reserved
-57    S / update status
-56    I / immediate mode
-55:50 opcode
-49:44 rd
-43:38 rs1
-37:32 rs2
-31:0  immediate
-```
-
-This was the bridge from "ALU hardware" to "processor ISA."
-
-------------------------------------------------------------------------
-
-## 21. Packed Struct Overlay
-
-The instruction fields were represented with a packed struct
-conceptually like:
-
-``` systemverilog
+```systemverilog
 typedef struct packed {
-    logic [RESERVED_WIDTH-1:0] reserved;
-    logic update_status;
-    logic immediate_mode;
-    opcode_t opcode;
+    logic      update_status;
+    logic      immediate_mode;
+    opcode_t   opcode;
     reg_addr_t rd;
     reg_addr_t rs1;
     reg_addr_t rs2;
-    imm_t imm32;
-} instruction_fields_t;
-```
-
-Then the cpu_decoder could do:
-
-``` systemverilog
-instruction_fields_t fields;
-
-assign fields = instruction;
-```
-
-### Understanding gap: "How can one assignment decode everything?"
-
-It does not perform semantic decoding.
-
-Both sides are packed collections of bits.
-
-The struct declaration defines how the bit positions map onto names.
-
-Conceptually:
-
-``` text
-instruction[63:58] ---> fields.reserved
-instruction[57]    ---> fields.update_status
-instruction[56]    ---> fields.immediate_mode
-instruction[55:50] ---> fields.opcode
-...
-```
-
-The assignment is a bit-level wiring interpretation.
-
-The cpu_decoder still has to determine whether those fields form a legal
-instruction and what control signals they imply.
-
-------------------------------------------------------------------------
-
-## 22. Legal Encoding Is More Than a Valid Opcode
-
-The cpu_decoder enforced format rules.
-
-Examples from the architecture:
-
-### MOV / PASS_A
-
-Expected form:
-
-``` text
-register mode
-RS1 contains source
-RS2 = 0
-IMM = 0
-S = 0
-```
-
-### MOVI / PASS_B
-
-Expected form:
-
-``` text
-immediate mode
-RS1 = 0
-RS2 = 0
-S = 0
-```
-
-### Unary operations
-
-For operations such as:
-
-``` text
-NEG
-ABS
-NOT
-```
-
-the unused second source must not contain arbitrary garbage.
-
-### Binary register form
-
-``` text
-I = 0
-IMM = 0
-```
-
-### Binary immediate form
-
-``` text
-I = 1
-RS2 = 0
-```
-
-This prevents multiple bit patterns from ambiguously representing the
-same semantic instruction.
-
-------------------------------------------------------------------------
-
-## 23. cpu_decoder and cpu_datapath: Which Comes First?
-
-This was one of the central understanding gaps.
-
-The source might contain:
-
-``` systemverilog
-cpu_decoder u_cpu_decoder (...);
-cpu_datapath u_cpu_datapath (...);
-```
-
-But modules are not called one after another.
-
-The actual dependency is:
-
-``` text
-instruction bits
-      |
-      v
-   cpu_decoder
-      |
-      | control wires
-      v
-   cpu_datapath
-      |
-      v
-    result
-```
-
-The cpu_decoder's combinational outputs respond to instruction bits. The
-cpu_datapath's combinational logic responds to those outputs.
-
-Physically and in RTL simulation, they form a connected combinational
-network.
-
-At the clock edge, state updates are committed.
-
-------------------------------------------------------------------------
-
-## 24. `cpu_core.sv`
-
-The CPU core became the integration point for:
-
-``` text
-cpu_decoder
-cpu_datapath
-branch logic later
-memory-operation control later
-```
-
-Important gating concepts included:
-
-``` systemverilog
-assign effective_register_write =
-    instruction_enable &&
-    instruction_valid &&
-    register_write_enable;
-
-assign effective_flags_write =
-    instruction_enable &&
-    instruction_valid &&
-    flags_write_enable;
-```
-
-and an execution validity concept.
-
-The cpu_decoder says what an instruction *requests*. The integration layer
-decides whether the request is currently authorized to affect state.
-
-Stage 4 CPU-core regression reached **16 checks passing**.
-
-------------------------------------------------------------------------
-
-# Part VII --- Stage 5: Fetch and Program Execution
-
-## 25. A CPU Core Is Not Yet a Program-Running CPU
-
-Before Stage 5, the core could execute an instruction supplied to it.
-
-But something still had to answer:
-
-> Which instruction comes next?
-
-That requires a program counter and instruction storage.
-
-------------------------------------------------------------------------
-
-## 26. Program Counter
-
-The program counter stores the address of the current/next instruction.
-
-The initial design was byte addressed.
-
-Because the instruction width was 64 bits:
-
-``` text
-64 bits / 8 = 8 bytes per instruction
-```
-
-Sequential PCs therefore looked like:
-
-``` text
-0
-8
-16
-24
-32
-...
-```
-
-The PC logic already anticipated redirection:
-
-``` text
-if reset:
-    PC = 0
-else if redirect:
-    PC = target
-else if enabled:
-    PC = PC + INSTRUCTION_BYTES
-```
-
-------------------------------------------------------------------------
-
-## 27. Instruction Memory
-
-The initial instruction memory was a simple simulation/synthesizable ROM
-abstraction.
-
-It was **not DDR3**.
-
-This distinction became important later when discussing the Tang Primer
-20K.
-
-The ROM could be initialized using:
-
-``` systemverilog
-initial begin
-    for (int i = 0; i < DEPTH; i++)
-        memory[i] = '0;
-
-    $readmemh(INIT_FILE, memory);
-end
-```
-
-Zeroing the memory before `$readmemh` avoids unknown values in unused
-entries.
-
-------------------------------------------------------------------------
-
-## 28. `program_0.hex`
-
-A small program became the first real sequence of machine instructions.
-
-An early example was effectively:
-
-``` text
-MOVI R1, 50
-MOVI R2, 75
-ADD  R3, R1, R2
-```
-
-Expected final value:
-
-``` text
-R3 = 125
-```
-
-This is where the project changed psychologically from "modules under
-test" to "a processor running a program."
-
-------------------------------------------------------------------------
-
-## 29. What if the Program Is Larger Than Memory?
-
-A memory depth is a hardware/storage limit.
-
-If a program contains more initialized words than the modeled memory,
-the correct solution is not to assume the tool will somehow expand the
-hardware.
-
-This led into parameterization, memory sizing, and eventually external
-memory.
-
-------------------------------------------------------------------------
-
-# Part VIII --- Stage 6: Control Flow
-
-## 30. Sequential Execution Is Not Enough
-
-Without control flow:
-
-``` text
-PC = PC + 8
-PC = PC + 8
-PC = PC + 8
-...
-```
-
-Every program is just a straight line.
-
-A useful CPU needs branches and jumps.
-
-Stage 6 introduced control-flow opcodes in the unused opcode space:
-
-``` text
-0x28 CTRL_JMP
-0x29 CTRL_BEQ
-0x2A CTRL_BNE
-0x2B CTRL_BLT
-0x2C CTRL_BGE
-0x2D CTRL_BLTU
-0x2E CTRL_BGEU
-```
-
-Signed and unsigned comparisons were deliberately distinguished.
-
-------------------------------------------------------------------------
-
-## 31. Branch Unit
-
-The branch unit accepts:
-
-``` text
-enable
-condition
-lhs
-rhs
-target
-```
-
-and produces:
-
-``` text
-redirect
-redirect_target
-```
-
-Conceptually:
-
-``` text
-R1 ----\
-        compare ---- condition true? ---- redirect
-R2 ----/                                  |
-                                           +---- target
-```
-
-The branch does not need to write a general-purpose register.
-
-------------------------------------------------------------------------
-
-## 32. Branch Program
-
-A Stage 6 test program used the idea:
-
-``` text
-0x00 MOVI R1,5
-0x08 MOVI R2,5
-0x10 BEQ R1,R2,0x20
-0x18 MOVI R3,111   ; must be skipped
-0x20 MOVI R3,222
-```
-
-Expected PC flow:
-
-``` text
-0 -> 8 -> 16 -> 32
-```
-
-Expected result:
-
-``` text
-R3 = 222
-```
-
-------------------------------------------------------------------------
-
-## 33. Retirement
-
-This stage exposed another important word: **retire**.
-
-An instruction can be:
-
-``` text
-fetched
-decoded
-evaluated
-waiting
-completed
-retired
-```
-
-Retirement means the instruction is finished as an architectural
-operation and the machine may move beyond it.
-
-This distinction becomes essential when memory can stall.
-
-------------------------------------------------------------------------
-
-# Part IX --- Stage 7: LOAD, STORE, and Data Memory
-
-## 34. Why Registers Are Not Enough
-
-The CPU had 64 registers, but a game, stack, arrays, card state, AI
-data, and assets cannot live entirely in 64 registers.
-
-The CPU needed addressable data memory.
-
-The basic operations were:
-
-``` text
-LOAD  Rd, [RsBase + offset]
-STORE RsData, [RsBase + offset]
-```
-
-------------------------------------------------------------------------
-
-## 35. Effective Address
-
-The existing ALU could calculate:
-
-``` text
-effective address = base register + immediate offset
-```
-
-This is a good example of reusing the cpu_datapath instead of creating
-special arithmetic hardware for memory.
-
-### LOAD flow
-
-``` text
-base register
-     |
-     +-- + offset --> address --> memory
-                                  |
-                                  v
-                              read data
-                                  |
-                                  v
-                              writeback
-                                  |
-                                  v
-                                  Rd
-```
-
-### STORE flow
-
-``` text
-base register -- + offset --> address
-source register -------------> write data
-                                |
-                                v
-                              memory
-```
-
-STORE does not write a CPU register.
-
-------------------------------------------------------------------------
-
-## 36. Byte Addressing
-
-The architecture uses byte addresses.
-
-For a 64-bit data word:
-
-``` text
-DATA_WIDTH = 64
-DATA_BYTES = 8
-```
-
-Word addresses therefore appear at:
-
-``` text
-0
-8
-16
-24
-...
-```
-
-This is why `DATA_BYTES` is an architectural derived parameter and not
-something that should be hardcoded as `8` everywhere.
-
-------------------------------------------------------------------------
-
-# Part X --- Parameterization
-
-## 37. The Question That Changed the Architecture
-
-A critical question was:
-
-> If I change one `localparam` in `cpu_pkg`, is the entire codebase
-> guaranteed to adapt?
-
-The answer at the time was **no**.
-
-A design can look parameterized while still containing hidden
-assumptions:
-
-``` text
-[63:0]
-[5:0]
-64'h...
-6'h...
-+8
-<<3
-bit 63
-fixed instruction slices
-```
-
-Parameterization requires an audit, not just a few `parameter`
-declarations.
-
-------------------------------------------------------------------------
-
-## 38. Root Parameters
-
-The proposed root architectural parameters became:
-
-``` text
-DATA_WIDTH
-REG_COUNT
-INSTRUCTION_WIDTH
-IMMEDIATE_WIDTH
-OPCODE_WIDTH
-INSTRUCTION_MEMORY_DEPTH
-```
-
-plus configuration such as the initialization filename.
-
-Everything possible should be derived from these.
-
-Examples:
-
-``` systemverilog
-DATA_BYTES = DATA_WIDTH / 8;
-
-REG_ADDR_WIDTH = $clog2(REG_COUNT);
-
-INSTRUCTION_BYTES = INSTRUCTION_WIDTH / 8;
-```
-
-------------------------------------------------------------------------
-
-## 39. Derive Instruction Layout
-
-Instead of manually declaring every bit position, calculate how many
-bits are required.
-
-Conceptually:
-
-``` systemverilog
-USED_INSTRUCTION_BITS =
-    IMMEDIATE_WIDTH +
-    (3 * REG_ADDR_WIDTH) +
-    OPCODE_WIDTH +
-    2;
-```
-
-The final `2` represents the I and S bits.
-
-Then:
-
-``` systemverilog
-RESERVED_WIDTH =
-    INSTRUCTION_WIDTH - USED_INSTRUCTION_BITS;
-```
-
-Default configuration:
-
-``` text
-immediate             32
-3 register fields     18
-opcode                  6
-I/S                     2
--------------------------
-used                   58
-
-instruction            64
-reserved                6
-```
-
-------------------------------------------------------------------------
-
-## 40. Parameter Constraints
-
-Parameterization does not mean every integer is legal.
-
-Examples of meaningful constraints:
-
-``` text
-DATA_WIDTH >= 64
-DATA_WIDTH % 8 == 0
-INSTRUCTION_WIDTH % 8 == 0
-DATA_WIDTH >= IMMEDIATE_WIDTH
-USED_INSTRUCTION_BITS <= INSTRUCTION_WIDTH
-```
-
-The design philosophy became:
-
-> Every legal root configuration should propagate automatically. Every
-> illegal configuration should fail clearly rather than silently produce
-> broken hardware.
-
-------------------------------------------------------------------------
-
-## 41. The 777 → 9 Bug
-
-A parameterized test later exposed a subtle mistake.
-
-The test encoded:
-
-``` systemverilog
-imm_t'(777)
-```
-
-and expected:
-
-``` text
-777
-```
-
-That is correct with a 32-bit immediate.
-
-But with:
-
-``` text
-IMMEDIATE_WIDTH = 8
-```
-
-the field contains only eight bits.
-
-``` text
-777 = 0x309
-
-8-bit encoding:
-0x09
-
-decimal:
-9
-```
-
-The CPU was correct. The testbench was wrong.
-
-The correct test expectation must derive from the encoded value:
-
-``` systemverilog
-localparam imm_t STORE_TEST_IMM = imm_t'(777);
-
-localparam data_t STORE_TEST_VALUE =
-    sign_extend_imm32(STORE_TEST_IMM);
-```
-
-This is a major hardware lesson:
-
-> Tests must obey finite-width hardware semantics too.
-
-------------------------------------------------------------------------
-
-## 42. The Memory-Map Overflow Bug
-
-Another parameter probe found:
-
-``` systemverilog
-localparam int cpu_memory_SIZE_BYTES =
-    cpu_memory_DEPTH * DATA_BYTES;
-```
-
-This used a SystemVerilog `int`, which is a 32-bit signed type.
-
-A large valid memory size could overflow the intermediate calculation.
-
-For example:
-
-``` text
-536,870,912 words * 8 bytes
-= 4,294,967,296 bytes
-= 0x1_0000_0000
-```
-
-That does not fit in 32 unsigned bits, much less a positive 32-bit
-signed `int`.
-
-The fix was to perform the calculation at architectural address width:
-
-``` systemverilog
-localparam data_t cpu_memory_SIZE_BYTES =
-    data_t'(cpu_memory_DEPTH) * data_t'(DATA_BYTES);
-
-localparam data_t cpu_memory_LIMIT =
-    BRAM_MEMORY_BASE + cpu_memory_SIZE_BYTES;
-```
-
-### Understanding gap
-
-Parameters and constants are still typed bit patterns.
-
-"Compile-time" does not mean "infinite precision."
-
-------------------------------------------------------------------------
-
-# Part XI --- Why a Bus?
-
-## 43. Internal CPU Communication First
-
-Before introducing a bus, the CPU already had many connections:
-
-``` text
-cpu_decoder -> cpu_datapath
-register file -> ALU
-ALU -> writeback
-branch unit -> redirect
-```
-
-Why not put `valid/ready` on every one?
-
-Because the current internal CPU is designed around a **fixed
-synchronous timing contract**.
-
-Register reads are combinational. The ALU is combinational. Writes
-happen at the clock edge.
-
-If all combinational paths meet the target clock period, the CPU can
-safely capture the result.
-
-------------------------------------------------------------------------
-
-## 44. What Actually Guarantees Internal Timing?
-
-RTL simulation proves logical behavior under the RTL timing model.
-
-It does **not** prove that the FPGA can physically evaluate a long
-combinational path before the next clock edge.
-
-The real physical guarantee comes from:
-
-``` text
-synthesis
-    |
-placement
-    |
-routing
-    |
-static timing analysis
-```
-
-If the path is too slow:
-
-``` text
-lower clock frequency
-or
-pipeline the operation
-or
-make it multicycle
-or
-use a handshake/done signal
-```
-
-### Important caveat
-
-"Internal" does not automatically mean "no handshake."
-
-If a future internal divider, cache, FPU, or accelerator has variable
-latency, it needs a fixed multicycle contract or a ready/done/stall
-mechanism.
-
-------------------------------------------------------------------------
-
-## 45. External Memory Is Different
-
-DDR3, MMIO devices, peripherals, and shared resources may not answer in
-one CPU cycle.
-
-So the CPU needs a protocol.
-
-The simple LACOODA data bus uses:
-
-``` text
-CPU -> outside:
-valid
-write
-address
-write_data
-
-outside -> CPU:
-ready
-read_data
-```
-
-A transaction completes when:
-
-``` text
-valid && ready
-```
-
-------------------------------------------------------------------------
-
-## 46. Hold-Until-Ready Rule
-
-If the CPU asserts:
-
-``` text
-valid = 1
-```
-
-but receives:
-
-``` text
-ready = 0
-```
-
-it must not casually change the request.
-
-It holds:
-
-``` text
-valid
-write
-address
-write_data
-```
-
-until the receiver accepts the transaction.
-
-This is the practical guarantee that lets a future DDR controller take
-many cycles without changing LOAD/STORE semantics.
-
-------------------------------------------------------------------------
-
-# Part XII --- Wrapping the CPU
-
-## 47. Why the Bus Became Its Own Folder
-
-At first, the "bus" was only point-to-point signals:
-
-``` text
-CPU <------> RAM
-```
-
-There was no actual bus module.
-
-Once the design needed:
-
-``` text
-address decoding
-routing
-multiple future slaves
-eventual arbitration
-```
-
-the interconnect became an architectural subsystem.
-
-The practical structure became:
-
-``` text
-rtl/
-├── packages/
-├── cpu/
-├── bus/
-├── memory/
-└── soc/
-```
-
-------------------------------------------------------------------------
-
-## 48. Final Practical Folder Structure
-
-The final CPU project was reorganized approximately as:
-
-``` text
-verilog-staging/
-├── rtl/
-│   ├── packages/
-│   │   ├── alu_pkg.sv
-│   │   ├── cpu_pkg.sv
-│   │   └── bus_pkg.sv
-│   │
-│   ├── cpu/
-│   │   ├── cpu.sv
-│   │   ├── alu/
-│   │   │   ├── alu.sv
-│   │   │   ├── arithmetic.sv
-│   │   │   ├── comparator.sv
-│   │   │   ├── logic_unit.sv
-│   │   │   └── shifter.sv
-│   │   ├── core/
-│   │   │   ├── cpu_core.sv
-│   │   │   ├── cpu_decoder.sv
-│   │   │   ├── cpu_datapath.sv
-│   │   │   ├── cpu_register.sv
-│   │   │   ├── status_register.sv
-│   │   │   └── branch_unit.sv
-│   │   └── fetch/
-│   │       ├── instruction_fetch.sv
-│   │       └── program_counter.sv
-│   │
-│   ├── bus/
-│   │   ├── address_cpu_decoder.sv
-│   │   └── bus_interconnect.sv
-│   │
-│   ├── memory/
-│   │   ├── instruction_memory.sv
-│   │   └── cpu_memory.sv
-│   │
-│   └── soc/
-│       └── system.sv
-│
-├── sim/
-│   └── testbench/
-│       ├── cpu/
-│       ├── bus/
-│       ├── memory/
-│       └── soc/
-│
-├── programs/
-│   └── program_0.hex
-│
-└── run.sh
-```
-
-This is more than file organization. It reflects architectural
-ownership.
-
-------------------------------------------------------------------------
-
-## 49. Final CPU Boundary: Separate I-BUS and D-BUS
-
-An important late-stage decision was to keep separate instruction and
-data interfaces at the CPU boundary.
-
-``` text
-               +----------------+
-               |      CPU       |
-               +------+---------+
-                      |
-              +-------+-------+
-              |               |
-            I-BUS           D-BUS
-              |               |
-          instruction       LOAD/STORE
-            fetch
-```
-
-This is a Harvard-style external boundary.
-
-It does **not** require physically separate DDR chips later.
-
-The SoC can arbitrate both masters into shared DDR if desired.
-
-------------------------------------------------------------------------
-
-## 50. Instruction Memory Moved Outside the CPU
-
-Earlier:
-
-``` text
-CPU-ish system
-   |
-   +-- instruction memory
-```
-
-Final boundary:
-
-``` text
-CPU
- |
- +-- I-BUS ----> external instruction memory / future memory system
-```
-
-This matters because the CPU should describe the processor, not one
-specific storage implementation.
-
-------------------------------------------------------------------------
-
-## 51. Instruction Fetch Buffer
-
-Once instruction fetch uses `valid/ready`, the CPU needs to distinguish:
-
-``` text
-request started
-request waiting
-instruction accepted
-instruction buffered
-instruction executing
-instruction retired
-```
-
-A one-entry instruction buffer is enough for the simple non-pipelined
-design.
-
-The key guarantees are:
-
-1.  A started fetch remains active until accepted.
-2.  The fetch address remains stable while waiting.
-3.  Fetch acceptance alone does not advance the PC.
-4.  Retirement advances or redirects the PC.
-5.  Pausing `run` must not abandon an already-started transaction.
-
-------------------------------------------------------------------------
-
-## 52. Pause During a Transaction
-
-This is a subtle correctness case.
-
-Suppose:
-
-``` text
-STORE begins
-valid = 1
-ready = 0
-```
-
-Then the user/system deasserts:
-
-``` text
-run = 0
-```
-
-The CPU must not throw the STORE away.
-
-Correct behavior:
-
-``` text
-valid stays high
-request stays stable
-wait for ready
-complete exactly once
-retire instruction
-then remain paused
-```
-
-The same atomicity principle was applied to instruction fetch.
-
-------------------------------------------------------------------------
-
-# Part XIII --- Bus Interconnect and Address Decoding
-
-## 53. Address cpu_decoder
-
-The CPU should emit an address without knowing which physical device
-owns it.
-
-The address cpu_decoder answers:
-
-``` text
-Does this address belong to local RAM?
-GPU?
-timer?
-controller?
-DDR?
-something else?
-```
-
-At the current stage, only local data memory is mapped.
-
-Future regions can be added without redesigning the CPU ISA.
-
-------------------------------------------------------------------------
-
-## 54. Interconnect
-
-The interconnect receives the CPU master request:
-
-``` text
-master_valid
-master_write
-master_address
-master_write_data
-```
-
-and routes it to the selected slave.
-
-It returns:
-
-``` text
-master_ready
-master_read_data
-```
-
-Conceptually:
-
-``` text
-                    CPU D-BUS
-                        |
-                        v
-                +---------------+
-                | interconnect  |
-                +-------+-------+
-                        |
-               address cpu_decoder
-                        |
-          +-------------+-------------+
-          |             |             |
-         RAM          GPU/MMIO       DDR
-       current          future       future
-```
-
-------------------------------------------------------------------------
-
-## 55. Unmapped Addresses
-
-A system must define what happens if no slave owns an address.
-
-The current simple design preserves a no-fault behavior:
-
-``` text
-unmapped read/write:
-ready = 1
-read_data = 0
-```
-
-That is a policy, not a universal truth.
-
-A future architecture could instead introduce:
-
-``` text
-bus fault
-exception
-trap
-error response
-```
-
-------------------------------------------------------------------------
-
-# Part XIV --- Verification as Part of the Architecture
-
-## 56. Unit Tests Are Not Enough
-
-The development journey progressively accumulated tests:
-
-``` text
-ALU
-register file
-cpu_datapath
-cpu_decoder
-CPU core
-program counter
-branch unit
-instruction fetch
-data memory
-bus interconnect
-CPU boundary
-CPU system
-```
-
-A passing ALU does not prove a CPU.
-
-A passing CPU core does not prove fetch.
-
-A passing fetch unit does not prove bus routing.
-
-A passing default configuration does not prove parameterization.
-
-Verification must match architectural layers.
-
-------------------------------------------------------------------------
-
-## 57. Testbench Tasks
-
-Testbenches used tasks to avoid repeating stimulus/check logic.
-
-A task is testbench procedural organization. It is not the same thing as
-instantiating hardware.
-
-This distinction is useful:
-
-``` text
-module instance -> hardware structure
-task call       -> procedural simulation behavior
-```
-
-------------------------------------------------------------------------
-
-## 58. Waveforms
-
-VCD files and GTKWave are essential because hardware bugs are often
-temporal.
-
-Instead of only asking:
-
-``` text
-What value is R3?
-```
-
-a waveform lets you ask:
-
-``` text
-When did valid rise?
-How long did ready stay low?
-Did address remain stable?
-Did PC change before retirement?
-Did write_enable pulse on the correct edge?
-```
-
-This is often the difference between guessing and debugging.
-
-------------------------------------------------------------------------
-
-## 59. Icarus and Tool-Specific Problems
-
-During development, Icarus exposed a packed-struct indexing issue in a
-testbench expression similar to:
-
-``` systemverilog
-fields.reserved[bit_index] = 1'b1;
-```
-
-A more portable construction used a shifted value:
-
-``` systemverilog
-fields.reserved =
-    RESERVED_WIDTH'(1) << bit_index;
-```
-
-The lesson is not "never index a packed struct."
-
-The lesson is:
-
-> Your chosen simulator is part of the practical development
-> environment. Legal-looking or even standard-conforming SystemVerilog
-> can encounter incomplete tool support.
-
-------------------------------------------------------------------------
-
-## 60. Duplicate Module Definitions
-
-After reorganizing testbenches into subdirectories, stale copies can
-cause recursive compilation to see two modules with the same name.
-
-Bad repository state:
-
-``` text
-sim/testbench/cpu_tb.sv
-sim/testbench/cpu/cpu_tb.sv
-```
-
-Both declaring:
-
-``` systemverilog
-module cpu_tb;
-```
-
-The fix is not to rename stale copies arbitrarily.
-
-Delete the obsolete copies and maintain one canonical location.
-
-This is a build-system lesson:
-
-> Source-tree organization affects elaboration just as surely as RTL
-> logic does.
-
-------------------------------------------------------------------------
-
-## 61. `run.sh`
-
-The regression runner standardized:
-
-``` text
-compile
-run
-collect VCD
-repeat
-optionally launch GTKWave
-```
-
-Typical commands:
-
-``` bash
-iverilog -g2012 -Wall ...
-vvp ...
-```
-
-and:
-
-``` bash
-./run.sh --no-gui
-```
-
-for regression.
-
-A reproducible one-command test suite is part of the processor, not
-optional housekeeping.
-
-------------------------------------------------------------------------
-
-# Part XV --- Default Success vs Architectural Success
-
-## 62. "All Default Tests Pass" Is Not the End
-
-At one point, all 12 default tests passed.
-
-That was excellent, but two parameterized findings remained:
-
-1.  large memory-map overflow,
-2.  immediate-width test expectation.
-
-This distinction is critical.
-
-``` text
-default configuration works
-        !=
-architecture is safely parameterized
-```
-
-The final acceptance mindset became:
-
-``` text
-default regression                 PASS
-large-memory-map probe             PASS
-IMMEDIATE_WIDTH=8 probe            PASS
-duplicate RTL definitions          0
-duplicate testbench definitions    0
-recursive elaboration              PASS
-```
-
-------------------------------------------------------------------------
-
-# Part XVI --- The FPGA Is Not the Simulator
-
-## 63. Simulation vs Synthesis
-
-RTL simulation answers:
-
-> Does the described logic behave correctly according to the model and
-> testbench?
-
-Synthesis answers:
-
-> What FPGA hardware implements this description?
-
-Place and route answer:
-
-> Where does that hardware physically go, and how is it connected?
-
-Static timing analysis answers:
-
-> Can signals actually propagate fast enough for the requested clock?
-
-A CPU can pass every functional test and still fail timing at an
-aggressive frequency.
-
-------------------------------------------------------------------------
-
-## 64. Current Combinational Complexity
-
-The current ALU includes operations such as multiply and divide.
-
-A combinational divider can become expensive or slow on FPGA.
-
-That does not automatically mean the design is wrong.
-
-It means the next question after functional correctness is physical
-implementation:
-
-``` text
-resource use?
-critical path?
-maximum clock?
-DSP inference?
-multicycle alternative?
-pipeline?
-```
-
-Do not confuse a functional simulator's instant-looking arithmetic with
-physical zero-time hardware.
-
-------------------------------------------------------------------------
-
-# Part XVII --- Tang Primer 20K System Context
-
-## 65. The Board Context
-
-The target direction discussed was the Sipeed Tang Primer 20K using a
-Gowin GW2A-LV18 FPGA.
-
-The important architectural lesson was not memorizing a marketing table.
-It was learning the categories of resources:
-
-``` text
-LUTs       -> combinational logic
-flip-flops -> state/registers
-BRAM       -> fast on-chip memory
-DSP/mults  -> arithmetic resources
-PLL        -> clock generation
-DDR3       -> large external working memory
-flash/SD   -> persistent storage
-I/O        -> display/controllers/etc.
-```
-
-------------------------------------------------------------------------
-
-## 66. The 128 MiB DDR3 Is Shared System Memory
-
-A major clarification in the journey was:
-
-> The board's external DDR3 is not "instruction memory."
-
-It is potential shared system RAM.
-
-Future uses include:
-
-``` text
-program code
-game state
-heap/stack
-framebuffers
-sprites/assets
-AI model data
-AI activations
-GPU command/data structures
-```
-
-The CPU's simple `instruction_memory.sv` is not a DDR3 controller.
-
-DDR3 requires a controller and has variable latency, which is exactly
-why freezing a handshake-based CPU boundary first was useful.
-
-------------------------------------------------------------------------
-
-## 67. SD Card Is Storage, Not Working RAM
-
-The SD card can persist:
-
-``` text
-programs
-game assets
-AI model
-save files
-```
-
-A sensible future boot/data path is:
-
-``` text
-microSD
-   |
-   v
-load data
-   |
-   v
-DDR3
-   |
-   +---- CPU
-   +---- GPU
-   +---- AI accelerator
-```
-
-The SD card is not a replacement for low-latency working memory.
-
-------------------------------------------------------------------------
-
-# Part XVIII --- GPU Direction
-
-## 68. Keep the GPU Separate
-
-The chosen direction was a custom SystemVerilog GPU rather than
-implementing graphics through Vulkan.
-
-The first practical target is not a desktop-class 3D GPU.
-
-It is a 2D accelerator suitable for:
-
-``` text
-OpenJoey2 UI
-sprites
-tiles
-pixel art
-framebuffer operations
-eventual top-down dungeon crawler
-```
-
-Architecturally:
-
-``` text
-                  shared memory
-                      |
-          +-----------+-----------+
-          |                       |
-         CPU                     GPU
-          |                       |
-          +---- commands/MMIO ----+
-```
-
-The GPU should have its own command processing/rendering logic rather
-than bloating the CPU ISA with game-specific drawing instructions.
-
-------------------------------------------------------------------------
-
-## 69. Why a Second Game Was Useful
-
-A top-down pixel-art dungeon crawler was selected as another target.
-
-That was not merely a game-design choice.
-
-It is an architecture test.
-
-If both:
-
-``` text
-OpenJoey2
-and
-a dungeon crawler
-```
-
-can run without changing the CPU's fundamental stages, then the hardware
-is becoming a general-purpose game system rather than a hardcoded
-Yu-Gi-Oh machine.
-
-Game mechanics belong in software.
-
-Generic acceleration belongs in hardware.
-
-------------------------------------------------------------------------
-
-# Part XIX --- AI Accelerator Direction
+} instruction_s;
+```
+
+* `uses_imm(opcode, immediate_mode)` is true for: any branch/jump, any
+  LOAD/STORE, or any ALU op in immediate mode (`I=1`).
+* `instr_uses_imm(instruction)` overlays an `instruction_t` onto
+  `instruction_s` and calls `uses_imm`.
+
+**Encoders** (used by testbenches and any future assembler):
+
+* `encode_instruction(opcode, rd, rs1, rs2, immediate_mode, update_status)`
+* `encode_branch(opcode, rs1, rs2)`
+* `encode_jump()` — a `CTRL_JMP` with zero operands
+* `encode_load(rd, base)` / `encode_store(source, base)`
+
+**Validation** — `validate_configuration()` checks CPU-owned invariants only
+(register count ≥ 2, opcode width large enough, instruction fields fit in
+`WORD_WIDTH`). It deliberately does not check memory sizes.
+
+### 4.3 `memory_pkg` — `src/rtl/packages/memory_pkg.sv`
+
+Central source of truth for memory and MMIO **sizes** (not addresses).
 
-## 70. AI Does Not Belong Inside the ALU
+* `INSTRUCTION_MEMORY_BYTES = 32 * 1024` (32 KiB) → `INSTRUCTION_MEMORY_COUNT`
+  = 8192 words.
+* `DATA_MEMORY_BYTES = 32 * 1024` (32 KiB) → `DATA_MEMORY_COUNT` = 8192 words.
+* `GPU_MMIO_BYTES = 4 * 1024` (4 KiB) — the address space occupied by GPU
+  registers. **Not framebuffer memory.**
+* `PROGRAM_FILE = "src/programs/genesis_32.hex"`,
+  `DATA_MEMORY_FILE = "src/programs/data_memory_32.hex"`.
+* `validate_configuration()` — asserts sizes are positive and byte counts are
+  divisible by `WORD_BYTES`.
 
-The project also discussed a small AI model, roughly in the few-megabyte
-range, for inference.
+Because the ROM/RAM images are loaded with `$readmemh` using **relative paths**,
+simulations must be launched from the repository root (see `run.sh`).
 
-A sensible future architecture is:
+### 4.4 `bus_pkg` — `src/rtl/packages/bus_pkg.sv`
 
-``` text
-training:
-laptop / workstation
+Owns the bus protocol types and the absolute memory map.
 
-deployment:
-microSD -> DDR3 -> FPGA AI accelerator
-```
-
-The accelerator can be a separate subsystem with INT8 MAC-oriented
-hardware later.
-
-This preserves modularity:
-
-``` text
-CPU = general program execution
-GPU = graphics
-AI accelerator = inference
-DDR = shared working memory
-bus/interconnect = communication
-```
-
-------------------------------------------------------------------------
-
-# Part XX --- Complete CPU Mental Model
-
-## 71. One Ordinary ALU Instruction
-
-Consider:
-
-``` text
-ADD R3, R1, R2
-```
-
-At a high level:
-
-``` text
-1. PC identifies instruction address.
-2. I-BUS fetch request is made.
-3. Instruction source asserts ready.
-4. Instruction is buffered.
-5. Packed fields expose opcode/RD/RS1/RS2.
-6. cpu_decoder validates encoding.
-7. Register file exposes R1 and R2 values.
-8. ALU computes addition.
-9. Control authorizes R3 write.
-10. At the clock edge, R3 captures the result.
-11. Instruction retires.
-12. PC advances.
-13. Next fetch begins.
-```
-
-Many of steps 5--9 are combinational and coexist in one cycle.
-
-Do not imagine twelve software function calls.
-
-------------------------------------------------------------------------
-
-## 72. One LOAD with a Slow Device
-
-``` text
-LOAD R3, [R2 + 8]
-```
-
-Flow:
-
-``` text
-fetch instruction
-    |
-decode
-    |
-read R2
-    |
-calculate address R2+8
-    |
-assert D-BUS valid/read/address
-    |
-ready=0
-    |
-HOLD
-HOLD
-HOLD
-    |
-ready=1 + read_data
-    |
-write R3 at retirement edge
-    |
-advance PC
-```
-
-This is exactly why `valid/ready` exists.
-
-------------------------------------------------------------------------
-
-## 73. One Taken Branch
-
-``` text
-BEQ R1, R3, target
-```
-
-Flow:
-
-``` text
-fetch
-  |
-decode
-  |
-read R1/R3
-  |
-branch compare
-  |
-equal?
-  |
- yes
-  |
-redirect = 1
-target = branch target
-  |
-retirement edge
-  |
-PC <- target
-  |
-fetch target instruction
-```
-
-------------------------------------------------------------------------
-
-# Part XXI --- Understanding Gaps: The Questions Worth Remembering
-
-## 74. "Which Module Runs First?"
-
-Wrong mental model:
-
-``` text
-cpu_decoder runs
-then cpu_datapath runs
-then ALU runs
-```
-
-Better:
-
-``` text
-instruction
-    |
-    v
-cpu_decoder --control--> cpu_datapath --operands--> ALU
-```
-
-The hardware coexists. Dependencies cause propagation.
-
-------------------------------------------------------------------------
-
-## 75. "Why Doesn't This Need Another `assign`?"
-
-If:
-
-``` systemverilog
-logic x;
-
-producer p(.out(x));
-consumer c(.in(x));
-```
-
-then `x` is already the connection.
-
-------------------------------------------------------------------------
-
-## 76. "Why Does `assign fields = instruction` Work?"
-
-Because both are packed bit representations.
-
-It maps bits.
-
-Semantic validation comes afterward.
-
-------------------------------------------------------------------------
-
-## 77. "Why Does a Clock Matter?"
-
-Combinational logic calculates.
-
-Sequential logic remembers.
-
-The clock defines when architectural state is allowed to capture its
-next value.
-
-------------------------------------------------------------------------
-
-## 78. "Are Fetch, Decode, Execute, and Retire Four Clock Cycles?"
-
-Not necessarily.
-
-They are conceptual responsibilities.
-
-A pipelined processor may make them explicit pipeline stages. The simple
-LACOODA design does not automatically become a four-stage pipeline
-because we use those four words.
-
-------------------------------------------------------------------------
-
-## 79. "Why Doesn't Internal CPU Logic Need `valid/ready`?"
-
-Because the current internal paths have a fixed synchronous timing
-contract.
-
-If physical timing closes, the result is ready before the capture edge.
-
-External devices can have variable latency.
-
-If an internal unit becomes variable latency, it too needs a completion
-protocol or defined multicycle control.
-
-------------------------------------------------------------------------
-
-## 80. "What Guarantees the ALU Finishes Before the Clock?"
-
-Not hope.
-
-Not source order.
-
-Not the simulator.
-
-**Static timing analysis** against the target FPGA and requested clock.
-
-------------------------------------------------------------------------
-
-## 81. "Why Did 777 Become 9?"
-
-Finite width.
-
-``` text
-777 = binary value wider than 8 bits
-8-bit immediate keeps only 8 bits
-result = 9
-```
-
-Hardware integers are bit vectors with widths.
-
-------------------------------------------------------------------------
-
-## 82. "Why Did a Huge Memory Become Zero?"
-
-Finite-width intermediate arithmetic.
-
-A 32-bit `int` overflowed before the result reached the 64-bit
-architectural type.
-
-Cast operands before arithmetic when the intermediate itself needs the
-wider width.
-
-------------------------------------------------------------------------
-
-## 83. "Why Is the Bus in Its Own Folder?"
-
-Wires alone do not require a folder.
-
-Routing/decoding/arbitration is a subsystem.
-
-Once the project has an actual interconnect, `rtl/bus/` reflects real
-architectural ownership.
-
-------------------------------------------------------------------------
-
-## 84. "What Is the CPU?"
-
-The final answer became:
-
-``` text
-CPU owns:
-    PC
-    instruction fetch control/buffer
-    cpu_decoder
-    registers
-    ALU/cpu_datapath
-    status
-    branch logic
-    LOAD/STORE transaction generation
-
-CPU does not own:
-    physical instruction memory
-    physical data memory
-    DDR3
-    GPU
-    controller
-    timers
-    HDMI
-    audio
-```
-
-That boundary is one of the most important outcomes of the entire
-journey.
-
-------------------------------------------------------------------------
-
-# Part XXII --- Development Stages Recap
-
-## 85. Stage 1 --- ALU
-
-Built:
-
-``` text
-arithmetic
-logic
-shift/rotate
-comparison
-flags
-ALU integration
-```
-
-Learned:
-
-``` text
-combinational logic
-submodule composition
-flags
-testbench fundamentals
-```
-
-Result:
-
-``` text
-134/134 ALU checks passed in the development regression.
-```
-
-------------------------------------------------------------------------
-
-## 86. Stage 2 --- Register File
-
-Built:
-
-``` text
-64 × 64-bit registers
-two reads
-one write
-R0 = zero
-```
-
-Learned:
-
-``` text
-state
-async read
-sync write
-clock edge
-```
-
-Result:
-
-``` text
-8/8 regression checks passed.
-```
-
-------------------------------------------------------------------------
-
-## 87. Stage 3 --- cpu_datapath
-
-Built:
-
-``` text
-register file -> operand selection -> ALU -> writeback
-status register
-```
-
-Learned:
-
-``` text
-muxes
-control
-write gating
-state commitment
-```
-
-Result:
-
-``` text
-21/21 regression checks passed.
-```
-
-------------------------------------------------------------------------
-
-## 88. Stage 4 --- ISA/cpu_decoder/CPU Core
-
-Built:
-
-``` text
-64-bit instruction format
-packed fields
-cpu_decoder
-validation
-CPU core integration
-```
-
-Learned:
-
-``` text
-machine encoding
-packed structs
-ports vs signals
-concurrent modules
-decode-to-cpu_datapath propagation
-```
-
-Result:
-
-``` text
-CPU core test passed 16 checks in the recorded development run.
-```
-
-------------------------------------------------------------------------
-
-## 89. Stage 5 --- Fetch
-
-Built:
-
-``` text
-PC
-instruction memory
-hex program loading
-instruction fetch
-CPU system
-```
-
-Learned:
-
-``` text
-program sequencing
-byte addresses
-ROM initialization
-program execution
-```
-
-------------------------------------------------------------------------
-
-## 90. Stage 6 --- Branches
-
-Built:
-
-``` text
-JMP
-BEQ/BNE
-signed branches
-unsigned branches
-branch unit
-PC redirect
-```
-
-Learned:
-
-``` text
-control flow
-comparison semantics
-retirement/redirect relationship
-```
-
-------------------------------------------------------------------------
-
-## 91. Stage 7 --- Data Memory
-
-Built:
-
-``` text
-LOAD
-STORE
-effective addresses
-data memory
-memory writeback
-```
-
-Learned:
-
-``` text
-addressable data
-memory vs registers
-load/store semantics
-```
-
-------------------------------------------------------------------------
-
-## 92. Bus/Wrap Substage
-
-Built:
-
-``` text
-valid/ready transaction contract
-CPU wrapper
-instruction bus
-data bus
-instruction buffer
-address cpu_decoder
-bus interconnect
-minimal SoC wrapper
-```
-
-Learned:
-
-``` text
-fixed vs variable latency
-CPU/system boundary
-stalling
-atomic completion
-routing
-```
-
-------------------------------------------------------------------------
-
-## 93. Parameterization Hardening
-
-Found and fixed:
-
-``` text
-immediate-width test assumption
-memory-map intermediate overflow
-duplicate testbench definitions
-```
-
-Learned:
-
-``` text
-parameterization must be tested
-compile-time arithmetic has widths
-tests can contain architecture bugs
-repository structure affects builds
-```
-
-------------------------------------------------------------------------
-
-# Part XXIII --- Hands-On Exercises
-
-## 94. Exercise: Follow a Signal
-
-Choose:
-
-``` text
-decoded opcode
-```
-
-Trace it from:
-
-``` text
-instruction bits
--> packed fields
--> cpu_decoder
--> parent signal
--> cpu_datapath
--> ALU
-```
+```systemverilog
+typedef enum logic { BUS_READ = 1'b0, BUS_WRITE = 1'b1 } bus_op_e;
 
-Do not describe "function calls." Draw wires.
+typedef struct packed {
+    logic    valid;
+    bus_op_e op;
+    word_t   addr;    // cpu_pkg::word_t
+    word_t   wdata;
+} bus_req_s;
 
-------------------------------------------------------------------------
-
-## 95. Exercise: Break the Immediate Width
-
-Set:
-
-``` text
-IMMEDIATE_WIDTH = 8
-```
-
-Predict the encoded values of:
-
-``` text
-5
-127
-128
-255
-256
-777
--1
-```
-
-Then compare against simulation.
-
-------------------------------------------------------------------------
-
-## 96. Exercise: Stall I-BUS
-
-Hold:
-
-``` text
-ibus_ready = 0
-```
-
-for several cycles.
-
-Verify in GTKWave:
-
-``` text
-ibus_valid remains asserted
-ibus_address remains stable
-PC does not incorrectly advance
-```
-
-Then assert ready.
-
-------------------------------------------------------------------------
-
-## 97. Exercise: Stall D-BUS
-
-Execute a STORE.
-
-Hold:
-
-``` text
-dbus_ready = 0
-```
-
-Verify:
-
-``` text
-valid stable
-write stable
-address stable
-write_data stable
-PC stable
-```
-
-Then complete the handshake.
-
-------------------------------------------------------------------------
-
-## 98. Exercise: Pause Mid-Transaction
-
-While a STORE is waiting:
-
-``` text
-run = 0
+typedef struct packed {
+    logic  ready;
+    word_t rdata;
+} bus_rsp_s;
 ```
 
-The transaction must still finish exactly once.
+Memory-map constants (see [Appendix C](#appendix-c--address-map)):
 
-Then the CPU should remain paused before starting another instruction.
+* `DATA_MEMORY_BASE = 0`, `DATA_MEMORY_SIZE = DATA_MEMORY_COUNT * WORD_BYTES`,
+  `DATA_MEMORY_LIMIT = 0x0000_8000`.
+* `GPU_BASE = 0x1000_0000`, `GPU_SIZE = 0x0000_1000`,
+  `GPU_LIMIT = 0x1000_1000`.
+* `DDR3_BASE = 0x8000_0000`, `DDR3_SIZE = 0x0800_0000`,
+  `DDR3_LIMIT = 0x8800_0000` — **reserves the intended future map only; it does
+  not make DDR3 functional.**
 
-------------------------------------------------------------------------
+### 4.5 `gpu_pkg` — `src/rtl/packages/gpu_pkg.sv`
 
-## 99. Exercise: Branch Around an Instruction
+Defines the GPU's local MMIO address type, register map, config/status structs,
+and pixel format. The *absolute* base address is owned by `bus_pkg`; the GPU
+only sees a **local** address after the interconnect subtracts `GPU_BASE`.
 
-Program:
+* `GPU_ADDR_WIDTH = $clog2(GPU_MMIO_BYTES) = 12`; `typedef logic [11:0] gpu_addr_t;`
+* `typedef enum gpu_addr_t { ... } gpu_reg_addr_e;`:
 
-``` text
-MOVI R1, 5
-MOVI R2, 5
-BEQ  R1, R2, target
-MOVI R3, 111
-target:
-MOVI R3, 222
-```
-
-Expected:
-
-``` text
-R3 = 222
-```
-
-Inspect the PC waveform.
-
-------------------------------------------------------------------------
-
-## 100. Exercise: Force a Timing Question
-
-Do not change RTL first.
-
-Instead ask:
-
-> If this CPU is synthesized for the Tang Primer 20K, what is the
-> longest combinational path?
-
-Likely candidates include arithmetic such as division.
-
-The correct next tool is synthesis/timing analysis, not a guess from the
-RTL source.
-
-------------------------------------------------------------------------
-
-# Part XXIV --- Where the CPU Ends and the SoC Begins
-
-## 101. Freeze the CPU Interface
-
-The CPU should be treated as a reusable processor once:
+| Register | Offset | Access |
+| --- | --- | --- |
+| `GPU_REG_ID` | `0x00` | Read-only (`GPU_ID_VALUE`) |
+| `GPU_REG_CONTROL` | `0x04` | Read/Write |
+| `GPU_REG_STATUS` | `0x08` | Read-only |
+| `GPU_REG_FRAMEBUFFER_BASE` | `0x0C` | Read/Write |
+| `GPU_REG_FRAMEBUFFER_WIDTH` | `0x10` | Read/Write |
+| `GPU_REG_FRAMEBUFFER_HEIGHT` | `0x14` | Read/Write |
+| `GPU_REG_CLEAR_COLOR` | `0x18` | Read/Write |
 
-``` text
-ISA is stable enough
-I-BUS contract is stable
-D-BUS contract is stable
-parameter constraints are explicit
-regressions pass
-timing target is evaluated
-```
-
-Future subsystems should connect outside it.
-
-------------------------------------------------------------------------
-
-## 102. Next SoC Layer
+* Every register occupies one full 32-bit word (the bus has no byte enables).
+* `GPU_ID_VALUE = 32'h4750_5530` (`"GPU0"` in ASCII).
+* `gpu_config_s` = `{ control, framebuffer_base, framebuffer_width,
+  framebuffer_height, clear_color }` — the CPU-writable, persistent state.
+* `gpu_status_s` bit layout: `bit0 enabled`, `bit1 idle`, `bit2 busy`,
+  `bit3 error`, `bit4 command_done`, `bit5 framebuffer_valid`,
+  `bit6 display_active`, `[31:7] reserved`.
+* Pixel format: `GPU_PIXEL_WIDTH = 32` (RGBA8888), `GPU_PIXEL_BYTES = 4`,
+  `gpu_pixel_t`; coordinate `gpu_coord_t` is 16 bits wide.
+* Internal (non-bus) structs `gpu_pixel_req_s`, `gpu_pixel_write_s`,
+  `gpu_mem_req_s`, `gpu_mem_rsp_s` describe graphics-side operations.
 
-A natural post-CPU roadmap is:
+### 4.6 `alu_pkg` — `src/rtl/packages/alu_pkg.sv`
 
-``` text
-CPU
- |
- +-- I-BUS ----\
- |              \
- +-- D-BUS ------> system interconnect
-                    |
-                    +-- local BRAM
-                    +-- DDR3 controller
-                    +-- MMIO
-                    +-- timers
-                    +-- input controller
-                    +-- GPU
-                    +-- AI accelerator
-```
+Shared ALU constants and load-time helpers. It does **not** replace `cpu_pkg` or
+`opcode_pkg`.
 
-As more masters appear---for example CPU instruction fetch, CPU data
-access, GPU memory access, and AI DMA---the interconnect may require
-arbitration.
+* `SERIAL_WIDTH = $clog2(WORD_WIDTH) = 5`.
+* `MSB_ONE` = `32'h8000_0000`, `ALL_ONES` = `32'hFFFF_FFFF`.
+* `typedef enum logic [1:0] { S_IDLE, S_RUN, S_DONE } alu_state_e;` — the shared
+  sequencer state type for all four bit-serial sub-units.
+* `rev(x)` — reverses a word (used to stream MSB-first).
+* `twos_neg(x)` = `(~x) + 1` — two's-complement negation.
 
-That is a **SoC stage**, not a reason to reopen the CPU internals.
+> **Note in the source:** the per-cycle serialiser steps (shift/rotate/push) are
+> written *inline* in the sub-units rather than as package functions, because
+> `iverilog` mis-schedules package-function calls used inside `always_comb`
+> across multiple instances. The hot path therefore avoids them.
 
-------------------------------------------------------------------------
+---
 
-# Part XXV --- Final Mental Model
+## 5. The Bus Contract
 
-The complete journey can be compressed into one picture:
+The same transaction protocol is used on the CPU instruction bus (I-BUS), the CPU
+data bus (D-BUS), and inside the SoC. It is a simple **valid/ready** handshake:
 
-``` text
-                       SOFTWARE / PROGRAM
-                              |
-                              v
-                       machine instructions
-                              |
-                              v
-+------------------------------------------------------------------+
-|                           LACOODA CPU                             |
-|                                                                  |
-|  +------+      +---------+      +----------+      +-----------+  |
-|  |  PC  |----->| I-fetch |----->| cpu_decoder  |----->| control   |  |
-|  +------+      +---------+      +-----+----+      +-----+-----+  |
-|                                        |                 |        |
-|                                        v                 v        |
-|                                  +-----------+      +----------+  |
-|                                  | register  |----->| cpu_datapath |  |
-|                                  | file      |      | + ALU    |  |
-|                                  +-----------+      +----+-----+  |
-|                                                           |       |
-|                                                    +------+-----+ |
-|                                                    | branch /   | |
-|                                                    | load/store | |
-|                                                    +------+-----+ |
-|                                                           |       |
-+-----------------------------+-----------------------------+-------+
-                              |                             |
-                            I-BUS                         D-BUS
-                              |                             |
-==============================|=============================|========
-                              |                             |
-                    +---------v---------+          +--------v--------+
-                    | instruction side |          | interconnect    |
-                    | memory/system    |          | address cpu_decoder |
-                    +------------------+          +--------+--------+
-                                                           |
-                                                   +-------+-------+
-                                                   | data memory   |
-                                                   | MMIO / DDR... |
-                                                   +---------------+
 ```
-
-And the timing mental model is:
-
-``` text
-STATE AT CLOCK EDGE
-       |
-       v
-combinational propagation
-       |
-       +-- decode
-       +-- register reads
-       +-- muxes
-       +-- ALU
-       +-- comparisons
-       +-- address calculations
-       |
-       v
-if variable-latency external operation:
-       wait using valid/ready
-       |
-       v
-instruction completes
-       |
-       v
-RETIREMENT CLOCK EDGE
-       |
-       +-- write register
-       +-- update flags
-       +-- update memory if accepted
-       +-- advance/redirect PC
-       |
-       v
-NEXT INSTRUCTION
+Transaction completes when:  req.valid && rsp.ready
 ```
 
-If this model is clear, most of the code stops looking mysterious.
+Rules:
 
-------------------------------------------------------------------------
+* A request payload (`op`, `addr`, `wdata`) is held **stable** from assertion
+  until `ready` — the master must not change it mid-transaction.
+* `op` is one `bus_op_e`: `BUS_READ` or `BUS_WRITE`.
+* Data is exactly **one `word_t` (32 bits)**. There are no byte-enable signals,
+  which is why every MMIO register is word-granular.
+* `valid` does not have to fall between back-to-back transactions; a new request
+  may follow immediately in the next cycle.
 
-# Part XXVI --- Unifying the Word Width Across the CPU
+### 5.1 `address_decoder` — `src/rtl/bus/address_decoder.sv`
 
-Every earlier part chose bus and memory widths module by module:
+Pure combinational range comparison on the global byte address:
 
-``` text
-ibus:    WORD_WIDTH
-dbus:    XLEN
-imem:    WORD_WIDTH
-dmem:    XLEN
-cpu_decoder: XLEN
+```systemverilog
+data_mem_sel = (addr >= DATA_MEMORY_BASE) && (addr < DATA_MEMORY_LIMIT); // [0x0, 0x8000)
+gpu_mmio_sel = (addr >= GPU_BASE)        && (addr < GPU_LIMIT);          // [0x1000_0000, 0x1000_1000)
 ```
-
-The numbers happened to match because the current configuration is
-32/32. Nothing *forced* them to match. That was a latent inconsistency:
-the bus layer's word and the CPU's architectural integer are two
-different concepts that only coincidentally had the same width.
 
-The unification change makes the relationship explicit:
+It produces two one-hot select signals and nothing else.
 
-* the **global word width** is a single parameter (`WORD_WIDTH`),
-  passed down through the root;
-* every derived width (`XLEN`, `BYTE`, byte enables, address widths)
-  derives from it;
-* no module re-derives or re-declares the width independently.
+### 5.2 `bus_interconnect` — `src/rtl/bus/bus_interconnect.sv`
 
-A root parameter is the natural single point of control. Every module
-in the hierarchy either receives the width through its parameters or
-derives it from the global package, so changing one number at the top
-reconfigures the whole system.
+Routes the **single CPU D-BUS master** to one of two slaves and muxes the
+response back.
 
-### Important caveat
+* Instantiates `address_decoder`.
+* **Data-memory request**: `valid = dbus_req.valid && data_mem_sel`,
+  `addr = dbus_req.addr - DATA_MEMORY_BASE` (global → memory-local byte address).
+* **GPU request**: `valid = dbus_req.valid && gpu_mmio_sel`,
+  `addr = dbus_req.addr - GPU_BASE` (e.g. `0x1000_0020 - 0x1000_0000 = 0x20`).
+* **Response mux**: passes through the selected slave's `bus_rsp_s`; for an
+  **unmapped** address it synthesizes `ready = 1, rdata = 0` (no bus fault) so
+  the CPU can never hang on a bad address.
 
-Deriving local constants from global parameters keeps the system
-consistent by construction. But consistency of *widths* is not the
-same as correctness of *semantics*: sign extension, byte lane
-placement, and address arithmetic all had to be re-checked after the
-change, because a wider word silently changes their expected shapes.
+> There is currently **one bus master** and **no arbitration**. Adding a GPU/TPU
+> master will require arbitration and extra master ports here.
 
-------------------------------------------------------------------------
+---
 
-# Appendix A --- Core SystemVerilog Patterns Used
-# Appendix A --- Core SystemVerilog Patterns Used
+## 6. Memory Subsystem
 
-## A.1 Continuous combinational assignment
-
-``` systemverilog
-assign y = a & b;
-```
-
-## A.2 Combinational process
-
-``` systemverilog
-always_comb begin
-    y = '0;
-
-    if (enable)
-        y = a + b;
-end
-```
-
-## A.3 Sequential state
-
-``` systemverilog
-always_ff @(posedge clk or posedge rst) begin
-    if (rst)
-        q <= '0;
-    else if (enable)
-        q <= d;
-end
-```
+`memory_subsystem` (`src/rtl/memory/memory_subsystem.sv`) is the SoC's memory
+container. It instantiates two **physically separate** memories so instruction
+fetch never contends with local data access:
 
-## A.4 Named port connections
+* `instruction_memory` — I-BUS slave (a read-only ROM).
+* `data_memory` — memory-bus slave (read/write BRAM).
 
-``` systemverilog
-child u_child (
-    .clk   (clk),
-    .rst   (rst),
-    .input_a(parent_signal),
-    .result(result_signal)
+```systemverilog
+module memory_subsystem (
+    input  logic clk, rst,
+    input  bus_pkg::bus_req_s ibus_req, output bus_pkg::bus_rsp_s ibus_rsp, // instruction ROM
+    input  bus_pkg::bus_req_s mem_req,  output bus_pkg::bus_rsp_s mem_rsp    // data BRAM
 );
 ```
 
-## A.5 Concatenation
+### 6.1 `instruction_memory` — `src/rtl/memory/instruction_memory.sv`
 
-``` systemverilog
-assign word = {upper, lower};
+An `8192 × 32` array loaded at elaboration by
+`$readmemh(memory_pkg::PROGRAM_FILE, mem)`.
+
+* `ibus_rsp = {ibus_req.valid, rdata}` → `ready` mirrors `valid` (zero wait
+  states), and `rdata` is **combinational**.
+* Alignment/range check: address must be word-aligned (`addr % WORD_BYTES == 0`)
+  and `< INSTRUCTION_MEMORY_COUNT`. Misaligned/out-of-range reads return zero
+  and still complete.
+* Indexing: `mem[ibus_req.addr / WORD_BYTES]` (byte address → word index).
+
+### 6.2 `data_memory` — `src/rtl/memory/data_memory.sv`
+
+The local data RAM, inferred as FPGA block RAM. It is a memory-bus slave whose
+timing is intentionally **synchronous**, so Gowin can infer BSRAM.
+
+* Array: `8192 × 32` `word_t`, initialized by
+  `$readmemh(memory_pkg::DATA_MEMORY_FILE, mem)`.
+* **Range checking is not repeated here.** The interconnect already decided the
+  address belongs to data memory; this module only checks **word alignment**
+  (`addr % WORD_BYTES == 0`). Misaligned access → completes normally, reads zero,
+  writes nothing.
+* **The memory array is intentionally not reset.**
+  A reset loop over thousands of words would prevent block-RAM inference and
+  blow the Gowin synthesis loop limit; reset clears interface state only.
+* Response pipeline: an internal `pending` flag generates `ready`.
+
+LOAD / STORE timing (one response cycle, `ready == pending`):
+
+```
+LOAD                                   STORE
+cyc N   mem_req.valid=1, ready=0        cyc N   mem_req.valid=1, ready=0
+        addr presented                          addr+wdata presented
+        (rising edge) capture mem[idx]          (rising edge) write mem[idx]
+cyc N+1 ready=1, rdata=captured         cyc N+1 ready=1
+        (CPU latches rdata)
 ```
 
-## A.6 Replication
+The CPU holds its request stable while `ready` is low, and a new request may
+immediately follow (valid need not fall between transactions).
 
-``` systemverilog
-assign upper = {32{sign_bit}};
+---
+
+## 7. CPU — Top to Bottom
+
+### 7.1 `cpu` — `src/rtl/cpu/cpu.sv`
+
+The CPU boundary. It contains everything needed to execute the ISA and exposes
+**two typed bus-master ports**: an I-BUS (instruction fetch) and a D-BUS
+(LOAD/STORE). Instruction memory and data memory live outside it.
+
+Key internal glue:
+
+```systemverilog
+assign dbus_req.valid = dbus_valid;
+assign dbus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
+assign dbus_req.addr  = dbus_addr;
+assign dbus_req.wdata = dbus_wdata;
+
+assign core_enable = instruction_available && !rst;
+assign retire       = instruction_available && !rst && (retire_valid || illegal_instr);
 ```
 
-## A.7 Parameter-derived width
-
-``` systemverilog
-localparam int DATA_BYTES = DATA_WIDTH / 8;
-```
-
-## A.8 `$clog2`
-
-``` systemverilog
-localparam int REG_ADDR_WIDTH = $clog2(REG_COUNT);
-```
-
-For 64 registers:
-
-``` text
-$clog2(64) = 6
-```
-
-because six bits can address 64 values.
-
-## A.9 Handshake
-
-``` systemverilog
-if (valid && ready) begin
-    // transaction accepted
-end
-```
-
-------------------------------------------------------------------------
-
-# Appendix B --- Glossary
-
-**ALU** --- Arithmetic Logic Unit. Performs arithmetic, logical, shift,
-and comparison operations.
-
-**Architectural state** --- State visible to software or defining CPU
-execution, such as registers, PC, and flags.
-
-**BRAM** --- FPGA block RAM, dedicated on-chip memory resources.
-
-**Combinational logic** --- Logic whose outputs are functions of current
-inputs rather than stored history.
-
-**D-BUS** --- LACOODA data-side CPU interface for LOAD/STORE
-transactions.
-
-**cpu_datapath** --- Hardware that carries and transforms instruction
-operands and results.
-
-**cpu_decoder** --- Logic that interprets instruction fields and produces
-control signals.
-
-**Elaboration** --- Tool phase in which parameters, generate structures,
-module hierarchy, widths, and connections are resolved.
-
-**FPGA** --- Field-Programmable Gate Array.
-
-**Handshake** --- Protocol in which sender and receiver explicitly agree
-that a transfer occurred.
-
-**I-BUS** --- LACOODA instruction-side CPU interface.
-
-**Immediate** --- Constant encoded directly in an instruction.
-
-**Interconnect** --- Hardware that routes transactions between masters
-and slaves.
-
-**ISA** --- Instruction Set Architecture.
-
-**MMIO** --- Memory-Mapped I/O; devices controlled using ordinary
-address-space accesses.
-
-**PC** --- Program Counter.
-
-**Port** --- A module's declared connection point.
-
-**Register file** --- CPU storage array addressed by register
-identifiers.
-
-**Retirement** --- Point at which an instruction has completed
-architecturally and the machine commits/moves beyond it.
-
-**Sequential logic** --- Logic containing state updated on clock/event
-boundaries.
-
-**Signal** --- A value/wire used to connect hardware logic.
-
-**Slave** --- Bus endpoint that responds to a master request.
-
-**Master** --- Bus endpoint that initiates a request.
-
-**Static timing analysis** --- Physical timing verification after
-synthesis/place-route to determine whether clock constraints are met.
-
-**Testbench** --- Simulation-only environment that drives and checks the
-design under test.
-
-**Valid/ready** --- Handshake convention where a transaction is accepted
-when both signals are asserted.
-
-**VCD** --- Value Change Dump waveform file.
-
-------------------------------------------------------------------------
-
-# Appendix C --- LACOODA Development Checklist
-
-## CPU fundamentals
-
--   [ ] ALU operations verified
--   [ ] status flags verified
--   [ ] register file verified
--   [ ] R0 behavior verified
--   [ ] cpu_datapath verified
-
-## ISA
-
--   [ ] instruction layout documented
--   [ ] instruction encoder verified
--   [ ] cpu_decoder legal encodings verified
--   [ ] illegal encodings suppress side effects
--   [ ] immediate extension verified
-
-## Execution
-
--   [ ] CPU core integration verified
--   [ ] PC reset verified
--   [ ] sequential PC verified
--   [ ] branch redirect verified
--   [ ] signed/unsigned branch semantics verified
-
-## Memory
-
--   [ ] LOAD effective address verified
--   [ ] STORE effective address verified
--   [ ] LOAD writeback verified
--   [ ] STORE data verified
--   [ ] alignment policy documented
-
-## CPU boundary
-
--   [ ] I-BUS request held until ready
--   [ ] I-BUS address stable while waiting
--   [ ] fetched instruction buffered
--   [ ] D-BUS request held until ready
--   [ ] D-BUS payload stable while waiting
--   [ ] pause cannot abandon in-flight transaction
--   [ ] retirement advances PC exactly once
-
-## Parameterization
-
--   [ ] architectural literals audited
--   [ ] root parameters identified
--   [ ] derived widths calculated
--   [ ] illegal combinations rejected
--   [ ] narrow immediate probe passes
--   [ ] large memory-map probe passes
-
-## Repository/build
-
--   [ ] no duplicate RTL module definitions
--   [ ] no duplicate testbench module definitions
--   [ ] `run.sh --no-gui` passes
--   [ ] waveforms generated
--   [ ] recursive compilation/elaboration clean
-
-## FPGA readiness
-
--   [ ] synthesize for target FPGA
--   [ ] inspect LUT/FF/BRAM/DSP use
--   [ ] run place-and-route
--   [ ] inspect critical path
--   [ ] confirm target clock timing
--   [ ] decide whether combinational multiply/divide need redesign
-
-------------------------------------------------------------------------
-
-# Appendix D --- What Comes After This Manual
-
-The CPU journey is complete enough to begin the system journey.
-
-A sensible continuation is:
-
-``` text
-1. Freeze CPU I-BUS/D-BUS interfaces.
-2. Define complete SoC address map.
-3. Add a proper interconnect policy.
-4. Add MMIO.
-5. Bring up simple GPIO/input.
-6. Integrate external DDR3 controller.
-7. Decide boot/loading path from flash or microSD.
-8. Add 2D GPU command interface.
-9. Add framebuffer/display path.
-10. Run a minimal game loop.
-11. Add OpenJoey2 rendering.
-12. Add the dungeon-crawler workload.
-13. Add AI inference accelerator only after the memory/bus architecture is stable.
-```
-
-The principle that should survive every future stage is:
-
-> **Keep the CPU generic. Put system-specific acceleration around it.**
-
-That is what allows LACOODA to become a reusable processor rather than a
-single-purpose game circuit.
-
-------------------------------------------------------------------------
-
-# Closing
-
-The most important thing built during this journey was not the ALU,
-cpu_decoder, bus, or even the CPU.
-
-It was the hardware mental model.
-
-At the beginning, code such as:
-
-``` systemverilog
-cpu_decoder u_cpu_decoder (...);
-cpu_datapath u_cpu_datapath (...);
-```
-
-naturally invites the software question:
-
-> Which one executes first?
-
-By the end, the better questions are:
-
-``` text
-What state exists?
-What combinational paths exist between state elements?
-Who drives this signal?
-What consumes it?
-When is state allowed to change?
-What transaction is waiting?
-What event means it completed?
-What retires the instruction?
-What changes the PC?
-What widths are involved?
-Does the physical path meet timing?
-Where is the architectural boundary?
-```
-
-Those are hardware-design questions.
-
-Once you start asking those automatically, SystemVerilog stops being
-strange C-like syntax and starts becoming what it actually is: a
-language for describing machines.
-
-------------------------------------------------------------------------
-
-# Appendix E --- Rebuilding the ALU as a Bit-Serial Machine
-
-Part XVI ended with a list of questions the physical design asks once the
-functional design is done:
-
-``` text
-resource use?
-critical path?
-maximum clock?
-DSP inference?
-multicycle alternative?
-pipeline?
-```
-
-The ALU was already correct. Then I read the synthesis report, and the ALU
-stopped being "the part that works" and became "the part that is the
-circuit".
-
-------------------------------------------------------------------------
-
-## E.1 The Number That Started It
-
-GowinSynthesis printed a hierarchy resource table.
-
-One block dominated it:
-
-``` text
-Whole design             9412 LUT
-+-- u_alu                7844 LUT     <- 83% of the design
-|   +-- u_arithmetic     7542 LUT
-|   +-- u_logic_unit        0 LUT
-+-- u_cpu_register       259 LUT
-+-- u_cpu_memory         256 LUT
-+-- u_program_counter     107 LUT
-DSP blocks used             0
-```
-
-I had built a register file, a bus, an interconnect, two memories, a
-fetch unit and a branch unit.
-
-The ALU alone was bigger than all of them together.
-
-This is where "it passes the tests" stops being the same sentence as
-"it is finished".
-
-------------------------------------------------------------------------
-
-## E.2 "Why Is the ALU So Big?"
-
-Because every bit of every operation existed at the same time.
-
-``` text
-32-bit add     = 32 adders + carry chain, always present
-32x32 multiply = wall of partial products, always present
-divide         = every shift-and-subtract step, always present
-```
-
-None of that is computed lazily. It is combinational hardware. It is
-there every clock, whether the instruction is ADD, AND, or nothing at
-all.
-
-And the report said `DSP = 0`, so even the multiplier was built from LUT
-fabric instead of the board's hardware multiplier blocks.
-
-The LUT count was not overhead around the arithmetic.
-
-The LUT count *was* the arithmetic.
-
-------------------------------------------------------------------------
-
-## E.3 The Question That Changed the ALU
-
-The question was not "how do I make a faster adder".
-
-It was:
-
-> Why do all 32 bits have to be computed in the same instant?
-
-A 32-bit word is an architectural decision.
-
-It says the result must be 32 bits wide.
-
-It does not say that 32 adders must exist at once.
-
-It says 32 bits must be *resolved* before a register captures the result.
-
-How long that resolution takes is up to me.
-
-------------------------------------------------------------------------
-
-## E.4 One Bit per Clock
-
-So the new ALU computes one bit per clock edge and finishes in 32 clocks.
-
-``` text
-        cycle 0    cycle 1    ...    cycle 31    cycle 32
-          bit 0      bit 1               bit 31      DONE
-```
-
-Everything it needs is tiny:
-
-``` text
-one 1-bit full adder
-one carry flip-flop
-two operand shift registers
-one result shift register
-one cycle counter
-one small sequencer
-```
-
-No parallel multiplier. No parallel divider. One bit of arithmetic and a
-clock.
-
-This is how processors were built when a gate was expensive. The trade
-has one shape:
-
-``` text
-area        down
-throughput  down
-latency     up
-```
-
-You buy area with time. That is the entire idea.
-
-
-------------------------------------------------------------------------
-
-## E.5 The ALU Did Not Change Shape
-
-The ALU still has the same four functional units from Stage 1, plus the
-top level.
-
-``` text
-alu/
-├── alu.sv          top: decode, launch, result mux, flags
-├── arithmetic.sv   ADD ADC SUB SBC NEG ABS MUL MULH DIVU MODU DIVS MODS
-├── logic_unit.sv   AND OR XOR NOT NAND NOR XNOR PASS_A PASS_B
-├── shifter.sv      SHL SHR SAR ROL ROR
-└── comparator.sv   EQ NE LT LE GT GE (u/s) and MINU MAXU MINS MAXS
-```
-
-What changed is that every unit is now sequential instead of
-combinational. Each one obeys the same contract:
-
-``` text
-clk, rst, start, operand_a, operand_b, op [, carry_in]
-    -> result [, carry overflow div_zero], busy, done
-```
-
-The top level does the same job it always did:
-
-``` text
-decode op
-    |
-select which unit is active
-    |
-mux the result
-    |
-produce flags
-```
-
-The difference is that "active" now means "started", not "always
-evaluating".
-
-------------------------------------------------------------------------
-
-## E.6 The One Adder Everything Shares
-
-Here is the whole arithmetic core of the ALU.
-
-It is one full adder.
-
-``` systemverilog
-sum  = a ^ b ^ carry;
-next = (a & b) | (carry & (a ^ b));
-```
-
-That is it.
-
-ADD, ADC, SUB, SBC, NEG and ABS are all this adder with different inputs
-and a different starting carry.
-
-``` text
-op     A input   B input   start carry
-ADD    a         b         0
-ADC    a         b         carry_in
-SUB    a         ~b        1
-SBC    a         ~b        carry_in
-NEG    0         ~a        1
-ABS    0         ~a        1   (only when the sign bit is set)
-```
-
-Feed the bits through one at a time, carry the carry along, and the
-32-bit answer falls out after 32 clocks.
-
-There is no second subtractor. Subtraction never got its own hardware.
-
-------------------------------------------------------------------------
-
-## E.7 Subtraction Is Addition Wearing a Mask
-
-`A - B` is `A + ~B + 1`.
-
-In a two's-complement machine that is not a trick to memorize. It is the
-definition of subtraction, and it is why the ALU only needs one adder.
-
-``` text
-A - B = A + (~B) + 1
-```
-
-SBC adds one more subtlety: it subtracts a borrow only when there was no
-carry in.
-
-``` text
-SBC:  A + ~B + carry_in
-```
-
-The flag that falls out is the same carry out of the same adder. For ADD
-it means carry. For SUB it means "no borrow". One wire, two meanings,
-decided by which unit was launched.
-
-------------------------------------------------------------------------
-
-## E.8 Negation and Absolute Value for Free
-
-Two more operations wanted subtractors of their own and did not get one.
-
-``` text
-NEG(A) = 0 - A           = ~A + 1
-ABS(A) = sign(A) ? ~A + 1 : A
-```
-
-NEG is SUB with the first operand forced to zero.
-
-ABS is just a choice: if the sign bit is set, take the NEG path; if it is
-clear, pass A straight through.
-
-The signed overflow flags still come out correctly because the unit
-remembers the original sign bits and compares them with the sign bit of
-the final result.
-
-------------------------------------------------------------------------
-
-## E.9 Multiplication Without a Multiplier
-
-There is no 32x32 multiplier in the fabric.
-
-There is a loop that runs 32 times.
-
-``` text
-for 32 iterations:
-    if (multiplier bit 0): accumulate += multiplicand
-    multiplicand <<= 1
-    multiplier  >>= 1
-```
-
-The accumulate is a narrow adder. The multiplicand and accumulator are
-shift registers. MUL takes the low word of the result, MULH the high
-word.
-
-The wall of partial products became one adder used 32 times.
-
-
-------------------------------------------------------------------------
-
-## E.10 Division Without a Divider
-
-Division became the classic schoolbook restoring loop.
-
-``` text
-remainder = 0
-for 32 iterations:
-    remainder = (remainder << 1) | next dividend bit
-    if (remainder >= divisor):
-        remainder -= divisor
-        quotient  = (quotient << 1) | 1
-    else:
-        quotient  = (quotient << 1) | 0
-```
-
-Quotient and remainder come out together, which is why DIV and MOD share
-one circuit instead of building two.
-
-Signed division divides the magnitudes and then fixes the signs.
-
-``` text
-DIVS: signs differ   -> negate the quotient
-MODS: dividend < 0   -> negate the remainder
-```
-
-And the two cases that break naive signed division are handled up front.
-
-``` text
-divide by zero   -> result 0, DZ flag set
-MIN / -1         -> result MIN, overflow flag set
-```
-
-Those are the same special cases the original combinational ALU already
-had. The rewrite did not lose them.
-
-------------------------------------------------------------------------
-
-## E.11 Shifts: Hold, Then Stream
-
-A shift by N cannot be done one bit per clock the naive way, because the
-serialiser does not know where to start.
-
-The trick is to treat the shift as a delay.
-
-``` text
-SHL by N:   emit 0 for N cycles, then stream the operand
-SHR by N:   emit 0 for N cycles, then stream the operand (MSB first)
-SAR by N:   emit the sign for N cycles, then stream the operand
-```
-
-While the unit is emitting the fill bit, it holds the operand register
-still. When the fill is done, it starts shifting.
-
-Rotations are different, because nothing is lost and nothing is filled.
-The unit pre-rotates a circular register into position and then emits.
-
-``` text
-ROL by N:   pre-rotate by (W - N), then emit W bits
-ROR by N:   pre-rotate by N,       then emit W bits
-```
-
-That is why rotations take `W + offset` cycles instead of exactly `W`.
-
-------------------------------------------------------------------------
-
-## E.12 Comparisons: the First Differing Bit Wins
-
-There is no wide comparator.
-
-There is a state machine that walks from the most significant bit down.
-
-``` text
-equal_so_far = 1
-gt = 0
-lt = 0
-
-for each bit (MSB first):
-    if still equal:
-        if (a_bit, b_bit) == (1, 0): gt = 1, equal_so_far = 0
-        if (a_bit, b_bit) == (0, 1): lt = 1, equal_so_far = 0
-```
-
-Two flip-flops and one bit of look-ahead decide a 32-bit comparison.
-
-Signed comparisons do not need new hardware. They flip the sign bit of
-both operands and then compare as unsigned.
-
-``` text
-A <signed B   ==   (A ^ MSB) <unsigned (B ^ MSB)
-```
-
-One XOR on the way in.
-
-------------------------------------------------------------------------
-
-## E.13 MIN and MAX Are Not a New Circuit
-
-MIN and MAX look like they need a comparison plus a mux.
-
-They do. But the comparison already exists in the comparator unit.
-
-``` text
-MINU = (lt)   ? A : B
-MAXU = (gt)   ? A : B
-MINS = (lt_s) ? A : B
-MAXS = (gt_s) ? A : B
-```
-
-So MIN and MAX live in the comparator, next to the decision that chooses
-them. Arithmetic does not grow a second comparator just to pick the
-smaller operand.
-
-That is the "common resource" habit from the register file and the bus,
-applied inside the ALU.
-
-------------------------------------------------------------------------
-
-## E.14 Flags in a Serial World
-
-The flags did not disappear. They just became small accumulators.
-
-``` text
-Z  =  every result bit was 0
-N  =  the last bit produced (the sign bit)
-C  =  the carry left in the flip-flop after 32 cycles
-V  =  the sign bits of A, B and the result disagree in the signed way
-DZ =  the divisor was zero
-```
-
-The top level still owns the rule from Stage 1.
-
-``` text
-ALU produces candidate flags
-status register captures them only when the instruction says so
-```
-
-The arithmetic unit reports C, V and DZ upward. The top level adds Z and
-N from whichever result was selected.
-
-------------------------------------------------------------------------
-
-## E.15 The Contract: start, busy, done
-
-Every unit exposes the same three handshake signals.
-
-``` text
-start : begin an operation
-busy  : the unit is still working
-done  : result and flags are valid, for exactly one cycle
-```
-
-At a high level:
-
-``` text
-IDLE --start--> RUN --(32 cycles)--> DONE --one cycle--> IDLE
-```
-
-The top level only starts the unit that matches the opcode. The other
-three sit idle.
-
-``` text
-start --->|- arithmetic |-.
-       |->| logic unit |-|---> mux ---> result
-       |->| shifter    |-'
-       |->| comparator |-
-```
-
-
-------------------------------------------------------------------------
-
-## E.16 "But Now the CPU Has to Wait"
-
-A 32-cycle ALU is only correct if the rest of the CPU can wait.
-
-The CPU already had the rule that makes this easy.
-
-> The PC advances only when an instruction retires.
-
-So the core learned a small execution loop.
-
-``` text
-EX_IDLE -> launch the ALU -> EX_ALU
-                               |
-                    memory op?  |
-                    yes         no
-                     |           |
-                   EX_MEM      retire
-                     |
-              wait for bus ready
-                     |
-                   retire
-```
-
-Nothing about fetch, the register file, or the status register had to be
-redesigned. They already respected retirement.
-
-The self-stalling pipeline fell out of the same rule from Part XI.
-
-------------------------------------------------------------------------
-
-## E.17 What Did Not Change
-
-``` text
-packages                 unchanged
-opcode map               unchanged
-instruction encoding      unchanged
-cpu_decoder                   unchanged
-branch unit               unchanged (still combinational)
-fetch / PC hold           unchanged
-run.sh test file lists    restored to the four units
-```
-
-The ALU changed inside its own files. The architecture did not move.
-
-------------------------------------------------------------------------
-
-## E.18 The Bug That Taught the Most
-
-As soon as the result became a mux of four sub-units, several tests
-started reading the *previous* answer.
-
-The hardware was fine.
-
-The testbench was reading `result` in the same simulation delta in which
-`wait (done)` unblocked, before the combinational mux had re-evaluated.
-
-``` text
-posedge
-  |
-state <= DONE        (the unit finishes)
-result <= final      (the unit latches its own result)
-  |
-done becomes 1  and  the top-level mux re-evaluates
-  |
-testbench wakes up   <-- and sometimes read the OLD mux output
-```
-
-The fix was one timestep of settle before sampling.
-
-This is the same lesson as the rest of the manual, in new clothes: a
-simulation reads signals at a point in time, and "immediately after an
-event" is a place, not an instant.
-
-------------------------------------------------------------------------
-
-## E.19 What It Costs
-
-``` text
-before   1 cycle per instruction
-after    about 34 cycles per instruction
-```
-
-That is 32 cycles of arithmetic plus a couple of cycles of launch and
-retire.
-
-Throughput dropped. Area dropped much more.
-
-For a learning CPU driving a small system on a small FPGA, that is the
-right side of the trade. If throughput ever matters, the same structure
-pipes cleanly: run four ALUs at four phases of one instruction.
-
-------------------------------------------------------------------------
-
-## E.20 Packages Stay the Source of Truth
-
-The serial units use the existing packages exactly as they are.
-
-``` systemverilog
-cpu_pkg::WORD_WIDTH
-cpu_pkg::word_t
-cpu_pkg::flags_s
-opcode_pkg::opcode_t
-```
-
-The only new constants are the ones that must be derived.
-
-``` systemverilog
-localparam int COUNTER_WIDTH = $clog2(cpu_pkg::WORD_WIDTH);
-```
-
-No package was edited. There is still exactly one source of truth for
-"how wide is a word", and it is still in `cpu_pkg`.
-
-------------------------------------------------------------------------
-
-## E.21 Measure First
-
-The ALU was rewritten because a synthesis report printed a number: 7844
-LUT in one block.
-
-The lesson is not "always go bit-serial".
-
-The lesson is:
-
-> Measure first. The circuit you are most proud of may be the circuit you
-> have to change.
-
-Correctness is where the design starts, not where it ends.
-
-
-------------------------------------------------------------------------
-
-## F. CPU Bus Names and Memory Subsystem
-
-The SoC now names bus ports by their role:
-
-| Interface | Purpose |
+* `core_enable` gates the execution core: a *buffered* instruction is always
+  allowed to finish even if `run` is de-asserted meanwhile (this also guarantees
+  a waiting D-BUS request cannot be abandoned).
+* `retire` is fed back to `instruction_fetch` to advance the PC. Illegal
+  instructions `retire` too (they have no side effects) so the fetch unit cannot
+  wedge at a bad `pc`.
+* Instantiated children: `instruction_fetch` (`u_instruction_fetch`) and
+  `cpu_core` (`u_cpu_core`). The `operand_a/operand_b/alu_result/flags/status`
+  outputs are retained only for simulation/debug observation.
+
+### 7.2 `instruction_fetch` — `src/rtl/cpu/fetch/instruction_fetch.sv`
+
+Owns the PC and a **one-entry instruction buffer**, and is the I-BUS master.
+
+* Instantiates `program_counter` (`u_program_counter`).
+* I-BUS request: `ibus_req.op = BUS_READ`, `ibus_req.addr = (FETCH_IMM) ? pc +
+  WORD_BYTES : pc`, `ibus_req.valid = (fetch_state != FETCH_IDLE)`.
+* Fetch FSM:
+
+| State | Behavior |
 | --- | --- |
-| `ibus_req` / `ibus_rsp` | CPU instruction fetch requests and responses |
-| `dbus_req` / `dbus_rsp` | CPU load/store requests and responses |
-| `gpu_mmio_req` / `gpu_mmio_rsp` | CPU access to GPU control and status registers |
-| `data_mem_req` / `data_mem_rsp` | Interconnect access to local data memory |
-| `mem_req` / `mem_rsp` | Local request and response at the data RAM slave |
+| `FETCH_IDLE` | If nothing is buffered, go to `FETCH_INSTR`. |
+| `FETCH_INSTR` | Latch `ibus_rsp.rdata` as the instruction. If it `instr_uses_imm`, go to `FETCH_IMM`, else back to `FETCH_IDLE` and mark `instruction_available`. |
+| `FETCH_IMM` | On `ibus_rsp.ready`, latch the immediate word, buffer it, mark `instruction_available`, go to `FETCH_IDLE`. |
 
-The GPU register block previously called its CPU-facing MMIO port `ibus`.
-That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
-`mmio_rsp`. The former `cpu_memory` RAM is now `data_memory`, with matching
-`DATA_MEMORY_*` constants in the memory and bus packages.
+* `has_imm = instruction_available && instr_uses_imm(instruction)` — tells the PC
+  how many words the buffered instruction occupies.
+* On `rst` **or** `retire`, the buffer is cleared (instruction/immediate = 0,
+  `instruction_available = 0`).
+* Once a fetch request has started, de-asserting `run` does **not** abandon it;
+  `run` only controls whether the *next* instruction is fetched.
 
-`cpu` now exposes both instruction and data master ports. It no longer
-instantiates the instruction ROM. In `system.sv`, `u_memory` is an instance of
-`memory_subsystem`; it owns the existing `instruction_memory` ROM and the
-synchronous `data_memory` BRAM. These remain physically separate memories,
-so instruction fetch does not contend with local data access. The data bus
-still passes through `bus_interconnect`, which maps local data RAM and GPU
-MMIO into the CPU address space. This refactor does not change the bus
-transaction format or make the reserved DDR3 address range operational.
+### 7.3 `program_counter` — `src/rtl/cpu/fetch/program_counter.sv`
 
-The Tang Primer 20K has limited on-chip block RAM and onboard DDR3. A future
-GPU framebuffer or TPU tensor store will need an actual DDR3 controller and
-a shared-memory path. When GPU or TPU engines become bus masters, the
-interconnect will also need arbitration and ports for those masters; the
-current interconnect accepts only the CPU data port. GPU MMIO is a slave
-control interface and does not provide GPU memory access by itself.
+Byte-addressed, synchronous, active-high reset, priority = reset > redirect >
+increment:
 
-The affected testbenches, `run.sh`, and `lacooda.gprj` were updated for these
-names and the new module. Focused SoC, bus interconnect, GPU MMIO, and
-synchronous data RAM simulations pass. The full `run.sh --no-gui` regression
-still stops at the instruction-fetch test, which has four failing checks;
-the separate CPU interface test times out. Those tests need follow-up before
-the complete regression can be considered passing.
+```systemverilog
+if (rst)         pc <= '0;
+else if (enable) pc <= redirect ? target
+                                : pc + word_t'((has_imm ? 2 : 1) * WORD_BYTES);
+```
+
+* `enable` = `retire` (from `cpu`), so the PC only moves when an instruction
+  completes.
+* A 2-word increment **skips the immediate word** so it is never executed.
+* A taken branch/jump loads `target` instead.
+
+### 7.4 `cpu_core` — `src/rtl/cpu/core/cpu_core.sv`
+
+The execution core: it decodes, runs the multi-cycle ALU, drives the D-BUS, and
+reports completion. Children: `cpu_decoder`, `cpu_datapath`, `branch_unit`.
+
+* `memory_op = memory_read_enable || memory_write_enable` (mutually exclusive by
+  construction).
+* Execution FSM (`ex_state`):
+
+| State | Transition |
+| --- | --- |
+| `EX_IDLE` | If `core_enable && decode_valid`, pulse `alu_start` and go to `EX_ALU`. |
+| `EX_ALU` | When `alu_done`, go to `EX_MEM` if `memory_op`, else back to `EX_IDLE`. |
+| `EX_MEM` | When `mem_accept` (`dbus_valid && dbus_ready`) or `!core_enable`, go to `EX_IDLE`. |
+
+* **D-BUS master** — the effective address is the ALU result (`ALU_ADD`):
+
+```systemverilog
+assign dbus_valid = (ex_state == EX_MEM) && core_enable && decode_valid && memory_op && !rst;
+assign mem_accept = dbus_valid && dbus_ready;
+assign dbus_write = memory_write_enable;
+assign dbus_addr  = alu_result;      // base + signed byte offset
+assign dbus_wdata = store_data;      // raw RS2
+```
+
+  Because `core_enable` stays asserted while the wrapper stalls the PC, the
+  request payload is held stable until `dbus_ready`.
+* **Retirement / writes** — a normal instruction completes when `alu_done`
+  pulses; a LOAD/STORE additionally waits for the bus accept:
+
+```systemverilog
+assign retire_valid = core_enable && decode_valid && !rst &&
+                      ( (!memory_op && alu_done) || mem_accept );
+assign effective_register_write = register_write_enable && retire_valid;
+assign effective_flags_write    = flags_write_enable    && retire_valid;
+```
+
+### 7.5 `cpu_decoder` — `src/rtl/cpu/core/cpu_decoder.sv`
+
+Pure combinational decode. It overlays the instruction onto `instruction_s`
+(`assign instr_fields = instruction;`) — **no hardcoded bit slicing** — and
+classifies via the `opcode_pkg` helpers.
+
+**Legality rules** (any violation → `illegal_instr = 1`, `decode_valid = 0`, all
+outputs defaulted to safe values):
+
+* Reserved bits must be zero: `(instruction >> USED_INSTRUCTION_BITS) != 0`.
+* All three register fields must be `< REG_FILE_COUNT` (64).
+* Valid opcode (`is_valid_opcode`).
+* Per-format operand constraints:
+  * **Branch/jump**: `rd == 0`, `I == 0`, `S == 0`; `CTRL_JMP` requires
+    `rs1 == 0 && rs2 == 0`.
+  * **LOAD**: `I == 0`, `S == 0`, `rs2 == 0` (rd = dest, rs1 = base).
+  * **STORE**: `I == 0`, `S == 0`, `rd == 0` (rs1 = base, rs2 = source).
+  * **MOV / unary**: `I == 0`, `rs2 == 0` (operand A = rs1).
+  * **MOVI**: `I == 1`, `rs1 == 0`, `rs2 == 0` (operand B = immediate word).
+  * **Binary immediate**: `rs2 == 0` (immediate word replaces RS2).
+  * MOV/MOVI must not set `update_status`.
+
+**Outputs for a legal instruction:**
+
+* **Branch**: `branch_enable = 1`, `branch_op = opcode`, `branch_target =
+  immediate_word`; rs1/rs2 feed the register file so the branch unit sees the
+  real operand values.
+* **Memory**: `rs1 = base`, `rs2`, `rd`; `alu_op = ALU_ADD`, `imm_sel = 1`,
+  `imm_operand = immediate_word`; LOAD sets `memory_read_enable` +
+  `register_write_enable`; STORE sets `memory_write_enable`; flags never written.
+* **ALU**: `alu_op = opcode`, `imm_sel = immediate_mode`, `imm_operand =
+  immediate_word`, `register_write_enable = 1`, `flags_write_enable =
+  update_status`.
+
+### 7.6 `cpu_datapath` — `src/rtl/cpu/core/cpu_datapath.sv`
+
+Wires the register file, operand-B mux, ALU, writeback mux and status register.
+
+* Write qualification: `register_wen = register_write_enable && alu_valid && !rst`
+  (and the same for `flags_wen`) — an unrecognised encoding (`alu_valid` low) can
+  never write.
+* Register file exposes `operand_a` (RS1) and a raw `rs2_data` (RS2).
+* **Operand-B mux**: `operand_b = imm_sel ? imm_operand : rs2_data`.
+* **`store_data = rs2_data`** — the raw RS2 value, kept separate from
+  `operand_b` because a STORE needs RS2 as write data while the ALU
+  simultaneously needs the immediate as operand B (both to form the address).
+* **Writeback mux**: `writeback_data = writeback_from_mem ? dmem_rdata :
+  alu_result` (LOAD writes memory data; everything else writes the ALU result).
+  The effective address remains visible on `alu_result` for LOAD/STORE.
+
+### 7.7 `cpu_register` — `src/rtl/cpu/core/cpu_register.sv`
+
+The register file: **64 × 32**, two asynchronous read ports, one synchronous
+write port, asynchronous reset.
+
+* R0 is hardwired to zero: reads of address 0 return `'0`; writes to address 0
+  are ignored.
+* `registers[idx] <= '0` for all entries on reset.
+
+### 7.8 `status_register` — `src/rtl/cpu/core/status_register.sv`
+
+Holds the ALU condition flags in a `flags_s` register and exposes them packed
+into a `status_t`:
+
+```systemverilog
+assign status = status_t'({ flags_reg.DZ, flags_reg.V,
+                            flags_reg.C,  flags_reg.N,  flags_reg.Z });
+```
+
+* Only `[4:0]` (`DZ,V,C,N,Z`) are stored; reserved high bits read as zero without
+  storage.
+* Updates only on `write_enable` (i.e. `flags_wen`); asynchronous clear on reset.
+
+### 7.9 `branch_unit` — `src/rtl/cpu/core/branch_unit.sv`
+
+Pure combinational control-flow decision, fed the two register operands and the
+branch opcode:
+
+| Opcode | Taken when |
+| --- | --- |
+| `CTRL_JMP` | always |
+| `CTRL_BEQ` | `operand_a == operand_b` |
+| `CTRL_BNE` | `operand_a != operand_b` |
+| `CTRL_BLT` | `$signed(a) < $signed(b)` |
+| `CTRL_BGE` | `$signed(a) >= $signed(b)` |
+| `CTRL_BLTU` | `a < b` (unsigned) |
+| `CTRL_BGEU` | `a >= b` (unsigned) |
+
+On a taken condition it sets `redirect = 1` and `redirect_target = target`; the
+PC loads the target on the next rising edge. When `enable` is low it returns
+`redirect = 0` (but still forwards `target` for observation).
+
+---
+
+## 8. The ALU — Unit to Bit Operations
+
+The ALU is **multi-cycle and bit-serial**: instead of a parallel adder/multiplier
+tree, each operation is streamed one bit per clock through a handful of
+flip-flops. This is the whole point of the design — a large, fast-but-expensive
+combinational ALU was replaced by a small, single-adder machine.
+
+`alu` (`src/rtl/cpu/alu/alu.sv`) is the dispatcher; four sub-units do the work.
+All four share the `alu_pkg::alu_state_e` sequencer (`S_IDLE → S_RUN → S_DONE`)
+and the `start / busy / done` contract.
+
+### 8.1 `alu` — the dispatcher
+
+* `valid = (op <= ALU_GES)` — the op is a recognised ALU encoding.
+* Sub-unit selection (one-hot):
+
+```systemverilog
+sel_arith = (op <= ALU_MODS) || (op == ALU_ABS) || (op == ALU_NEG);          // 0x00–0x09, 0x0E, 0x0F
+sel_logic = (op >= ALU_NOT) && (op <= ALU_PASS_B);                           // 0x10–0x18
+sel_shift = (op >= ALU_SHL) && (op <= ALU_ROR);                              // 0x19–0x1D
+sel_cmp   = ((op >= ALU_EQ) && (op <= ALU_GES)) ||
+            ((op >= ALU_MINU) && (op <= ALU_MAXS));                          // 0x1E–0x27, 0x0A–0x0D
+```
+
+* Only the selected sub-unit receives `start`; the others stay idle.
+* `busy` is the OR of all sub-unit busy flags; `done` is the OR of the done
+  pulses plus `invalid_done` (an unrecognised opcode completes in one cycle with
+  `result = 0`, `flags = 0`).
+* **Flags are derived centrally** from the selected result: `Z = (result == 0)`
+  and `N = result[31]` for every valid op; `C`, `V`, `DZ` come from the
+  arithmetic sub-unit's side channels.
+
+### 8.2 `arithmetic` — the 1-bit adder engine
+
+One 1-bit full adder plus a carry flip-flop processes ADD/ADC/SUB/SBC/NEG/ABS,
+one bit per clock (LSB first).
+
+* Per-cycle 1-bit datapath:
+
+```systemverilog
+x_bit    = use_neg ? 1'b0 : a_bit;              // use_neg = NEG, or |a| of a negative ABS
+y_bit    = use_neg ? ~a_bit : (b_bit ^ is_sub); // subtract = add of the complement
+sum_bit  = x_bit ^ y_bit ^ carry_ff;
+cout_bit = (x_bit & y_bit) | (carry_ff & (x_bit ^ y_bit));
+```
+
+* Carries preload (`ld_carry_ff`): `NEG → 1`, `ABS → sign(a)`, `SUB → 1`,
+  `ADC/SBC → carry_in`, else `0`.
+* **MUL/MULH** — iterative shift-add into a double-width accumulator
+  (`macc <= b_bit ? macc + mcand : macc; mcand <= mcand << 1;`).
+* **DIV/MOD** — restoring division: shift the dividend in MSB-first
+  (`rev(...)`), subtract the divisor when the partial remainder is ≥ it, build
+  the quotient one bit per cycle.
+* **Signed special cases** avoid implementation-defined overflow:
+  `MIN / -1` returns `MSB_ONE` for DIV and `0` for MOD.
+* Side channels: `carry` (carry-out / no-borrow), `overflow` (signed overflow,
+  set when the true result is not representable), `div_zero` (`operand_b == 0`).
+
+### 8.3 `logic_unit` — one bit per clock
+
+Two shift registers, a result register, and a **1-bit logic function**:
+
+| Op | `out_bit` |
+| --- | --- |
+| `ALU_NOT` | `~a_bit` |
+| `ALU_AND` | `a_bit & b_bit` |
+| `ALU_OR` | `a_bit \| b_bit` |
+| `ALU_XOR` | `a_bit ^ b_bit` |
+| `ALU_NAND` | `~(a_bit & b_bit)` |
+| `ALU_NOR` | `~(a_bit \| b_bit)` |
+| `ALU_XNOR` | `~(a_bit ^ b_bit)` |
+| `ALU_PASS_A` | `a_bit` (MOV) |
+| `ALU_PASS_B` | `b_bit` (MOVI) |
+
+Bitwise ops are bit-position independent, so LSB-first streaming is exact. This
+is where MOV (`PASS_A`) and MOVI (`PASS_B`) are actually implemented.
+
+### 8.4 `shifter` — hold, then stream
+
+A single serial shifter covers SHL, SHR, SAR, ROL and ROR.
+
+* SHL/SHR/SAR hold the serialiser for the first (shift-amount) cycles while
+  emitting the fill bit, then stream the operand.
+* SAR fill bit = `a_r[MSB]` (arithmetic sign extension); SHL/SHR fill = 0.
+* Shift amount is capped at a full word width.
+* Rotations pre-rotate a circular register into position (`rot_pre`) before
+  emitting, so they take `WORD_WIDTH + offset` cycles.
+* SHR/SAR stream **MSB-first** (`rev` on preload); SHL streams LSB-first.
+
+### 8.5 `comparator` — first differing bit wins
+
+Single MSB-first comparison: start `cmp_eq = 1`, and the first bit position where
+the operands differ decides greater/less; all comparisons derive from that.
+
+* Comparisons (`EQ, NE, LTU, LEU, GTU, GEU, LTS, LES, GTS, GES`) each output a
+  1-bit boolean zero-extended to the word.
+* **MIN/MAX** (`MINU/MAXU/MINS/MAXS`) reuse the same comparison and simply
+  *select* `a` or `b` — no separate datapath.
+* **Signed** variants are unsigned compares with the sign bit flipped (preload
+  `cmp_a = a ^ MSB_ONE`, `cmp_b = b ^ MSB_ONE`).
+
+### 8.6 Operation cycle cost
+
+| Operation class | Cycles (approx.) |
+| --- | --- |
+| ADD/ADC/SUB/SBC/NEG/ABS | `WORD_WIDTH` (32) |
+| AND/OR/XOR/NOT/NAND/NOR/XNOR/PASS_A/PASS_B | `WORD_WIDTH` (32) |
+| MUL/MULH, DIV/MOD | `WORD_WIDTH` (32) |
+| SHL/SHR/SAR | `WORD_WIDTH` (32) |
+| ROL/ROR | `WORD_WIDTH + offset` (offset capped) |
+| EQ/NE/LT*/LE*/GT*/GE*/MIN*/MAX* | `WORD_WIDTH` (32) |
+| LOAD/STORE | ALU (address) + 1 bus-response cycle |
+| Branch/jump | ALU runs, decision is combinational |
+
+The ALU always runs for a decoded instruction (even branches/LOAD/STORE use it —
+branches for an observable result, memory ops to form the effective address), so
+a branch/load/store also takes ~32 cycles before it retires.
+
+---
+
+## 9. GPU (Wired Part)
+
+Only the GPU's **CPU-visible MMIO register block** is wired today:
+`gpu` → `gpu_register`. There is no rendering hardware in the live hierarchy
+(see [Appendix F](#appendix-f--not-wired--reserved)).
+
+### 9.1 `gpu` — `src/rtl/gpu/gpu.sv`
+
+The GPU subsystem boundary. It exposes the same `bus_req_s`/`bus_rsp_s` slave
+interface to the SoC and instantiates a single child, `gpu_register`.
+
+There is no GPU execution core yet, so `gpu.sv` synthesizes the status word
+inline:
+
+```systemverilog
+status      = '0;
+status.enabled = gpu_cfg.control[0];
+status.idle    = 1'b1;      // nothing is running
+```
+
+The remaining status bits (busy/error/command_done/display_active/
+framebuffer_valid) read as zero. Future GPU components are meant to be added
+*behind this boundary* without changing the SoC-facing bus interface.
+
+### 9.2 `gpu_register` — `src/rtl/gpu/core/gpu_register.sv`
+
+A direct **bus slave** implementing the MMIO register bank.
+
+* The interconnect has already matched this address and subtracted `GPU_BASE`,
+  so `mmio_req.addr` is a **GPU-local byte address**:
+  `local_addr = gpu_addr_t'(mmio_req.addr)`.
+* **Writes** (`valid && op == BUS_WRITE`) are decoded into `gpu_cfg`:
+
+| Address | Register written |
+| --- | --- |
+| `GPU_REG_CONTROL` (`0x04`) | `gpu_cfg.control` |
+| `GPU_REG_FRAMEBUFFER_BASE` (`0x0C`) | `gpu_cfg.framebuffer_base` |
+| `GPU_REG_FRAMEBUFFER_WIDTH` (`0x10`) | `gpu_cfg.framebuffer_width` |
+| `GPU_REG_FRAMEBUFFER_HEIGHT` (`0x14`) | `gpu_cfg.framebuffer_height` |
+| `GPU_REG_CLEAR_COLOR` (`0x18`) | `gpu_cfg.clear_color` |
+
+  `GPU_REG_ID` and `GPU_REG_STATUS` are read-only; unknown addresses ignore
+  writes.
+* **Reads** (`valid && op == BUS_READ`) return: `GPU_ID_VALUE` for `ID`,
+  `status` for `STATUS`, the corresponding `gpu_cfg` field otherwise, and `0`
+  for reserved addresses.
+* `mmio_rsp.ready` is asserted for **every** valid request (MMIO has no wait
+  states), with `rdata` computed combinationally — so a GPU access completes in
+  a single cycle when the CPU asserts `dbus_valid`.
+
+---
+
+## 10. Board Top and Build
+
+### 10.1 `fpga_top` — `src/rtl/soc/fpga_top.sv`
+
+The synthesizable FPGA top. It maps the board pins onto `system`:
+
+| Port | Direction | Meaning |
+| --- | --- | --- |
+| `clk27` | in | 27 MHz onboard oscillator — clocks the whole SoC |
+| `btn_n0` | in | active-low button → synchronous active-high reset |
+| `btn_n1` | in | active-low button → run enable |
+| `led0` | out | `retire_valid` |
+| `led1` | out | `illegal_instr` |
+| `led2..led5` | out | reserved (driven `0`; "ALU parity not yet implemented") |
+
+The buttons are asynchronous and active-low while the CPU reset is synchronous
+and active-high, so a two-flop synchronizer de-metastabilizes and inverts both
+pins in one place:
+
+```systemverilog
+always_ff @(posedge clk27) begin
+    rst_sync <= {rst_sync[0], ~btn_n0};
+    run_sync <= {run_sync[0], ~btn_n1};
+end
+assign rst = rst_sync[1];
+assign run = run_sync[1];
+```
+
+`system` remains the unit under test in simulation; here it is driven by the
+board pins and retirement status is exposed through the LEDs.
+
+### 10.2 Constraints
+
+* `src/constraints/sipeed_tang_primer_20k.cst` — pin locations:
+  `clk27=H11`, `btn_n0=T10`, `btn_n1=T3`, LEDs `L16/L14/N14/N16/A13/C13`.
+  The board's serial and DDR3 pins are present but **commented out** until those
+  peripherals exist in RTL (unmatched port constraints fail PnR with CT1135).
+* `src/constraints/sipeed_tang_primer_20k.sdc` — `create_clock -name clk27
+  -period 37.037 -waveform {0.000 18.518} [get_ports {clk27}]` (27 MHz).
+
+### 10.3 Memory images
+
+`src/programs/` holds the `$readmemh` images. Each immediate is stored in the
+word that follows its instruction. `genesis_32.hex` (the active
+`PROGRAM_FILE`) is a small program whose first words decode as:
+
+| Word (index) | Hex | Decodes to |
+| --- | --- | --- |
+| 0 | `01601000` | `MOVI R1, …` (`PASS_B`, rd=1, `I=1`) |
+| 1 | `00000064` | immediate `100` |
+| 2 | `01602000` | `MOVI R2, …` (rd=2, `I=1`) |
+| 3 | `00000040` | immediate `64` |
+| 4 | `00C00081` | `STORE R1,[R2+ …]` (`MEM_STORE`, rs1=2, rs2=1) |
+| 5 | `00000008` | immediate `8` |
+
+`data_memory_32.hex` is the 8192-word data RAM image (all zero in the shipped
+tree). The `_64.hex` variants are legacy and are not referenced by
+`memory_pkg`.
+
+### 10.4 `run.sh`
+
+The regression runner (`./run.sh`). It must be run **from the repository root**
+so the relative `PROGRAM_FILE`/`DATA_MEMORY_FILE` paths resolve.
+
+* Compiles each test with `iverilog -g2012 -Wall`, runs with `vvp`, and moves
+  the produced VCD into `src/sim/waveforms/`.
+* Test order (each its own top + source list):
+  1. ALU (`alu_tb`)
+  2. Register file (`cpu_register_tb`)
+  3. Datapath (`cpu_datapath_tb`)
+  4. Decoder (`cpu_decoder_tb`)
+  5. CPU core (`cpu_core_tb`)
+  6. Program counter / branch unit / instruction fetch (individual TBs)
+  7. Data memory (`data_memory_tb`)
+  8. Bus interconnect (`bus_interconnect_tb`)
+  9. CPU I-BUS/D-BUS (`cpu_tb`)
+  10. CPU system end-to-end (`system_tb`)
+  11. GPU MMIO register (`gpu_tb`)
+* Unless `--no-gui` is given it opens GTKWave on all waveforms. The legacy
+  `--word32`/`--both` flags add `-DLACOODA_WORD_WIDTH` defines but the design is
+  hard-locked to 32 bits (see [Appendix F](#appendix-f--not-wired--reserved)).
+
+**Current status (verified):** `./run.sh --no-gui` runs the engine tests through
+`branch_unit` cleanly, then **stops at the instruction-fetch test** with 4
+failing checks (its `wait_for_buffered_pc`/immediate-buffer expectations), so
+the later data-memory / interconnect / CPU / system / GPU tests are not reached
+in a single run. This matches the note in `README.md` Appendix F. Run the
+individual suites (or fix `instruction_fetch_tb.sv`) to exercise the tail of the
+list.
+
+### 10.5 Gowin project
+
+`lacooda.gprj` lists the RTL sources, constraints, and hex images for the Gowin
+IDE (device `GW2A-LV18PG256C8/I7`). Note it still lists the (empty)
+`src/rtl/gpu/core/gpu_decoder.sv`. Synthesis/PnR outputs land under `impl/`
+(git-ignored except the process-config JSON files).
+
+### 10.6 Testbenches
+
+| Testbench | DUT | Focus |
+| --- | --- | --- |
+| `cpu/alu_tb.sv` | `alu` | Every ALU op, flags, multi-cycle handshake |
+| `cpu/register_file_tb.sv` | `cpu_register` | Read/write, R0 hardwired, reset |
+| `cpu/datapath_tb.sv` | `cpu_datapath` | Operand mux, writeback, store_data |
+| `cpu/decoder_tb.sv` | `cpu_decoder` | Legal/illegal encodings per format |
+| `cpu/cpu_core_tb.sv` | `cpu_core` | Execution FSM, D-BUS, retire_valid |
+| `cpu/program_counter_tb.sv` | `program_counter` | Increment/redirect/imm-skip |
+| `cpu/branch_unit_tb.sv` | `branch_unit` | Each branch condition |
+| `cpu/instruction_fetch_tb.sv` | `instruction_fetch` | Fetch FSM + buffering |
+| `cpu/cpu_tb.sv` | `cpu` | I-BUS + D-BUS end-to-end |
+| `memory/data_memory_tb.sv` | `data_memory` | Synchronous handshake, alignment |
+| `bus/bus_interconnect_tb.sv` | `bus_interconnect` | Routing + response mux |
+| `gpu/gpu_tb.sv` | `gpu` | MMIO read/write of all registers |
+| `soc/cpu_system_tb.sv` | `system` | Full program: MOVI/STORE/LOAD/BEQ |
+
+---
+
+## 11. Reference Appendices
+
+### Appendix A — Instruction Encoding Cheat-Sheet
+
+One instruction word (LSB first):
+
+```
+ 31        26 25 24 23      18 17    12 11   6 5    0
++------------+--+--+----------+--------+-------+------+
+|  RESERVED  | S| I|  OPCODE  |   RD   |  RS1  | RS2  |
++------------+--+--+----------+--------+-------+------+
+   6 bits      1  1    6          6        6      6
+```
+
+* `USED_INSTRUCTION_BITS = 26`; bits `[31:26]` must be 0.
+* Immediate-taking instructions (branch/jump, LOAD/STORE, or `I=1` ALU) are
+  followed by a **second full word**.
+
+Worked examples (from `genesis_32.hex`):
+
+| Hex | Fields | Meaning |
+| --- | --- | --- |
+| `0x01601000` | rs2=0, rs1=0, rd=1, opcode=0x18, I=1, S=0 | `MOVI R1, <imm>` |
+| `0x01602000` | rd=2, opcode=0x18, I=1 | `MOVI R2, <imm>` |
+| `0x00C00081` | rs2=1, rs1=2, rd=0, opcode=0x30 | `STORE R1, [R2 + imm]` |
+| `encode_load(rd=3, base=2)` | opcode=0x2F, rs1=2, rd=3 | `LOAD R3, [R2 + imm]` |
+
+### Appendix B — Opcode Table
+
+| Opcode | Hex | Sub-unit / class | Writes flags | Operands |
+| --- | --- | --- | --- | --- |
+| `ALU_ADD` | 0x00 | arithmetic | if S | rd = rs1 + rs2/imm |
+| `ALU_ADC` | 0x01 | arithmetic | if S | add with carry_in |
+| `ALU_SUB` | 0x02 | arithmetic | if S | rd = rs1 - rs2/imm |
+| `ALU_SBC` | 0x03 | arithmetic | if S | subtract with borrow |
+| `ALU_MUL` | 0x04 | arithmetic | if S | low word of product |
+| `ALU_MULH` | 0x05 | arithmetic | if S | high word of product |
+| `ALU_DIVU` | 0x06 | arithmetic | if S | unsigned divide |
+| `ALU_MODU` | 0x07 | arithmetic | if S | unsigned modulo |
+| `ALU_DIVS` | 0x08 | arithmetic | if S | signed divide |
+| `ALU_MODS` | 0x09 | arithmetic | if S | signed modulo |
+| `ALU_MINU/MAXU/MINS/MAXS` | 0x0A–0x0D | comparator | if S | select min/max |
+| `ALU_ABS` | 0x0E | arithmetic | if S | unary |
+| `ALU_NEG` | 0x0F | arithmetic | if S | unary |
+| `ALU_NOT` | 0x10 | logic | if S | unary |
+| `ALU_AND/OR/XOR/NAND/NOR/XNOR` | 0x11–0x16 | logic | if S | binary |
+| `ALU_PASS_A` | 0x17 | logic | never | `MOV rd, rs1` |
+| `ALU_PASS_B` | 0x18 | logic | never | `MOVI rd, imm` (I=1) |
+| `ALU_SHL/SHR/SAR/ROL/ROR` | 0x19–0x1D | shifter | if S | shift by rs2/imm |
+| `ALU_EQ/NE/LTU/LEU/GTU/GEU/LTS/LES/GTS/GES` | 0x1E–0x27 | comparator | if S | boolean 0/1 |
+| `CTRL_JMP` | 0x28 | branch unit | never | unconditional |
+| `CTRL_BEQ/BNE/BLT/BGE/BLTU/BGEU` | 0x29–0x2E | branch unit | never | conditional |
+| `MEM_LOAD` | 0x2F | memory | never | `rd = [rs1 + imm]` |
+| `MEM_STORE` | 0x30 | memory | never | `[rs1 + imm] = rs2` |
+
+* `S` = the instruction's `update_status` bit. MOV/MOVI/branch/memory never
+  write flags (enforced by the decoder).
+* Immediate-taking ALU ops set `I=1` and require `rs2 == 0`; the immediate word
+  replaces RS2.
+
+### Appendix C — Address Map
+
+| Region | Base | Size | Limit (exclusive) | Owner |
+| --- | --- | --- | --- | --- |
+| Data RAM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `data_memory` |
+| GPU MMIO | `0x1000_0000` | 4 KiB (`0x1000`) | `0x1000_1000` | `gpu_register` |
+| DDR3 (reserved) | `0x8000_0000` | 128 MiB (`0x0800_0000`) | `0x8800_0000` | *none — reserved only* |
+
+Instruction memory is not in the CPU address space at all: it is a separate ROM
+reachable only through the I-BUS.
+
+### Appendix D — Module Tree
+
+| Module | File | Instantiates |
+| --- | --- | --- |
+| `fpga_top` | `src/rtl/soc/fpga_top.sv` | `system` |
+| `system` | `src/rtl/soc/system.sv` | `cpu`, `bus_interconnect`, `memory_subsystem`, `gpu` |
+| `cpu` | `src/rtl/cpu/cpu.sv` | `instruction_fetch`, `cpu_core` |
+| `instruction_fetch` | `src/rtl/cpu/fetch/instruction_fetch.sv` | `program_counter` |
+| `program_counter` | `src/rtl/cpu/fetch/program_counter.sv` | — |
+| `cpu_core` | `src/rtl/cpu/core/cpu_core.sv` | `cpu_decoder`, `cpu_datapath`, `branch_unit` |
+| `cpu_decoder` | `src/rtl/cpu/core/cpu_decoder.sv` | — |
+| `cpu_datapath` | `src/rtl/cpu/core/cpu_datapath.sv` | `cpu_register`, `alu`, `status_register` |
+| `cpu_register` | `src/rtl/cpu/core/cpu_register.sv` | — |
+| `status_register` | `src/rtl/cpu/core/status_register.sv` | — |
+| `branch_unit` | `src/rtl/cpu/core/branch_unit.sv` | — |
+| `alu` | `src/rtl/cpu/alu/alu.sv` | `arithmetic`, `logic_unit`, `shifter`, `comparator` |
+| `arithmetic` | `src/rtl/cpu/alu/arithmetic.sv` | — |
+| `logic_unit` | `src/rtl/cpu/alu/logic_unit.sv` | — |
+| `shifter` | `src/rtl/cpu/alu/shifter.sv` | — |
+| `comparator` | `src/rtl/cpu/alu/comparator.sv` | — |
+| `bus_interconnect` | `src/rtl/bus/bus_interconnect.sv` | `address_decoder` |
+| `address_decoder` | `src/rtl/bus/address_decoder.sv` | — |
+| `memory_subsystem` | `src/rtl/memory/memory_subsystem.sv` | `instruction_memory`, `data_memory` |
+| `instruction_memory` | `src/rtl/memory/instruction_memory.sv` | — |
+| `data_memory` | `src/rtl/memory/data_memory.sv` | — |
+| `gpu` | `src/rtl/gpu/gpu.sv` | `gpu_register` |
+| `gpu_register` | `src/rtl/gpu/core/gpu_register.sv` | — |
+
+### Appendix E — Glossary
+
+| Term | Meaning |
+| --- | --- |
+| **word** | The 32-bit architectural unit (`cpu_pkg::word_t`). |
+| **instruction word** | A `word_t` holding one encoded instruction. |
+| **immediate word** | The full `word_t` that follows an immediate-taking instruction. |
+| **immediate mode (`I`)** | Instruction bit that makes an ALU op use the immediate word as operand B. |
+| **update status (`S`)** | Instruction bit that allows an ALU op to write the STATUS register. |
+| **retire** | The single cycle in which an instruction completes; advances the PC and commits register/flags writes. |
+| **redirect** | A taken branch/jump requesting the PC load `redirect_target`. |
+| **effective address** | `RS1 + sign-extended immediate word`, computed as `ALU_ADD` for LOAD/STORE. |
+| **I-BUS / D-BUS** | The CPU's instruction-fetch and load/store master buses. |
+| **GPU-local address** | A byte address with `GPU_BASE` already subtracted by the interconnect. |
+| **bit-serial** | Computing one bit per clock through a shared narrow datapath. |
+
+### Appendix F — Not Wired / Reserved
+
+These exist in the tree but are **not instantiated in the live hierarchy**. They
+are listed here for orientation only:
+
+* `src/rtl/gpu/core/gpu_core.sv` — a GPU status/config/validation module
+  (framebuffer-valid logic, reserved `always_ff`). Not instantiated; `gpu.sv`
+  currently produces status inline.
+* `src/rtl/gpu/core/pixel_engine.sv` — row-major framebuffer address generation
+  (`base + (y*width + x) * PIXEL_BYTES` with bounds check). Not instantiated.
+* `src/rtl/memory/gpu_memory.sv` — a GPU-side **bus master** bridge
+  (`gpu_mem_req_s` ↔ `bus_req_s`, one outstanding transaction). Not instantiated.
+* `src/rtl/gpu/core/gpu_decoder.sv` — **empty file**; still referenced by
+  `run.sh` and `lacooda.gprj`.
+* **DDR3** — `bus_pkg` reserves `[0x8000_0000, 0x8800_0000)` but there is no DDR3
+  controller; the region is unmapped and the `.cst` DDR3 pins are commented out.
+* **`--word32` / `--both` and `_64.hex` files** — legacy from a parameterized
+  era; `cpu_pkg::WORD_WIDTH` is now hard-locked to 32 and `memory_pkg` points at
+  the `_32` images.

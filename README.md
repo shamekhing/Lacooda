@@ -4070,3 +4070,45 @@ The lesson is:
 
 Correctness is where the design starts, not where it ends.
 
+
+------------------------------------------------------------------------
+
+## F. CPU Bus Names and Memory Subsystem
+
+The SoC now names bus ports by their role:
+
+| Interface | Purpose |
+| --- | --- |
+| `ibus_req` / `ibus_rsp` | CPU instruction fetch requests and responses |
+| `dbus_req` / `dbus_rsp` | CPU load/store requests and responses |
+| `gpu_mmio_req` / `gpu_mmio_rsp` | CPU access to GPU control and status registers |
+| `data_mem_req` / `data_mem_rsp` | Interconnect access to local data memory |
+| `mem_req` / `mem_rsp` | Local request and response at the data RAM slave |
+
+The GPU register block previously called its CPU-facing MMIO port `ibus`.
+That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
+`mmio_rsp`. The former `cpu_memory` RAM is now `data_memory`, with matching
+`DATA_MEMORY_*` constants in the memory and bus packages.
+
+`cpu` now exposes both instruction and data master ports. It no longer
+instantiates the instruction ROM. In `system.sv`, `u_memory` is an instance of
+`memory_subsystem`; it owns the existing `instruction_memory` ROM and the
+synchronous `data_memory` BRAM. These remain physically separate memories,
+so instruction fetch does not contend with local data access. The data bus
+still passes through `bus_interconnect`, which maps local data RAM and GPU
+MMIO into the CPU address space. This refactor does not change the bus
+transaction format or make the reserved DDR3 address range operational.
+
+The Tang Primer 20K has limited on-chip block RAM and onboard DDR3. A future
+GPU framebuffer or TPU tensor store will need an actual DDR3 controller and
+a shared-memory path. When GPU or TPU engines become bus masters, the
+interconnect will also need arbitration and ports for those masters; the
+current interconnect accepts only the CPU data port. GPU MMIO is a slave
+control interface and does not provide GPU memory access by itself.
+
+The affected testbenches, `run.sh`, and `lacooda.gprj` were updated for these
+names and the new module. Focused SoC, bus interconnect, GPU MMIO, and
+synchronous data RAM simulations pass. The full `run.sh --no-gui` regression
+still stops at the instruction-fetch test, which has four failing checks;
+the separate CPU interface test times out. Those tests need follow-up before
+the complete regression can be considered passing.

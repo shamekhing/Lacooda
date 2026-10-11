@@ -1,26 +1,7 @@
 `timescale 1ns/1ps
 
-// ============================================================
-// LACOODA minimal SoC wrapper
-//
-// cpu.sv remains the CPU boundary.
-//
-// System structure after GPU Stage 1:
-//
-//      CPU (including instruction_memory)
-//
-//      CPU D-BUS
-//          |
-//          v
-//      bus_interconnect
-//          |
-//          +-----------------> cpu_memory
-//          |
-//          +-----------------> gpu
-//
-// The CPU's data bus reaches the SoC interconnect, which selects
-// cpu_memory or the GPU.
-// ============================================================
+// CPU instruction fetch and load/store are external bus masters.
+// The memory subsystem owns instruction ROM and data BRAM.
 
 module system (
     input logic clk,
@@ -33,25 +14,27 @@ module system (
 );
 
     // ========================================================
-    // CPU DATA BUS
+    // CPU BUSES
     // ========================================================
 
-    bus_pkg::bus_req_s cpu_req;
-    bus_pkg::bus_rsp_s cpu_rsp;
+    bus_pkg::bus_req_s ibus_req;
+    bus_pkg::bus_rsp_s ibus_rsp;
+    bus_pkg::bus_req_s dbus_req;
+    bus_pkg::bus_rsp_s dbus_rsp;
 
     // ========================================================
     // LOCAL DATA MEMORY BUS
     // ========================================================
 
-    bus_pkg::bus_req_s cpu_memory_req;
-    bus_pkg::bus_rsp_s cpu_memory_rsp;
+    bus_pkg::bus_req_s data_mem_req;
+    bus_pkg::bus_rsp_s data_mem_rsp;
 
     // ========================================================
     // GPU BUS
     // ========================================================
 
-    bus_pkg::bus_req_s gpu_req;
-    bus_pkg::bus_rsp_s gpu_rsp;
+    bus_pkg::bus_req_s gpu_mmio_req;
+    bus_pkg::bus_rsp_s gpu_mmio_rsp;
 
     // ========================================================
     // CPU
@@ -62,8 +45,10 @@ module system (
         .rst            (rst),
         .run            (run),
 
-        .cpu_req        (cpu_req),
-        .cpu_rsp        (cpu_rsp),
+        .ibus_req        (ibus_req),
+        .ibus_rsp        (ibus_rsp),
+        .dbus_req        (dbus_req),
+        .dbus_rsp        (dbus_rsp),
 
         .pc             (pc),
         .retire_valid   (retire_valid),
@@ -75,26 +60,28 @@ module system (
     // ========================================================
 
     bus_interconnect u_bus_interconnect (
-        .cpu_req         (cpu_req),
-        .cpu_rsp         (cpu_rsp),
+        .dbus_req         (dbus_req),
+        .dbus_rsp         (dbus_rsp),
 
-        .cpu_memory_req (cpu_memory_req),
-        .cpu_memory_rsp (cpu_memory_rsp),
+        .data_mem_req (data_mem_req),
+        .data_mem_rsp (data_mem_rsp),
 
-        .gpu_req         (gpu_req),
-        .gpu_rsp         (gpu_rsp)
+        .gpu_mmio_req         (gpu_mmio_req),
+        .gpu_mmio_rsp         (gpu_mmio_rsp)
     );
 
     // ========================================================
-    // LOCAL DATA MEMORY
+    // MEMORY SUBSYSTEM
     // ========================================================
 
-    cpu_memory u_cpu_memory (
+    memory_subsystem u_memory (
         .clk       (clk),
         .rst       (rst),
 
-        .dbus_req (cpu_memory_req),
-        .dbus_rsp (cpu_memory_rsp)
+        .ibus_req (ibus_req),
+        .ibus_rsp (ibus_rsp),
+        .mem_req  (data_mem_req),
+        .mem_rsp  (data_mem_rsp)
     );
 
     // ========================================================
@@ -105,8 +92,8 @@ module system (
         .clk       (clk),
         .rst       (rst),
 
-        .ibus_req (gpu_req),
-        .ibus_rsp (gpu_rsp)
+        .mmio_req (gpu_mmio_req),
+        .mmio_rsp (gpu_mmio_rsp)
     );
 
 endmodule

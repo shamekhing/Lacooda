@@ -1,13 +1,13 @@
 `timescale 1ns/1ps
-`ifndef CPU_MEMORY_SV
-`define CPU_MEMORY_SV
+`ifndef DATA_MEMORY_SV
+`define DATA_MEMORY_SV
 
 // ============================================================
 // Data memory
 //
-// LACOODA local CPU data RAM.
+// LACOODA local data RAM.
 //
-// The data memory is a D-BUS slave.
+// The data memory is a memory-bus slave.
 //
 // Memory organization:
 //
@@ -29,9 +29,9 @@
 // The address decoder/interconnect is responsible for deciding
 // whether an address belongs to this memory region.
 //
-// Therefore cpu_memory does NOT repeat the range check.
+// Therefore data_memory does not repeat the global range check.
 //
-// If dbus_req.valid reaches this module, the interconnect has
+// If mem_req.valid reaches this module, the interconnect has
 // already selected data memory.
 //
 // This module only checks whether the local byte address is
@@ -80,7 +80,7 @@
 //
 // A transaction completes when:
 //
-//     dbus_req.valid && dbus_rsp.ready
+//     mem_req.valid && mem_rsp.ready
 //
 // The CPU holds its request stable while ready is low.
 //
@@ -90,12 +90,12 @@
 // valid does NOT have to fall between transactions.
 // ============================================================
 
-module cpu_memory (
+module data_memory (
     input  logic              clk,
     input  logic              rst,
 
-    input  bus_pkg::bus_req_s dbus_req,
-    output bus_pkg::bus_rsp_s dbus_rsp
+    input  bus_pkg::bus_req_s mem_req,
+    output bus_pkg::bus_rsp_s mem_rsp
 );
 
 
@@ -111,7 +111,7 @@ module cpu_memory (
     // FPGA block-RAM inference.
     // ========================================================
 
-    cpu_pkg::word_t mem [0 : memory_pkg::CPU_MEMORY_COUNT-1];
+    cpu_pkg::word_t mem [0 : memory_pkg::DATA_MEMORY_COUNT-1];
 
     // ========================================================
     // INITIALIZATION
@@ -136,7 +136,7 @@ module cpu_memory (
     // ========================================================
 
     initial begin
-        $readmemh(memory_pkg::CPU_MEMORY_FILE, mem);
+        $readmemh(memory_pkg::DATA_MEMORY_FILE, mem);
     end
 
 
@@ -170,7 +170,7 @@ module cpu_memory (
     logic addr_valid;
 
     assign addr_valid =
-        (dbus_req.addr % cpu_pkg::WORD_BYTES) == 0;
+        (mem_req.addr % cpu_pkg::WORD_BYTES) == 0;
 
 
     // ========================================================
@@ -209,7 +209,7 @@ module cpu_memory (
     //     The request accepted on the previous rising edge has
     //     completed and its response is available.
     //
-    // dbus_rsp.ready is generated from this state.
+    // mem_rsp.ready is generated from this state.
     // ========================================================
 
     logic pending;
@@ -261,7 +261,7 @@ module cpu_memory (
             // previous response waiting.
             // ------------------------------------------------
 
-            if (dbus_req.valid && !pending) begin
+            if (mem_req.valid && !pending) begin
                 // --------------------------------------------
                 // The request will receive a response during
                 // the following cycle.
@@ -282,12 +282,12 @@ module cpu_memory (
                     // write is synchronous.
                     // ----------------------------------------
 
-                    if (dbus_req.op == bus_pkg::BUS_WRITE) begin
+                    if (mem_req.op == bus_pkg::BUS_WRITE) begin
 
                         mem[
-                            dbus_req.addr
+                            mem_req.addr
                             / cpu_pkg::WORD_BYTES
-                        ] <= dbus_req.wdata;
+                        ] <= mem_req.wdata;
 
                     end
 
@@ -305,7 +305,7 @@ module cpu_memory (
                     else begin
 
                         read_data <= mem[
-                            dbus_req.addr
+                            mem_req.addr
                             / cpu_pkg::WORD_BYTES
                         ];
 
@@ -367,8 +367,8 @@ module cpu_memory (
 
     always_comb begin
 
-        dbus_rsp.ready = pending;
-        dbus_rsp.rdata = read_data;
+        mem_rsp.ready = pending;
+        mem_rsp.rdata = read_data;
 
     end
 

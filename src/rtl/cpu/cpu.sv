@@ -12,10 +12,10 @@
 //   - branch unit
 //   - LOAD/STORE transaction handling
 //
-// Instruction memory is inside this CPU wrapper. Address routing and data
+// Instruction memory is outside this CPU wrapper. Address routing and data
 // memory are outside it. The core uses two typed valid/ready interfaces:
 //
-//   I-BUS : internal read-only instruction fetches
+//   I-BUS : external read-only instruction fetches
 //   D-BUS : external LOAD/STORE data transactions
 //
 // A request that has been started is held until ready. A fetched instruction
@@ -28,11 +28,13 @@ module cpu (
     input logic rst,
     input logic run,
 
-    // Data-bus master interface.
+    // Independent instruction and data bus master interfaces.
     // dbus_write=0 -> LOAD/read
     // dbus_write=1 -> STORE/write
-    input  bus_pkg::bus_rsp_s cpu_rsp,
-    output bus_pkg::bus_req_s cpu_req,
+    output bus_pkg::bus_req_s ibus_req,
+    input  bus_pkg::bus_rsp_s ibus_rsp,
+    output bus_pkg::bus_req_s dbus_req,
+    input  bus_pkg::bus_rsp_s dbus_rsp,
 
     // Observation outputs retained for simulation/debug.
     output cpu_pkg::word_t        pc,
@@ -54,10 +56,10 @@ module cpu (
 
     // The execution core retains its scalar control ports internally;
     // the CPU boundary presents the data side as a typed bus value.
-    assign cpu_req.valid = dbus_valid;
-    assign cpu_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
-    assign cpu_req.addr  = dbus_addr;
-    assign cpu_req.wdata = dbus_wdata;
+    assign dbus_req.valid = dbus_valid;
+    assign dbus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
+    assign dbus_req.addr  = dbus_addr;
+    assign dbus_req.wdata = dbus_wdata;
 
     // A buffered instruction is already inside the CPU and is therefore
     // allowed to finish regardless of a later run deassertion. This also
@@ -73,8 +75,6 @@ module cpu (
     // CPU INSTRUCTION BUS
     // ========================================================
 
-    bus_pkg::bus_req_s instr_req;
-    bus_pkg::bus_rsp_s instr_rsp;
 
     // ========================================================
     // FETCH / I-BUS
@@ -95,21 +95,12 @@ module cpu (
         .retire                (retire),
         .redirect              (redirect),
         .redirect_target       (redirect_target),
-        .ibus_req              (instr_req),
-        .ibus_rsp              (instr_rsp),
+        .ibus_req              (ibus_req),
+        .ibus_rsp              (ibus_rsp),
         .pc                    (pc),
         .instruction           (instruction),
         .immediate_word        (immediate_word),
         .instruction_available (instruction_available)
-    );
-
-    // ========================================================
-    // INSTRUCTION MEMORY
-    // ========================================================
-
-    instruction_memory u_instruction_memory (
-        .ibus_req (instr_req),
-        .ibus_rsp (instr_rsp)
     );
 
     // ========================================================
@@ -134,8 +125,8 @@ module cpu (
         // ADC/SBC retain the existing fixed carry input behavior.
         .carry_in       (1'b0),
 
-        .dbus_ready     (cpu_rsp.ready),
-        .dbus_rdata     (cpu_rsp.rdata),
+        .dbus_ready     (dbus_rsp.ready),
+        .dbus_rdata     (dbus_rsp.rdata),
 
         .decode_valid   (decode_valid),
         .illegal_instr  (illegal_instr),

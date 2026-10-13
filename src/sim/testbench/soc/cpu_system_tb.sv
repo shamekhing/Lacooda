@@ -5,7 +5,7 @@
 //
 // Verifies the final CPU boundary connected to external instruction memory,
 // the data-bus interconnect, and external data memory, running the
-// programs/genesis_64.hex or genesis_32.hex image (selected by WORD_WIDTH).
+// The 32-bit boot_program.hex image initializes the instruction ROM.
 //
 // The image stores each immediate in the word that follows its instruction;
 // its data addresses are word-size independent (base 64, offset 8).
@@ -31,13 +31,13 @@ module system_tb;
         .clk(clk),
         .rst(rst),
         .run(run),
-        .pc(pc),
         .retire_valid(execution_valid),
         .illegal_instr(illegal_instruction)
     );
 
+    assign pc = dut.u_cpu.u_instruction_fetch.pc;
     assign instruction = dut.u_cpu.instruction;
-    assign result = dut.u_cpu.alu_result;
+    assign result = dut.u_cpu.u_cpu_core.alu_result;
 
     task automatic wait_for_buffered_pc(input word_t expected_pc);
         begin
@@ -172,7 +172,7 @@ module system_tb;
             else $fatal(1, "R3 LOAD result wrong");
         assert (dut.u_cpu.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222))
             else $fatal(1, "R4 branch result wrong");
-        assert (dut.u_memory.u_data_memory.mem[72 / WORD_BYTES] === word_t'(100))
+        assert (dut.u_memory.u_data_ram.ram_words[72 / WORD_BYTES] === word_t'(100))
             else $fatal(1, "Data memory word wrong");
 
         $display("PASS: final CPU + external I-BUS memory + D-BUS interconnect/system");

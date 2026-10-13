@@ -12,7 +12,7 @@ one instruction flow end to end".
 **Scope rule used throughout:** only modules that are actually instantiated in
 the live hierarchy rooted at `fpga_top` are documented in detail. Modules that
 exist in the tree but are **not wired** (`gpu_core`, `pixel_engine`,
-`gpu_memory`, reserved DDR3, the empty `gpu_decoder.sv`) are listed once in
+`gpu_bus_master`, reserved DDR3) are listed once in
 [Appendix F](#appendix-f--not-wired--reserved).
 
 ---
@@ -69,14 +69,14 @@ Key architectural facts:
 | Path | Contents |
 | --- | --- |
 | `src/rtl/packages/` | Shared types/constants (`opcode_pkg`, `cpu_pkg`, `memory_pkg`, `bus_pkg`, `gpu_pkg`, `alu_pkg`) |
-| `src/rtl/bus/` | `address_decoder`, `bus_interconnect` |
+| `src/rtl/interconnect/` | `address_decoder`, `bus_interconnect` |
 | `src/rtl/cpu/` | `cpu` top; `fetch/`, `core/`, `alu/` sub-folders |
-| `src/rtl/memory/` | `instruction_memory`, `data_memory`, `memory_subsystem` (plus unused `gpu_memory`) |
-| `src/rtl/gpu/` | `gpu` top, `core/gpu_register` (plus unused `gpu_core`, `pixel_engine`, empty `gpu_decoder`) |
+| `src/rtl/memory/` | `instruction_rom`, `data_ram`, `memory_subsystem` (plus unused `gpu_bus_master`) |
+| `src/rtl/gpu/` | `gpu` top, `mmio/gpu_register`, and unwired modules in `future/` |
 | `src/rtl/soc/` | `system` (SoC), `fpga_top` (board wrapper) |
 | `src/sim/testbench/` | Unit + integration testbenches (`cpu/`, `bus/`, `memory/`, `gpu/`, `soc/`) |
 | `src/sim/build/`, `src/sim/waveforms/` | Compiled sims and VCD dumps (git-ignored) |
-| `src/programs/` | Hex memory images (`genesis_*.hex`, `data_memory_*.hex`) |
+| `src/programs/` | Hex memory images (`boot_program.hex`, `data_ram_init.hex`) |
 | `src/constraints/` | `sipeed_tang_primer_20k.cst` (pins), `.sdc` (clock) |
 | `run.sh` | Icarus Verilog regression + GTKWave launcher |
 | `lacooda.gprj` | Gowin IDE project file list |
@@ -97,7 +97,7 @@ L0  Board      fpga_top
                   └─ system
 L1  SoC          ├─ cpu
                  ├─ bus_interconnect → address_decoder
-                 ├─ memory_subsystem → instruction_memory | data_memory
+                 ├─ memory_subsystem → instruction_rom | data_ram
                  └─ gpu → gpu_register
 L2  CPU edge       cpu → instruction_fetch (I-BUS) | cpu_core (D-BUS)
 L3  Datapath         cpu_core → cpu_decoder | cpu_datapath | branch_unit
@@ -134,8 +134,8 @@ fpga_top  (src/rtl/soc/fpga_top.sv)
    ├─ u_bus_interconnect : bus_interconnect
    │  └─ u_address_decoder : address_decoder
    ├─ u_memory : memory_subsystem
-   │  ├─ u_instruction_memory : instruction_memory
-   │  └─ u_data_memory : data_memory
+   │  ├─ u_instruction_rom : instruction_rom
+   │  └─ u_data_ram : data_ram
    └─ u_gpu : gpu
       └─ u_gpu_register : gpu_register
 ```
@@ -262,13 +262,13 @@ typedef struct packed {
 
 Central source of truth for memory and MMIO **sizes** (not addresses).
 
-* `INSTRUCTION_MEMORY_BYTES = 32 * 1024` (32 KiB) → `INSTRUCTION_MEMORY_COUNT`
+* `INSTRUCTION_ROM_BYTES = 32 * 1024` (32 KiB) → `INSTRUCTION_ROM_WORDS`
   = 8192 words.
-* `DATA_MEMORY_BYTES = 32 * 1024` (32 KiB) → `DATA_MEMORY_COUNT` = 8192 words.
+* `DATA_RAM_BYTES = 32 * 1024` (32 KiB) → `DATA_RAM_WORDS` = 8192 words.
 * `GPU_MMIO_BYTES = 4 * 1024` (4 KiB) — the address space occupied by GPU
   registers. **Not framebuffer memory.**
-* `PROGRAM_FILE = "src/programs/genesis_32.hex"`,
-  `DATA_MEMORY_FILE = "src/programs/data_memory_32.hex"`.
+* `INSTRUCTION_ROM_INIT_FILE = "src/programs/boot_program.hex"`,
+  `DATA_RAM_INIT_FILE = "src/programs/data_ram_init.hex"`.
 * `validate_configuration()` — asserts sizes are positive and byte counts are
   divisible by `WORD_BYTES`.
 
@@ -297,8 +297,8 @@ typedef struct packed {
 
 Memory-map constants (see [Appendix C](#appendix-c--address-map)):
 
-* `DATA_MEMORY_BASE = 0`, `DATA_MEMORY_SIZE = DATA_MEMORY_COUNT * WORD_BYTES`,
-  `DATA_MEMORY_LIMIT = 0x0000_8000`.
+* `DATA_RAM_BASE = 0`, `DATA_RAM_SIZE = DATA_RAM_WORDS * WORD_BYTES`,
+  `DATA_RAM_LIMIT = 0x0000_8000`.
 * `GPU_BASE = 0x1000_0000`, `GPU_SIZE = 0x0000_1000`,
   `GPU_LIMIT = 0x1000_1000`.
 * `DDR3_BASE = 0x8000_0000`, `DDR3_SIZE = 0x0800_0000`,
@@ -374,25 +374,25 @@ Rules:
 * `valid` does not have to fall between back-to-back transactions; a new request
   may follow immediately in the next cycle.
 
-### 5.1 `address_decoder` — `src/rtl/bus/address_decoder.sv`
+### 5.1 `address_decoder` — `src/rtl/interconnect/address_decoder.sv`
 
 Pure combinational range comparison on the global byte address:
 
 ```systemverilog
-data_mem_sel = (addr >= DATA_MEMORY_BASE) && (addr < DATA_MEMORY_LIMIT); // [0x0, 0x8000)
+data_ram_sel = (addr >= DATA_RAM_BASE) && (addr < DATA_RAM_LIMIT); // [0x0, 0x8000)
 gpu_mmio_sel = (addr >= GPU_BASE)        && (addr < GPU_LIMIT);          // [0x1000_0000, 0x1000_1000)
 ```
 
 It produces two one-hot select signals and nothing else.
 
-### 5.2 `bus_interconnect` — `src/rtl/bus/bus_interconnect.sv`
+### 5.2 `bus_interconnect` — `src/rtl/interconnect/bus_interconnect.sv`
 
 Routes the **single CPU D-BUS master** to one of two slaves and muxes the
 response back.
 
 * Instantiates `address_decoder`.
-* **Data-memory request**: `valid = dbus_req.valid && data_mem_sel`,
-  `addr = dbus_req.addr - DATA_MEMORY_BASE` (global → memory-local byte address).
+* **Data-memory request**: `valid = dbus_req.valid && data_ram_sel`,
+  `addr = dbus_req.addr - DATA_RAM_BASE` (global → memory-local byte address).
 * **GPU request**: `valid = dbus_req.valid && gpu_mmio_sel`,
   `addr = dbus_req.addr - GPU_BASE` (e.g. `0x1000_0020 - 0x1000_0000 = 0x20`).
 * **Response mux**: passes through the selected slave's `bus_rsp_s`; for an
@@ -410,36 +410,36 @@ response back.
 container. It instantiates two **physically separate** memories so instruction
 fetch never contends with local data access:
 
-* `instruction_memory` — I-BUS slave (a read-only ROM).
-* `data_memory` — memory-bus slave (read/write BRAM).
+* `instruction_rom` — I-BUS slave (a read-only ROM).
+* `data_ram` — memory-bus slave (read/write BRAM).
 
 ```systemverilog
 module memory_subsystem (
     input  logic clk, rst,
     input  bus_pkg::bus_req_s ibus_req, output bus_pkg::bus_rsp_s ibus_rsp, // instruction ROM
-    input  bus_pkg::bus_req_s mem_req,  output bus_pkg::bus_rsp_s mem_rsp    // data BRAM
+    input  bus_pkg::bus_req_s data_ram_req,  output bus_pkg::bus_rsp_s data_ram_rsp    // data BRAM
 );
 ```
 
-### 6.1 `instruction_memory` — `src/rtl/memory/instruction_memory.sv`
+### 6.1 `instruction_rom` — `src/rtl/memory/instruction_rom.sv`
 
 An `8192 × 32` array loaded at elaboration by
-`$readmemh(memory_pkg::PROGRAM_FILE, mem)`.
+`$readmemh(memory_pkg::INSTRUCTION_ROM_INIT_FILE, rom_words)`.
 
 * `ibus_rsp = {ibus_req.valid, rdata}` → `ready` mirrors `valid` (zero wait
   states), and `rdata` is **combinational**.
 * Alignment/range check: address must be word-aligned (`addr % WORD_BYTES == 0`)
-  and `< INSTRUCTION_MEMORY_COUNT`. Misaligned/out-of-range reads return zero
+  and `< INSTRUCTION_ROM_WORDS`. Misaligned/out-of-range reads return zero
   and still complete.
-* Indexing: `mem[ibus_req.addr / WORD_BYTES]` (byte address → word index).
+* Indexing: `rom_words[ibus_req.addr / WORD_BYTES]` (byte address → word index).
 
-### 6.2 `data_memory` — `src/rtl/memory/data_memory.sv`
+### 6.2 `data_ram` — `src/rtl/memory/data_ram.sv`
 
 The local data RAM, inferred as FPGA block RAM. It is a memory-bus slave whose
 timing is intentionally **synchronous**, so Gowin can infer BSRAM.
 
 * Array: `8192 × 32` `word_t`, initialized by
-  `$readmemh(memory_pkg::DATA_MEMORY_FILE, mem)`.
+  `$readmemh(memory_pkg::DATA_RAM_INIT_FILE, ram_words)`.
 * **Range checking is not repeated here.** The interconnect already decided the
   address belongs to data memory; this module only checks **word alignment**
   (`addr % WORD_BYTES == 0`). Misaligned access → completes normally, reads zero,
@@ -453,9 +453,9 @@ LOAD / STORE timing (one response cycle, `ready == pending`):
 
 ```
 LOAD                                   STORE
-cyc N   mem_req.valid=1, ready=0        cyc N   mem_req.valid=1, ready=0
+cyc N   data_ram_req.valid=1, ready=0        cyc N   data_ram_req.valid=1, ready=0
         addr presented                          addr+wdata presented
-        (rising edge) capture mem[idx]          (rising edge) write mem[idx]
+        (rising edge) capture ram_words[idx]          (rising edge) write ram_words[idx]
 cyc N+1 ready=1, rdata=captured         cyc N+1 ready=1
         (CPU latches rdata)
 ```
@@ -492,8 +492,8 @@ assign retire       = instruction_available && !rst && (retire_valid || illegal_
   instructions `retire` too (they have no side effects) so the fetch unit cannot
   wedge at a bad `pc`.
 * Instantiated children: `instruction_fetch` (`u_instruction_fetch`) and
-  `cpu_core` (`u_cpu_core`). The `operand_a/operand_b/alu_result/flags/status`
-  outputs are retained only for simulation/debug observation.
+  `cpu_core` (`u_cpu_core`). Tests observe internal operands, results, and
+  status through the instance hierarchy.
 
 ### 7.2 `instruction_fetch` — `src/rtl/cpu/fetch/instruction_fetch.sv`
 
@@ -808,7 +808,7 @@ The remaining status bits (busy/error/command_done/display_active/
 framebuffer_valid) read as zero. Future GPU components are meant to be added
 *behind this boundary* without changing the SoC-facing bus interface.
 
-### 9.2 `gpu_register` — `src/rtl/gpu/core/gpu_register.sv`
+### 9.2 `gpu_register` — `src/rtl/gpu/mmio/gpu_register.sv`
 
 A direct **bus slave** implementing the MMIO register bank.
 
@@ -879,8 +879,8 @@ board pins and retirement status is exposed through the LEDs.
 ### 10.3 Memory images
 
 `src/programs/` holds the `$readmemh` images. Each immediate is stored in the
-word that follows its instruction. `genesis_32.hex` (the active
-`PROGRAM_FILE`) is a small program whose first words decode as:
+word that follows its instruction. `boot_program.hex` (the active
+`INSTRUCTION_ROM_INIT_FILE`) is a small program whose first words decode as:
 
 | Word (index) | Hex | Decodes to |
 | --- | --- | --- |
@@ -891,14 +891,14 @@ word that follows its instruction. `genesis_32.hex` (the active
 | 4 | `00C00081` | `STORE R1,[R2+ …]` (`MEM_STORE`, rs1=2, rs2=1) |
 | 5 | `00000008` | immediate `8` |
 
-`data_memory_32.hex` is the 8192-word data RAM image (all zero in the shipped
+`data_ram_init.hex` is the 8192-word data RAM image (all zero in the shipped
 tree). The `_64.hex` variants are legacy and are not referenced by
 `memory_pkg`.
 
 ### 10.4 `run.sh`
 
 The regression runner (`./run.sh`). It must be run **from the repository root**
-so the relative `PROGRAM_FILE`/`DATA_MEMORY_FILE` paths resolve.
+so the relative `INSTRUCTION_ROM_INIT_FILE`/`DATA_RAM_INIT_FILE` paths resolve.
 
 * Compiles each test with `iverilog -g2012 -Wall`, runs with `vvp`, and moves
   the produced VCD into `src/sim/waveforms/`.
@@ -909,7 +909,7 @@ so the relative `PROGRAM_FILE`/`DATA_MEMORY_FILE` paths resolve.
   4. Decoder (`cpu_decoder_tb`)
   5. CPU core (`cpu_core_tb`)
   6. Program counter / branch unit / instruction fetch (individual TBs)
-  7. Data memory (`data_memory_tb`)
+  7. Data memory (`data_ram_tb`)
   8. Bus interconnect (`bus_interconnect_tb`)
   9. CPU I-BUS/D-BUS (`cpu_tb`)
   10. CPU system end-to-end (`system_tb`)
@@ -918,19 +918,13 @@ so the relative `PROGRAM_FILE`/`DATA_MEMORY_FILE` paths resolve.
   `--word32`/`--both` flags add `-DLACOODA_WORD_WIDTH` defines but the design is
   hard-locked to 32 bits (see [Appendix F](#appendix-f--not-wired--reserved)).
 
-**Current status (verified):** `./run.sh --no-gui` runs the engine tests through
-`branch_unit` cleanly, then **stops at the instruction-fetch test** with 4
-failing checks (its `wait_for_buffered_pc`/immediate-buffer expectations), so
-the later data-memory / interconnect / CPU / system / GPU tests are not reached
-in a single run. This matches the note in `README.md` Appendix F. Run the
-individual suites (or fix `instruction_fetch_tb.sv`) to exercise the tail of the
-list.
+**Current status (verified):** `./run.sh --no-gui` passes the complete
+regression, including instruction fetch, CPU, system, and GPU tests.
 
 ### 10.5 Gowin project
 
 `lacooda.gprj` lists the RTL sources, constraints, and hex images for the Gowin
 IDE (device `GW2A-LV18PG256C8/I7`). Note it still lists the (empty)
-`src/rtl/gpu/core/gpu_decoder.sv`. Synthesis/PnR outputs land under `impl/`
 (git-ignored except the process-config JSON files).
 
 ### 10.6 Testbenches
@@ -946,7 +940,7 @@ IDE (device `GW2A-LV18PG256C8/I7`). Note it still lists the (empty)
 | `cpu/branch_unit_tb.sv` | `branch_unit` | Each branch condition |
 | `cpu/instruction_fetch_tb.sv` | `instruction_fetch` | Fetch FSM + buffering |
 | `cpu/cpu_tb.sv` | `cpu` | I-BUS + D-BUS end-to-end |
-| `memory/data_memory_tb.sv` | `data_memory` | Synchronous handshake, alignment |
+| `memory/data_ram_tb.sv` | `data_ram` | Synchronous handshake, alignment |
 | `bus/bus_interconnect_tb.sv` | `bus_interconnect` | Routing + response mux |
 | `gpu/gpu_tb.sv` | `gpu` | MMIO read/write of all registers |
 | `soc/cpu_system_tb.sv` | `system` | Full program: MOVI/STORE/LOAD/BEQ |
@@ -971,7 +965,7 @@ One instruction word (LSB first):
 * Immediate-taking instructions (branch/jump, LOAD/STORE, or `I=1` ALU) are
   followed by a **second full word**.
 
-Worked examples (from `genesis_32.hex`):
+Worked examples (from `boot_program.hex`):
 
 | Hex | Fields | Meaning |
 | --- | --- | --- |
@@ -1017,7 +1011,7 @@ Worked examples (from `genesis_32.hex`):
 
 | Region | Base | Size | Limit (exclusive) | Owner |
 | --- | --- | --- | --- | --- |
-| Data RAM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `data_memory` |
+| Data RAM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `data_ram` |
 | GPU MMIO | `0x1000_0000` | 4 KiB (`0x1000`) | `0x1000_1000` | `gpu_register` |
 | DDR3 (reserved) | `0x8000_0000` | 128 MiB (`0x0800_0000`) | `0x8800_0000` | *none — reserved only* |
 
@@ -1044,13 +1038,13 @@ reachable only through the I-BUS.
 | `logic_unit` | `src/rtl/cpu/alu/logic_unit.sv` | — |
 | `shifter` | `src/rtl/cpu/alu/shifter.sv` | — |
 | `comparator` | `src/rtl/cpu/alu/comparator.sv` | — |
-| `bus_interconnect` | `src/rtl/bus/bus_interconnect.sv` | `address_decoder` |
-| `address_decoder` | `src/rtl/bus/address_decoder.sv` | — |
-| `memory_subsystem` | `src/rtl/memory/memory_subsystem.sv` | `instruction_memory`, `data_memory` |
-| `instruction_memory` | `src/rtl/memory/instruction_memory.sv` | — |
-| `data_memory` | `src/rtl/memory/data_memory.sv` | — |
+| `bus_interconnect` | `src/rtl/interconnect/bus_interconnect.sv` | `address_decoder` |
+| `address_decoder` | `src/rtl/interconnect/address_decoder.sv` | — |
+| `memory_subsystem` | `src/rtl/memory/memory_subsystem.sv` | `instruction_rom`, `data_ram` |
+| `instruction_rom` | `src/rtl/memory/instruction_rom.sv` | — |
+| `data_ram` | `src/rtl/memory/data_ram.sv` | — |
 | `gpu` | `src/rtl/gpu/gpu.sv` | `gpu_register` |
-| `gpu_register` | `src/rtl/gpu/core/gpu_register.sv` | — |
+| `gpu_register` | `src/rtl/gpu/mmio/gpu_register.sv` | — |
 
 ### Appendix E — Glossary
 
@@ -1073,17 +1067,15 @@ reachable only through the I-BUS.
 These exist in the tree but are **not instantiated in the live hierarchy**. They
 are listed here for orientation only:
 
-* `src/rtl/gpu/core/gpu_core.sv` — a GPU status/config/validation module
+* `src/rtl/gpu/future/gpu_core.sv` — a GPU status/config/validation module
   (framebuffer-valid logic, reserved `always_ff`). Not instantiated; `gpu.sv`
   currently produces status inline.
-* `src/rtl/gpu/core/pixel_engine.sv` — row-major framebuffer address generation
+* `src/rtl/gpu/future/pixel_engine.sv` — row-major framebuffer address generation
   (`base + (y*width + x) * PIXEL_BYTES` with bounds check). Not instantiated.
-* `src/rtl/memory/gpu_memory.sv` — a GPU-side **bus master** bridge
+* `src/rtl/gpu/future/gpu_bus_master.sv` — a GPU-side **bus master** bridge
   (`gpu_mem_req_s` ↔ `bus_req_s`, one outstanding transaction). Not instantiated.
-* `src/rtl/gpu/core/gpu_decoder.sv` — **empty file**; still referenced by
-  `run.sh` and `lacooda.gprj`.
 * **DDR3** — `bus_pkg` reserves `[0x8000_0000, 0x8800_0000)` but there is no DDR3
   controller; the region is unmapped and the `.cst` DDR3 pins are commented out.
 * **`--word32` / `--both` and `_64.hex` files** — legacy from a parameterized
   era; `cpu_pkg::WORD_WIDTH` is now hard-locked to 32 and `memory_pkg` points at
-  the `_32` images.
+  the 32-bit `boot_program.hex` and `data_ram_init.hex` images.

@@ -44,11 +44,12 @@ module instruction_fetch_tb;
         .redirect_target(redirect_target),
         .ibus_req(ibus_req),
         .ibus_rsp(ibus_rsp),
-        .pc(pc),
         .instruction(instruction),
         .immediate_word(immediate_word),
         .instruction_available(instruction_available)
     );
+
+    assign pc = dut.pc;
 
     task automatic check(input logic condition, input string description);
         begin
@@ -79,6 +80,13 @@ module instruction_fetch_tb;
         #1;
         check(ibus_req.valid && ibus_req.addr === word_t'(0),
               "run starts I-BUS request at current PC");
+
+        // A running CPU must not consume response data before ready.
+        @(posedge clk);
+        #1;
+        check(ibus_req.valid && !instruction_available &&
+              ibus_req.addr === word_t'(0),
+              "waiting I-BUS request does not fill the buffer");
 
         // Started request survives pause and keeps address stable.
         @(negedge clk);

@@ -35,7 +35,6 @@ module cpu_core (
     input  logic dbus_ready,
     input  cpu_pkg::word_t dbus_rdata,
 
-    output logic decode_valid,
     output logic illegal_instr,
     output logic retire_valid,
 
@@ -54,14 +53,7 @@ module cpu_core (
     output logic dbus_valid,
     output logic dbus_write,
     output cpu_pkg::word_t dbus_addr,
-    output cpu_pkg::word_t dbus_wdata,
-
-    output cpu_pkg::word_t operand_a,
-    output cpu_pkg::word_t operand_b,
-    output cpu_pkg::word_t alu_result,
-
-    output cpu_pkg::flags_s flags,
-    output cpu_pkg::status_t status
+    output cpu_pkg::word_t dbus_wdata
 );
 
     cpu_pkg::reg_addr_t rs1;
@@ -74,7 +66,7 @@ module cpu_core (
     logic imm_sel;
     logic register_write_enable;
     logic flags_write_enable;
-    logic alu_valid;
+    logic decode_valid;
 
     // Stage 6 decoded branch controls.
     logic branch_enable;
@@ -88,6 +80,9 @@ module cpu_core (
     logic memory_op;
 
     cpu_pkg::word_t store_data;
+    cpu_pkg::word_t operand_a;
+    cpu_pkg::word_t operand_b;
+    cpu_pkg::word_t alu_result;
 
     logic effective_register_write;
     logic effective_flags_write;
@@ -102,7 +97,6 @@ module cpu_core (
     ex_state_e ex_state;
 
     logic alu_start;
-    logic alu_busy;
     logic alu_done;
     logic mem_accept;
 
@@ -243,12 +237,7 @@ module cpu_core (
         .operand_b(operand_b),
         .store_data(store_data),
         .alu_result(alu_result),
-        .alu_valid(alu_valid),
-        .alu_busy(alu_busy),
-        .alu_done(alu_done),
-
-        .flags(flags),
-        .status(status)
+        .alu_done(alu_done)
     );
 
     // --------------------------------------------------------

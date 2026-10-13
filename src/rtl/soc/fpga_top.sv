@@ -53,7 +53,6 @@ module fpga_top (
     // ------------------------------------------------------------
     // CPU system
     // ------------------------------------------------------------
-    cpu_pkg::word_t        pc;
     logic retire_valid;
     logic illegal_instr;
 
@@ -62,7 +61,6 @@ module fpga_top (
         .rst           (rst),
         .run           (run),
 
-        .pc            (pc),
         .retire_valid  (retire_valid),
         .illegal_instr (illegal_instr)
     );

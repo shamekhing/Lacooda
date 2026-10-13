@@ -33,7 +33,6 @@ module cpu_tb;
     instruction_t instruction;
     logic execution_valid;
     logic illegal_instruction;
-    word_t result;
 
     instruction_t program_words [0:13];
 
@@ -50,13 +49,12 @@ module cpu_tb;
         .dbus_req(dbus_req),
         .dbus_rsp(dbus_rsp),
 
-        .pc(pc),
         .retire_valid(execution_valid),
         .illegal_instr(illegal_instruction)
     );
 
+    assign pc = dut.u_instruction_fetch.pc;
     assign instruction = dut.instruction;
-    assign result = dut.alu_result;
 
     // Controllable instruction-bus slave used only by this testbench.
     // It can insert arbitrary fetch wait states through ibus_allow.

@@ -143,14 +143,14 @@ run_test "INSTRUCTION FETCH / I-BUS TEST" instruction_fetch_tb instruction_fetch
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/sim/testbench/cpu/instruction_fetch_tb.sv
 
-run_test "DATA MEMORY BUS TEST" data_memory_tb data_memory_sim data_memory.vcd \
+run_test "DATA RAM BUS TEST" data_ram_tb data_ram_sim data_ram.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
     src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/memory/data_memory.sv \
-    src/sim/testbench/memory/data_memory_tb.sv
+    src/rtl/memory/data_ram.sv \
+    src/sim/testbench/memory/data_ram_tb.sv
 
 run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_interconnect.vcd \
     src/rtl/packages/opcode_pkg.sv \
@@ -158,8 +158,8 @@ run_test "BUS INTERCONNECT TEST" bus_interconnect_tb bus_interconnect_sim bus_in
     src/rtl/packages/alu_pkg.sv \
     src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/bus/address_decoder.sv \
-    src/rtl/bus/bus_interconnect.sv \
+    src/rtl/interconnect/address_decoder.sv \
+    src/rtl/interconnect/bus_interconnect.sv \
     src/sim/testbench/bus/bus_interconnect_tb.sv
 
 run_test "FINAL CPU I-BUS / D-BUS TEST" cpu_tb cpu_sim cpu.vcd \
@@ -205,12 +205,12 @@ run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/rtl/cpu/cpu.sv \
-    src/rtl/bus/address_decoder.sv \
-    src/rtl/bus/bus_interconnect.sv \
-    src/rtl/memory/instruction_memory.sv \
-    src/rtl/memory/data_memory.sv \
+    src/rtl/interconnect/address_decoder.sv \
+    src/rtl/interconnect/bus_interconnect.sv \
+    src/rtl/memory/instruction_rom.sv \
+    src/rtl/memory/data_ram.sv \
     src/rtl/memory/memory_subsystem.sv \
-    src/rtl/gpu/core/gpu_register.sv \
+    src/rtl/gpu/mmio/gpu_register.sv \
     src/rtl/gpu/gpu.sv \
     src/rtl/soc/system.sv \
     src/sim/testbench/soc/cpu_system_tb.sv
@@ -221,8 +221,7 @@ run_test "GPU MMIO REGISTER TEST" gpu_tb gpu_sim gpu.vcd \
     src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/packages/gpu_pkg.sv \
-    src/rtl/gpu/core/gpu_decoder.sv \
-    src/rtl/gpu/core/gpu_register.sv \
+    src/rtl/gpu/mmio/gpu_register.sv \
     src/rtl/gpu/gpu.sv \
     src/sim/testbench/gpu/gpu_tb.sv
     
@@ -244,7 +243,7 @@ gtkwave \
     src/sim/waveforms/program_counter.vcd \
     src/sim/waveforms/branch_unit.vcd \
     src/sim/waveforms/instruction_fetch.vcd \
-    src/sim/waveforms/data_memory.vcd \
+    src/sim/waveforms/data_ram.vcd \
     src/sim/waveforms/bus_interconnect.vcd \
     src/sim/waveforms/cpu.vcd \
     src/sim/waveforms/system.vcd

@@ -3,12 +3,15 @@
   "verilog.includes": [
     "src/rtl",
     "src/rtl/packages",
-    "src/rtl/bus",
+    "src/rtl/interconnect",
     "src/rtl/cpu",
     "src/rtl/cpu/alu",
     "src/rtl/cpu/core",
     "src/rtl/cpu/fetch",
     "src/rtl/memory",
+    "src/rtl/gpu",
+    "src/rtl/gpu/mmio",
+    "src/rtl/gpu/future",
     "src/rtl/soc",
     "src/constraints",
     "src/sim/testbench"

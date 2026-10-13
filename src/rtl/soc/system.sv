@@ -8,7 +8,6 @@ module system (
     input logic rst,
     input logic run,
 
-    output cpu_pkg::word_t pc,
     output logic retire_valid,
     output logic illegal_instr
 );
@@ -26,8 +25,8 @@ module system (
     // LOCAL DATA MEMORY BUS
     // ========================================================
 
-    bus_pkg::bus_req_s data_mem_req;
-    bus_pkg::bus_rsp_s data_mem_rsp;
+    bus_pkg::bus_req_s data_ram_req;
+    bus_pkg::bus_rsp_s data_ram_rsp;
 
     // ========================================================
     // GPU BUS
@@ -50,7 +49,6 @@ module system (
         .dbus_req        (dbus_req),
         .dbus_rsp        (dbus_rsp),
 
-        .pc             (pc),
         .retire_valid   (retire_valid),
         .illegal_instr  (illegal_instr)
     );
@@ -63,8 +61,8 @@ module system (
         .dbus_req         (dbus_req),
         .dbus_rsp         (dbus_rsp),
 
-        .data_mem_req (data_mem_req),
-        .data_mem_rsp (data_mem_rsp),
+        .data_ram_req (data_ram_req),
+        .data_ram_rsp (data_ram_rsp),
 
         .gpu_mmio_req         (gpu_mmio_req),
         .gpu_mmio_rsp         (gpu_mmio_rsp)
@@ -80,8 +78,8 @@ module system (
 
         .ibus_req (ibus_req),
         .ibus_rsp (ibus_rsp),
-        .mem_req  (data_mem_req),
-        .mem_rsp  (data_mem_rsp)
+        .data_ram_req  (data_ram_req),
+        .data_ram_rsp  (data_ram_rsp)
     );
 
     // ========================================================

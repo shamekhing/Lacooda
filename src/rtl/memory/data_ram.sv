@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
-`ifndef DATA_MEMORY_SV
-`define DATA_MEMORY_SV
+`ifndef DATA_RAM_SV
+`define DATA_RAM_SV
 
 // ============================================================
 // Data memory
@@ -29,9 +29,9 @@
 // The address decoder/interconnect is responsible for deciding
 // whether an address belongs to this memory region.
 //
-// Therefore data_memory does not repeat the global range check.
+// Therefore data_ram does not repeat the global range check.
 //
-// If mem_req.valid reaches this module, the interconnect has
+// If data_ram_req.valid reaches this module, the interconnect has
 // already selected data memory.
 //
 // This module only checks whether the local byte address is
@@ -80,7 +80,7 @@
 //
 // A transaction completes when:
 //
-//     mem_req.valid && mem_rsp.ready
+//     data_ram_req.valid && data_ram_rsp.ready
 //
 // The CPU holds its request stable while ready is low.
 //
@@ -90,12 +90,12 @@
 // valid does NOT have to fall between transactions.
 // ============================================================
 
-module data_memory (
+module data_ram (
     input  logic              clk,
     input  logic              rst,
 
-    input  bus_pkg::bus_req_s mem_req,
-    output bus_pkg::bus_rsp_s mem_rsp
+    input  bus_pkg::bus_req_s data_ram_req,
+    output bus_pkg::bus_rsp_s data_ram_rsp
 );
 
 
@@ -111,7 +111,7 @@ module data_memory (
     // FPGA block-RAM inference.
     // ========================================================
 
-    cpu_pkg::word_t mem [0 : memory_pkg::DATA_MEMORY_COUNT-1];
+    cpu_pkg::word_t ram_words [0 : memory_pkg::DATA_RAM_WORDS-1];
 
     // ========================================================
     // INITIALIZATION
@@ -120,7 +120,7 @@ module data_memory (
     // Do NOT initialize this RAM with:
     //
     //     for (...)
-    //         mem[i] = '0;
+    //         ram_words[i] = '0;
     //
     // At 32 KiB that produces thousands of elaborated loop
     // iterations and previously hit Gowin's synthesis loop
@@ -136,7 +136,7 @@ module data_memory (
     // ========================================================
 
     initial begin
-        $readmemh(memory_pkg::DATA_MEMORY_FILE, mem);
+        $readmemh(memory_pkg::DATA_RAM_INIT_FILE, ram_words);
     end
 
 
@@ -170,7 +170,7 @@ module data_memory (
     logic addr_valid;
 
     assign addr_valid =
-        (mem_req.addr % cpu_pkg::WORD_BYTES) == 0;
+        (data_ram_req.addr % cpu_pkg::WORD_BYTES) == 0;
 
 
     // ========================================================
@@ -182,11 +182,11 @@ module data_memory (
     // The important difference from the old implementation is
     // that this register is loaded inside always_ff:
     //
-    //     read_data <= mem[index];
+    //     read_data <= ram_words[index];
     //
     // rather than reading:
     //
-    //     rdata = mem[index];
+    //     rdata = ram_words[index];
     //
     // combinationally.
     //
@@ -209,7 +209,7 @@ module data_memory (
     //     The request accepted on the previous rising edge has
     //     completed and its response is available.
     //
-    // mem_rsp.ready is generated from this state.
+    // data_ram_rsp.ready is generated from this state.
     // ========================================================
 
     logic pending;
@@ -261,7 +261,7 @@ module data_memory (
             // previous response waiting.
             // ------------------------------------------------
 
-            if (mem_req.valid && !pending) begin
+            if (data_ram_req.valid && !pending) begin
                 // --------------------------------------------
                 // The request will receive a response during
                 // the following cycle.
@@ -282,12 +282,12 @@ module data_memory (
                     // write is synchronous.
                     // ----------------------------------------
 
-                    if (mem_req.op == bus_pkg::BUS_WRITE) begin
+                    if (data_ram_req.op == bus_pkg::BUS_WRITE) begin
 
-                        mem[
-                            mem_req.addr
+                        ram_words[
+                            data_ram_req.addr
                             / cpu_pkg::WORD_BYTES
-                        ] <= mem_req.wdata;
+                        ] <= data_ram_req.wdata;
 
                     end
 
@@ -304,8 +304,8 @@ module data_memory (
 
                     else begin
 
-                        read_data <= mem[
-                            mem_req.addr
+                        read_data <= ram_words[
+                            data_ram_req.addr
                             / cpu_pkg::WORD_BYTES
                         ];
 
@@ -367,8 +367,8 @@ module data_memory (
 
     always_comb begin
 
-        mem_rsp.ready = pending;
-        mem_rsp.rdata = read_data;
+        data_ram_rsp.ready = pending;
+        data_ram_rsp.rdata = read_data;
 
     end
 

@@ -24,14 +24,14 @@
 //         = bus slave
 //         = CPU accesses GPU registers
 //
-//     gpu_memory
+//     gpu_bus_master
 //         = bus master
 //         = GPU accesses system memory
 //
 // Only one transaction may be outstanding at a time.
 // ============================================================
 
-module gpu_memory (
+module gpu_bus_master (
     input logic clk,
     input logic rst,
 

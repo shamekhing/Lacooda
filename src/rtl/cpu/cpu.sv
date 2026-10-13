@@ -36,14 +36,11 @@ module cpu (
     output bus_pkg::bus_req_s dbus_req,
     input  bus_pkg::bus_rsp_s dbus_rsp,
 
-    // Observation outputs retained for simulation/debug.
-    output cpu_pkg::word_t        pc,
     output logic                  retire_valid,
     output logic                  illegal_instr
 );
 
 
-    logic decode_valid;
     logic core_enable;
 
     logic redirect;
@@ -97,7 +94,6 @@ module cpu (
         .redirect_target       (redirect_target),
         .ibus_req              (ibus_req),
         .ibus_rsp              (ibus_rsp),
-        .pc                    (pc),
         .instruction           (instruction),
         .immediate_word        (immediate_word),
         .instruction_available (instruction_available)
@@ -106,13 +102,6 @@ module cpu (
     // ========================================================
     // EXECUTION CORE / D-BUS
     // ========================================================
-
-    cpu_pkg::word_t operand_a;
-    cpu_pkg::word_t operand_b;
-    cpu_pkg::word_t alu_result;
-
-    cpu_pkg::flags_s  flags;
-    cpu_pkg::status_t status;
 
     cpu_core u_cpu_core (
         .clk            (clk),
@@ -128,7 +117,6 @@ module cpu (
         .dbus_ready     (dbus_rsp.ready),
         .dbus_rdata     (dbus_rsp.rdata),
 
-        .decode_valid   (decode_valid),
         .illegal_instr  (illegal_instr),
         .retire_valid   (retire_valid),
 
@@ -138,14 +126,7 @@ module cpu (
         .dbus_valid     (dbus_valid),
         .dbus_write     (dbus_write),
         .dbus_addr      (dbus_addr),
-        .dbus_wdata     (dbus_wdata),
-
-        .operand_a      (operand_a),
-        .operand_b      (operand_b),
-        .alu_result     (alu_result),
-
-        .flags          (flags),
-        .status         (status)
+        .dbus_wdata     (dbus_wdata)
     );
 
 endmodule

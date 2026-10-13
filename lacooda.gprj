@@ -5,8 +5,8 @@
     <Version>5</Version>
     <Device name="GW2A-18C" pn="GW2A-LV18PG256C8/I7">gw2a18c-011</Device>
     <FileList>
-        <File path="src/rtl/bus/address_decoder.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/bus/bus_interconnect.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/interconnect/address_decoder.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/interconnect/bus_interconnect.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/alu/alu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/alu/arithmetic.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/alu/comparator.sv" type="file.verilog" enable="1"/>
@@ -21,12 +21,11 @@
         <File path="src/rtl/cpu/cpu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/instruction_fetch.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/cpu/fetch/program_counter.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/gpu/core/gpu_decoder.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/gpu/core/gpu_register.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/gpu/mmio/gpu_register.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/gpu/gpu.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/memory/data_memory.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/memory/data_ram.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/memory_subsystem.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/memory/instruction_memory.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/memory/instruction_rom.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/alu_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/bus_pkg.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/packages/cpu_pkg.sv" type="file.verilog" enable="1"/>
@@ -37,9 +36,7 @@
         <File path="src/rtl/soc/fpga_top.sv" type="file.verilog" enable="1"/>
         <File path="src/constraints/sipeed_tang_primer_20k.cst" type="file.cst" enable="1"/>
         <File path="src/constraints/sipeed_tang_primer_20k.sdc" type="file.sdc" enable="1"/>
-        <File path="src/programs/data_memory_32.hex" type="file.other" enable="1"/>
-        <File path="src/programs/data_memory_64.hex" type="file.other" enable="1"/>
-        <File path="src/programs/genesis_32.hex" type="file.other" enable="1"/>
-        <File path="src/programs/genesis_64.hex" type="file.other" enable="1"/>
+        <File path="src/programs/data_ram_init.hex" type="file.other" enable="1"/>
+        <File path="src/programs/boot_program.hex" type="file.other" enable="1"/>
     </FileList>
 </Project>

@@ -6,15 +6,15 @@ module bus_interconnect (
     output bus_pkg::bus_rsp_s dbus_rsp,
 
     // Internal data BRAM
-    output bus_pkg::bus_req_s data_mem_req,
-    input  bus_pkg::bus_rsp_s data_mem_rsp,
+    output bus_pkg::bus_req_s data_ram_req,
+    input  bus_pkg::bus_rsp_s data_ram_rsp,
 
     // GPU MMIO
     output bus_pkg::bus_req_s gpu_mmio_req,
     input  bus_pkg::bus_rsp_s gpu_mmio_rsp
 );
 
-    logic data_mem_sel;
+    logic data_ram_sel;
     logic gpu_mmio_sel;
 
     // ========================================================
@@ -23,7 +23,7 @@ module bus_interconnect (
 
     address_decoder u_address_decoder (
         .addr            (dbus_req.addr),
-        .data_mem_sel (data_mem_sel),
+        .data_ram_sel (data_ram_sel),
         .gpu_mmio_sel         (gpu_mmio_sel)
     );
 
@@ -33,11 +33,11 @@ module bus_interconnect (
     // ========================================================
 
     always_comb begin
-        data_mem_req = '0;
-        data_mem_req.valid = dbus_req.valid && data_mem_sel;
-        data_mem_req.op = dbus_req.op;
-        data_mem_req.addr = dbus_req.addr - bus_pkg::DATA_MEMORY_BASE;
-        data_mem_req.wdata = dbus_req.wdata;
+        data_ram_req = '0;
+        data_ram_req.valid = dbus_req.valid && data_ram_sel;
+        data_ram_req.op = dbus_req.op;
+        data_ram_req.addr = dbus_req.addr - bus_pkg::DATA_RAM_BASE;
+        data_ram_req.wdata = dbus_req.wdata;
     end
 
     // ========================================================
@@ -68,8 +68,8 @@ module bus_interconnect (
     always_comb begin
         dbus_rsp = '0;
         if (dbus_req.valid) begin
-            if (data_mem_sel) begin
-                dbus_rsp = data_mem_rsp;
+            if (data_ram_sel) begin
+                dbus_rsp = data_ram_rsp;
             end else if (gpu_mmio_sel) begin
                 dbus_rsp = gpu_mmio_rsp;
             end else begin

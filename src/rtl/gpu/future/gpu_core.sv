@@ -18,9 +18,6 @@
 // ============================================================
 
 module gpu_core (
-    input logic clk,
-    input logic rst,
-
     input  gpu_pkg::gpu_config_s gpu_cfg,
     output gpu_pkg::gpu_status_s status
 );
@@ -118,30 +115,5 @@ module gpu_core (
 
     end
 
-
-    // ========================================================
-    // RESERVED SEQUENTIAL CORE
-    // ========================================================
-    //
-    // clk/rst are intentionally present now because gpu_core
-    // will own GPU execution state.
-    //
-    // Keeping the interface stable prevents us from changing
-    // the subsystem hierarchy when execution hardware is added.
-    // ========================================================
-
-    always_ff @(posedge clk or posedge rst) begin
-
-        if (rst) begin
-
-            // No persistent execution state yet.
-
-        end else begin
-
-            // Future GPU state transitions.
-
-        end
-
-    end
 
 endmodule

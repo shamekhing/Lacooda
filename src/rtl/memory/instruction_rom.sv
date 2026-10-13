@@ -19,30 +19,30 @@
 //   - slave_read_data is combinational
 // ============================================================
 
-module instruction_memory (
+module instruction_rom (
     input  bus_pkg::bus_req_s  ibus_req,
     output bus_pkg::bus_rsp_s  ibus_rsp
 );
 
-    cpu_pkg::instruction_t mem [0:memory_pkg::INSTRUCTION_MEMORY_COUNT-1];
+    cpu_pkg::instruction_t rom_words [0:memory_pkg::INSTRUCTION_ROM_WORDS-1];
     logic addr_valid;
     cpu_pkg::word_t rdata;
 
     initial begin
-        $readmemh(memory_pkg::PROGRAM_FILE, mem);
+        $readmemh(memory_pkg::INSTRUCTION_ROM_INIT_FILE, rom_words);
     end
 
     assign ibus_rsp = {ibus_req.valid, rdata};
 
     always_comb begin // check for valid in range address
         addr_valid = (ibus_req.addr % cpu_pkg::WORD_BYTES == 0) &&
-            ((ibus_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_MEMORY_COUNT);
+            ((ibus_req.addr / cpu_pkg::WORD_BYTES) < memory_pkg::INSTRUCTION_ROM_WORDS);
     end
 
     always_comb begin
         rdata = '0;
         if (ibus_req.valid && addr_valid)
-            rdata = cpu_pkg::word_t'(mem[ibus_req.addr / cpu_pkg::WORD_BYTES]);
+            rdata = cpu_pkg::word_t'(rom_words[ibus_req.addr / cpu_pkg::WORD_BYTES]);
     end
 
 endmodule

@@ -28,10 +28,8 @@ module cpu_core_tb;
     logic execution_valid;
 
     word_t operand_a;
-    word_t operand_b;
     word_t result;
 
-    flags_s alu_flags;
     cpu_pkg::status_t status_flags;
 
     integer tests = 0;
@@ -57,22 +55,19 @@ module cpu_core_tb;
         .dbus_ready(dbus_ready),
         .dbus_rdata(dbus_read_data),
 
-        .decode_valid(instruction_valid),
         .illegal_instr(illegal_instruction),
         .retire_valid(execution_valid),
 
         .dbus_valid(dbus_valid),
         .dbus_write(dbus_write),
         .dbus_addr(dbus_address),
-        .dbus_wdata(dbus_write_data),
-
-        .operand_a(operand_a),
-        .operand_b(operand_b),
-        .alu_result(result),
-
-        .flags(alu_flags),
-        .status(status_flags)
+        .dbus_wdata(dbus_write_data)
     );
+
+    assign instruction_valid = dut.decode_valid;
+    assign operand_a = dut.operand_a;
+    assign result = dut.alu_result;
+    assign status_flags = dut.u_cpu_datapath.status;
 
     // --------------------------------------------------------
     // INSTRUCTION HELPERS

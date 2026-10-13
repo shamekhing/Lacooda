@@ -25,8 +25,8 @@ module bus_interconnect_tb;
     bus_req_s dbus_req;
     bus_rsp_s dbus_rsp;
 
-    bus_req_s data_mem_req;
-    bus_rsp_s data_mem_rsp;
+    bus_req_s data_ram_req;
+    bus_rsp_s data_ram_rsp;
 
     bus_req_s gpu_mmio_req;
     bus_rsp_s gpu_mmio_rsp;
@@ -42,8 +42,8 @@ module bus_interconnect_tb;
         .dbus_req           (dbus_req),
         .dbus_rsp           (dbus_rsp),
 
-        .data_mem_req (data_mem_req),
-        .data_mem_rsp (data_mem_rsp),
+        .data_ram_req (data_ram_req),
+        .data_ram_rsp (data_ram_rsp),
 
         .gpu_mmio_req         (gpu_mmio_req),
         .gpu_mmio_rsp         (gpu_mmio_rsp)
@@ -104,7 +104,7 @@ module bus_interconnect_tb;
 
         dbus_req = '0;
 
-        data_mem_rsp = '0;
+        data_ram_rsp = '0;
         gpu_mmio_rsp = '0;
 
         #1;
@@ -115,7 +115,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            !data_mem_req.valid &&
+            !data_ram_req.valid &&
             !gpu_mmio_req.valid,
             "idle master selects no slave"
         );
@@ -128,7 +128,7 @@ module bus_interconnect_tb;
         dbus_req.op    = BUS_WRITE;
 
         dbus_req.addr =
-            DATA_MEMORY_BASE +
+            DATA_RAM_BASE +
             word_t'(3 * WORD_BYTES);
 
         dbus_req.wdata =
@@ -137,7 +137,7 @@ module bus_interconnect_tb;
         #1;
 
         check(
-            data_mem_req.valid,
+            data_ram_req.valid,
             "RAM address selects data memory"
         );
 
@@ -147,18 +147,18 @@ module bus_interconnect_tb;
         );
 
         check(
-            data_mem_req.op == BUS_WRITE,
+            data_ram_req.op == BUS_WRITE,
             "RAM write operation forwarded"
         );
 
         check(
-            data_mem_req.addr ===
+            data_ram_req.addr ===
                 word_t'(3 * WORD_BYTES),
             "RAM receives local address"
         );
 
         check(
-            data_mem_req.wdata ===
+            data_ram_req.wdata ===
                 word_t'(16'h55AA),
             "RAM receives write data"
         );
@@ -168,8 +168,8 @@ module bus_interconnect_tb;
             "CPU waits while RAM is not ready"
         );
 
-        data_mem_rsp.ready = 1'b1;
-        data_mem_rsp.rdata = word_t'(16'hCAFE);
+        data_ram_rsp.ready = 1'b1;
+        data_ram_rsp.rdata = word_t'(16'hCAFE);
 
         #1;
 
@@ -187,7 +187,7 @@ module bus_interconnect_tb;
         // GPU ROUTING
         // ====================================================
 
-        data_mem_rsp = '0;
+        data_ram_rsp = '0;
 
         dbus_req.valid = 1'b1;
         dbus_req.op    = BUS_WRITE;
@@ -206,7 +206,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            !data_mem_req.valid,
+            !data_ram_req.valid,
             "GPU address does not select RAM"
         );
 
@@ -296,7 +296,7 @@ module bus_interconnect_tb;
         #1;
 
         check(
-            !data_mem_req.valid &&
+            !data_ram_req.valid &&
             !gpu_mmio_req.valid,
             "address after GPU region selects no slave"
         );
@@ -321,7 +321,7 @@ module bus_interconnect_tb;
         );
 
         check(
-            !data_mem_req.valid &&
+            !data_ram_req.valid &&
             !gpu_mmio_req.valid,
             "all slave valid signals drop when idle"
         );

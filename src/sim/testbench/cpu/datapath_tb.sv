@@ -38,7 +38,6 @@ module cpu_datapath_tb;
     logic alu_busy;
     logic alu_done;
 
-    cpu_pkg::flags_s alu_flags;
     cpu_pkg::status_t status_flags;
 
     integer tests = 0;
@@ -73,13 +72,12 @@ module cpu_datapath_tb;
         .operand_b(operand_b),
         .store_data(store_data),
         .alu_result(result),
-        .alu_valid(valid),
-        .alu_busy(alu_busy),
-        .alu_done(alu_done),
-
-        .flags(alu_flags),
-        .status(status_flags)
+        .alu_done(alu_done)
     );
+
+    assign valid = dut.alu_valid;
+    assign alu_busy = dut.alu_busy;
+    assign status_flags = dut.status;
 
     // =========================================================
     // EXECUTE ONE OPERATION

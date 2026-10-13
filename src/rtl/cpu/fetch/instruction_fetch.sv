@@ -40,7 +40,6 @@ module instruction_fetch (
     input  bus_pkg::bus_rsp_s ibus_rsp,
 
     // Buffered instruction presented to the CPU core.
-    output cpu_pkg::word_t pc,
     output cpu_pkg::instruction_t instruction,
     output cpu_pkg::word_t immediate_word,
     output logic instruction_available
@@ -55,6 +54,7 @@ module instruction_fetch (
 
     fetch_state_e fetch_state;
     logic has_imm;
+    cpu_pkg::word_t pc;
 
     program_counter u_program_counter (
         .clk     (clk),
@@ -78,20 +78,27 @@ module instruction_fetch (
     assign has_imm = instruction_available && cpu_pkg::instr_uses_imm(instruction);
 
     always_ff @(posedge clk or posedge rst) begin
-        if (rst || retire) begin
+        if (rst) begin
             fetch_state           <= FETCH_IDLE;
             instruction_available <= 1'b0;
             instruction           <= '0;
             immediate_word        <= '0;
-        end else if (run) begin
+        end else if (retire) begin
+            fetch_state           <= run ? FETCH_INSTR : FETCH_IDLE;
+            instruction_available <= 1'b0;
+            instruction           <= '0;
+            immediate_word        <= '0;
+        end else begin
             case (fetch_state)
                 FETCH_IDLE: begin
-                    if (!instruction_available) fetch_state <= FETCH_INSTR;
+                    if (run && !instruction_available) fetch_state <= FETCH_INSTR;
                 end
                 FETCH_INSTR: begin
-                    instruction <= cpu_pkg::instruction_t'(ibus_rsp.rdata);
-                    fetch_state <= cpu_pkg::instr_uses_imm(ibus_rsp.rdata) ? FETCH_IMM : FETCH_IDLE;
-                    instruction_available <= !cpu_pkg::instr_uses_imm(ibus_rsp.rdata);
+                    if (ibus_rsp.ready) begin
+                        instruction <= cpu_pkg::instruction_t'(ibus_rsp.rdata);
+                        fetch_state <= cpu_pkg::instr_uses_imm(ibus_rsp.rdata) ? FETCH_IMM : FETCH_IDLE;
+                        instruction_available <= !cpu_pkg::instr_uses_imm(ibus_rsp.rdata);
+                    end
                 end
                 FETCH_IMM: begin
                     if (ibus_rsp.ready) begin

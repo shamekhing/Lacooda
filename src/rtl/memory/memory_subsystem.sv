@@ -8,18 +8,18 @@ module memory_subsystem (
     input logic rst,
     input  bus_pkg::bus_req_s ibus_req,
     output bus_pkg::bus_rsp_s ibus_rsp,
-    input  bus_pkg::bus_req_s mem_req,
-    output bus_pkg::bus_rsp_s mem_rsp
+    input  bus_pkg::bus_req_s data_ram_req,
+    output bus_pkg::bus_rsp_s data_ram_rsp
 );
-    instruction_memory u_instruction_memory (
+    instruction_rom u_instruction_rom (
         .ibus_req (ibus_req),
         .ibus_rsp (ibus_rsp)
     );
 
-    data_memory u_data_memory (
+    data_ram u_data_ram (
         .clk     (clk),
         .rst     (rst),
-        .mem_req (mem_req),
-        .mem_rsp (mem_rsp)
+        .data_ram_req (data_ram_req),
+        .data_ram_rsp (data_ram_rsp)
     );
 endmodule

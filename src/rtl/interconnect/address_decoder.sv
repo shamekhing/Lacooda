@@ -3,7 +3,7 @@
 module address_decoder (
     input  cpu_pkg::word_t addr,
 
-    output logic data_mem_sel,
+    output logic data_ram_sel,
     output logic gpu_mmio_sel
 );
 
@@ -18,7 +18,7 @@ module address_decoder (
         // [0, 32768)
         // ----------------------------------------------------
 
-        data_mem_sel = (addr >= bus_pkg::DATA_MEMORY_BASE) && (addr <  bus_pkg::DATA_MEMORY_LIMIT);
+        data_ram_sel = (addr >= bus_pkg::DATA_RAM_BASE) && (addr <  bus_pkg::DATA_RAM_LIMIT);
 
         // ----------------------------------------------------
         // GPU MMIO

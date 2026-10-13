@@ -1361,7 +1361,7 @@ REG_COUNT
 INSTRUCTION_WIDTH
 IMMEDIATE_WIDTH
 OPCODE_WIDTH
-INSTRUCTION_MEMORY_DEPTH
+INSTRUCTION_ROM_WORDS
 ```
 
 plus configuration such as the initialization filename.
@@ -1737,7 +1737,7 @@ verilog-staging/
 │   │   └── bus_interconnect.sv
 │   │
 │   ├── memory/
-│   │   ├── instruction_memory.sv
+│   │   ├── instruction_rom.sv
 │   │   └── cpu_memory.sv
 │   │
 │   └── soc/
@@ -2248,7 +2248,7 @@ AI activations
 GPU command/data structures
 ```
 
-The CPU's simple `instruction_memory.sv` is not a DDR3 controller.
+The CPU's simple `instruction_rom.sv` is not a DDR3 controller.
 
 DDR3 requires a controller and has variable latency, which is exactly
 why freezing a handshake-based CPU boundary first was useful.
@@ -4082,18 +4082,18 @@ The SoC now names bus ports by their role:
 | `ibus_req` / `ibus_rsp` | CPU instruction fetch requests and responses |
 | `dbus_req` / `dbus_rsp` | CPU load/store requests and responses |
 | `gpu_mmio_req` / `gpu_mmio_rsp` | CPU access to GPU control and status registers |
-| `data_mem_req` / `data_mem_rsp` | Interconnect access to local data memory |
-| `mem_req` / `mem_rsp` | Local request and response at the data RAM slave |
+| `data_ram_req` / `data_ram_rsp` | Interconnect access to local data memory |
+| `data_ram_req` / `data_ram_rsp` | Local request and response at the data RAM slave |
 
 The GPU register block previously called its CPU-facing MMIO port `ibus`.
 That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
-`mmio_rsp`. The former `cpu_memory` RAM is now `data_memory`, with matching
-`DATA_MEMORY_*` constants in the memory and bus packages.
+`mmio_rsp`. The former `cpu_memory` RAM is now `data_ram`, with matching
+`DATA_RAM_*` constants in the memory and bus packages.
 
 `cpu` now exposes both instruction and data master ports. It no longer
 instantiates the instruction ROM. In `system.sv`, `u_memory` is an instance of
-`memory_subsystem`; it owns the existing `instruction_memory` ROM and the
-synchronous `data_memory` BRAM. These remain physically separate memories,
+`memory_subsystem`; it owns the existing `instruction_rom` ROM and the
+synchronous `data_ram` BRAM. These remain physically separate memories,
 so instruction fetch does not contend with local data access. The data bus
 still passes through `bus_interconnect`, which maps local data RAM and GPU
 MMIO into the CPU address space. This refactor does not change the bus

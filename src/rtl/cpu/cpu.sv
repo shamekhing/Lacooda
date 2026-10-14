@@ -1,80 +1,112 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA CPU — final CPU boundary
+// LACOODA CPU WRAPPER
+// ============================================================
 //
-// Everything required to execute the ISA is inside this module:
-//   - program counter and instruction fetch buffering
-//   - cpu_decoder
-//   - register file
-//   - ALU/cpu_datapath
-//   - status register
-//   - branch unit
-//   - LOAD/STORE transaction handling
+// Preserves the original CPU hierarchy:
 //
-// Instruction memory is outside this CPU wrapper. Address routing and data
-// memory are outside it. The core uses two typed valid/ready interfaces:
+//   - instruction_fetch
+//   - cpu_core
 //
-//   I-BUS : external read-only instruction fetches
-//   D-BUS : external LOAD/STORE data transactions
+// External buses:
 //
-// A request that has been started is held until ready. A fetched instruction
-// is allowed to retire atomically even if run is deasserted meanwhile; run
-// controls whether another instruction fetch is started afterward.
+//   I-BUS : Instruction memory
+//   D-BUS : Data memory and MMIO
+//
+// Stage 1 changes:
+//
+//   - Supply write strobes on D-BUS.
+//   - Preserve existing instruction-fetch behavior.
+//   - Preserve existing CPU core scalar interfaces.
+//
+// Current CPU stores are full-word stores.
+//
+// IMPORTANT:
+//   cpu_core currently has no memory-fault input.
+//
+//   The extended response error field is not an architectural
+//   exception until cpu_core is extended to handle it.
+//
+//   Do not interpret this wrapper as complete CPU exception
+//   support.
 // ============================================================
 
 module cpu (
+
     input logic clk,
     input logic rst,
     input logic run,
 
-    // Independent instruction and data bus master interfaces.
-    // dbus_write=0 -> LOAD/read
-    // dbus_write=1 -> STORE/write
     output bus_pkg::bus_req_s ibus_req,
     input  bus_pkg::bus_rsp_s ibus_rsp,
+
     output bus_pkg::bus_req_s dbus_req,
     input  bus_pkg::bus_rsp_s dbus_rsp,
 
-    output logic                  retire_valid,
-    output logic                  illegal_instr
+    output logic retire_valid,
+    output logic illegal_instr
+
 );
 
+    // ========================================================
+    // EXECUTION CONTROL
+    // ========================================================
 
     logic core_enable;
 
     logic redirect;
     cpu_pkg::word_t redirect_target;
 
+    // ========================================================
+    // CPU CORE DATA BUS SIGNALS
+    // ========================================================
+
     logic dbus_valid;
     logic dbus_write;
+
     cpu_pkg::word_t dbus_addr;
     cpu_pkg::word_t dbus_wdata;
 
-    // The execution core retains its scalar control ports internally;
-    // the CPU boundary presents the data side as a typed bus value.
+    // ========================================================
+    // DATA BUS REQUEST
+    // ========================================================
+    //
+    // The CPU core exposes scalar memory signals.
+    //
+    // The wrapper converts them to the native bus structure.
+    //
+    // Full-word stores enable every byte lane.
+    //
+    // The interconnect and RAM perform address validation.
+    // ========================================================
+
     assign dbus_req.valid = dbus_valid;
-    assign dbus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
+
+    assign dbus_req.op =
+        dbus_write
+            ? bus_pkg::BUS_WRITE
+            : bus_pkg::BUS_READ;
+
     assign dbus_req.addr  = dbus_addr;
     assign dbus_req.wdata = dbus_wdata;
-
-    // A buffered instruction is already inside the CPU and is therefore
-    // allowed to finish regardless of a later run deassertion. This also
-    // guarantees that a waiting D-BUS request cannot be abandoned.
-    assign core_enable = instruction_available && !rst;
-
-    // Legal instructions retire when the core reports completion. Illegal
-    // instructions have no architectural side effects but are consumed so
-    // they cannot permanently wedge the fetch unit at one pc.
-
+    assign dbus_req.wstrb = bus_pkg::BUS_STRB_ALL;
 
     // ========================================================
-    // CPU INSTRUCTION BUS
+    // INSTRUCTION EXECUTION ENABLE
+    // ========================================================
+    //
+    // A buffered instruction may finish even if run falls.
+    //
+    // This prevents an active D-BUS request from being
+    // abandoned before its response arrives.
     // ========================================================
 
+    assign core_enable =
+        instruction_available && !rst;
 
     // ========================================================
-    // FETCH / I-BUS
+    // FETCHED INSTRUCTION
     // ========================================================
 
     cpu_pkg::instruction_t instruction;
@@ -83,50 +115,80 @@ module cpu (
     logic instruction_available;
     logic retire;
 
-    assign retire = instruction_available && !rst && (retire_valid || illegal_instr);
+    // ========================================================
+    // INSTRUCTION RETIREMENT
+    // ========================================================
+
+    assign retire =
+        instruction_available &&
+        !rst &&
+        (retire_valid || illegal_instr);
+
+    // ========================================================
+    // INSTRUCTION FETCH
+    // ========================================================
 
     instruction_fetch u_instruction_fetch (
+
         .clk                   (clk),
         .rst                   (rst),
         .run                   (run),
+
         .retire                (retire),
+
         .redirect              (redirect),
         .redirect_target       (redirect_target),
+
         .ibus_req              (ibus_req),
         .ibus_rsp              (ibus_rsp),
+
         .instruction           (instruction),
         .immediate_word        (immediate_word),
+
         .instruction_available (instruction_available)
+
     );
 
     // ========================================================
-    // EXECUTION CORE / D-BUS
+    // EXECUTION CORE
+    // ========================================================
+    //
+    // The existing core interface is preserved.
+    //
+    // A response with error=1 still asserts ready.
+    //
+    // Therefore a failed access currently appears as a
+    // completed access to cpu_core.
+    //
+    // Proper CPU fault handling requires extending cpu_core.
     // ========================================================
 
     cpu_core u_cpu_core (
-        .clk            (clk),
-        .rst            (rst),
+
+        .clk             (clk),
+        .rst             (rst),
 
         .core_enable     (core_enable),
+
         .instruction_word(instruction),
         .immediate_word  (immediate_word),
 
-        // ADC/SBC retain the existing fixed carry input behavior.
-        .carry_in       (1'b0),
+        .carry_in        (1'b0),
 
-        .dbus_ready     (dbus_rsp.ready),
-        .dbus_rdata     (dbus_rsp.rdata),
+        .dbus_ready      (dbus_rsp.ready),
+        .dbus_rdata      (dbus_rsp.rdata),
 
-        .illegal_instr  (illegal_instr),
-        .retire_valid   (retire_valid),
+        .illegal_instr   (illegal_instr),
+        .retire_valid    (retire_valid),
 
-        .redirect       (redirect),
-        .redirect_target(redirect_target),
+        .redirect        (redirect),
+        .redirect_target (redirect_target),
 
-        .dbus_valid     (dbus_valid),
-        .dbus_write     (dbus_write),
-        .dbus_addr      (dbus_addr),
-        .dbus_wdata     (dbus_wdata)
+        .dbus_valid      (dbus_valid),
+        .dbus_write      (dbus_write),
+        .dbus_addr       (dbus_addr),
+        .dbus_wdata      (dbus_wdata)
+
     );
 
 endmodule

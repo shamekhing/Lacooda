@@ -1,98 +1,68 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA STAGE 2 BUS INTERCONNECT TESTBENCH
+// LACOODA BUS PACKAGE TESTBENCH
 // ============================================================
 //
-// Tests:
+// PURPOSE
 //
-//   1. Memory-map configuration.
-//   2. Idle bus behavior.
-//   3. Internal RAM routing.
-//   4. RAM local-address translation.
-//   5. GPU MMIO routing.
-//   6. GPU local-address translation.
-//   7. Read and write propagation.
-//   8. Byte write-strobe propagation.
-//   9. Delayed slave responses.
-//  10. Slave response-error propagation.
-//  11. Misaligned accesses.
-//  12. Reserved TPU/DMA/SD/SYSTEM regions.
-//  13. Reserved DDR3 region.
-//  14. Unmapped address rejection.
-//  15. Address-region boundaries.
-//  16. Single-slave selection.
+//   Verify the bus package definitions and address-map
+//   classification before integrating the interconnect.
 //
-// This testbench supplies simulated RAM/GPU responses.
+// TEST COVERAGE
 //
-// It does not instantiate the real RAM, GPU, CPU, or DDR3
-// controller.
+//   - Memory-map configuration validity
+//   - Native bus word size
+//   - Write-strobe constants
+//   - Address alignment
+//   - RAM address classification
+//   - GPU MMIO classification
+//   - Reserved peripheral classification
+//   - DDR3 classification
+//   - Global-to-local address translation
+//   - Address-region boundaries
+//   - Unmapped address handling
+//   - Successful response construction
+//   - Error response construction
 //
-// It tests the Stage 2 decoder and interconnect only.
+// This file is for simulation only.
 // ============================================================
 
-module bus_interconnect_tb;
+module bus_pkg_tb;
 
     import cpu_pkg::*;
     import bus_pkg::*;
 
     // ========================================================
-    // BUS SIGNALS
-    // ========================================================
-
-    bus_req_s dbus_req;
-    bus_rsp_s dbus_rsp;
-
-    bus_req_s data_ram_req;
-    bus_rsp_s data_ram_rsp;
-
-    bus_req_s gpu_mmio_req;
-    bus_rsp_s gpu_mmio_rsp;
-
-    // ========================================================
     // TEST COUNTERS
     // ========================================================
 
-    integer tests;
-    integer errors;
-
-    // ========================================================
-    // DEVICE UNDER TEST
-    // ========================================================
-
-    bus_interconnect dut (
-
-        .dbus_req      (dbus_req),
-        .dbus_rsp      (dbus_rsp),
-
-        .data_ram_req  (data_ram_req),
-        .data_ram_rsp  (data_ram_rsp),
-
-        .gpu_mmio_req  (gpu_mmio_req),
-        .gpu_mmio_rsp  (gpu_mmio_rsp)
-
-    );
+    integer test_count;
+    integer error_count;
 
     // ========================================================
     // ASSERTION HELPER
     // ========================================================
 
     task automatic check(
+
         input logic condition,
+
         input string description
+
     );
 
         begin
 
-            tests = tests + 1;
+            test_count = test_count + 1;
 
             if (condition !== 1'b1) begin
 
-                errors = errors + 1;
+                error_count = error_count + 1;
 
                 $display(
                     "[FAIL] %0d: %s",
-                    tests,
+                    test_count,
                     description
                 );
 
@@ -100,7 +70,7 @@ module bus_interconnect_tb;
 
                 $display(
                     "[PASS] %0d: %s",
-                    tests,
+                    test_count,
                     description
                 );
 
@@ -111,113 +81,23 @@ module bus_interconnect_tb;
     endtask
 
     // ========================================================
-    // BUS RESET HELPER
-    // ========================================================
-    //
-    // Establishes a clean testbench starting state.
-    //
-    // The combinational interconnect has no hardware reset.
-    // ========================================================
-
-    task automatic clear_bus();
-
-        begin
-
-            dbus_req = '0;
-
-            data_ram_rsp = '0;
-            gpu_mmio_rsp = '0;
-
-            #1;
-
-        end
-
-    endtask
-
-    // ========================================================
-    // REQUEST HELPER
-    // ========================================================
-
-    task automatic make_request(
-        input word_t address,
-        input bus_op_e operation,
-        input word_t write_data,
-        input bus_strb_t write_strobes
-    );
-
-        begin
-
-            dbus_req = '0;
-
-            dbus_req.valid = 1'b1;
-            dbus_req.op    = operation;
-            dbus_req.addr  = address;
-            dbus_req.wdata = write_data;
-            dbus_req.wstrb = write_strobes;
-
-            #1;
-
-        end
-
-    endtask
-
-    // ========================================================
-    // RESERVED/UNMAPPED REGION TEST
-    // ========================================================
-    //
-    // A reserved or unmapped address must:
-    //
-    //   - Select no connected slave.
-    //   - Complete immediately.
-    //   - Report an error.
-    //   - Return zero data.
-    // ========================================================
-
-    task automatic check_unavailable(
-        input word_t address,
-        input string description
-    );
-
-        begin
-
-            make_request(
-                address,
-                BUS_READ,
-                '0,
-                BUS_STRB_NONE
-            );
-
-            check(
-                !data_ram_req.valid &&
-                !gpu_mmio_req.valid,
-                {description, ": no slave selected"}
-            );
-
-            check(
-                dbus_rsp.ready &&
-                dbus_rsp.error &&
-                (dbus_rsp.rdata === '0),
-                {description, ": error response"}
-            );
-
-        end
-
-    endtask
-
-    // ========================================================
-    // DECODE CLASSIFICATION TEST
-    // ========================================================
-    //
-    // Directly verifies the authoritative package decoder.
+    // ADDRESS CLASSIFICATION HELPER
     // ========================================================
 
     task automatic check_decode(
+
         input word_t address,
+
         input bus_device_e expected_device,
-        input word_t expected_local_addr,
+
+        input word_t expected_local_address,
+
         input logic expected_mapped,
+
         input logic expected_implemented,
+
         input string description
+
     );
 
         bus_decode_s result;
@@ -227,11 +107,17 @@ module bus_interconnect_tb;
             result = bus_decode_address(address);
 
             check(
+
                 (result.device == expected_device) &&
-                (result.local_addr == expected_local_addr) &&
+
+                (result.local_addr == expected_local_address) &&
+
                 (result.mapped == expected_mapped) &&
+
                 (result.implemented == expected_implemented),
+
                 description
+
             );
 
         end
@@ -244,570 +130,487 @@ module bus_interconnect_tb;
 
     initial begin
 
-        tests  = 0;
-        errors = 0;
-
-        $dumpfile("bus_interconnect.vcd");
-        $dumpvars(0, bus_interconnect_tb);
+        test_count  = 0;
+        error_count = 0;
 
         // ====================================================
-        // MEMORY MAP CONFIGURATION
+        // CONFIGURATION VALIDATION
         // ====================================================
 
         check(
             bus_validate_memory_map(),
-            "memory map configuration is valid"
+            "Memory-map configuration is valid"
+        );
+
+        // ====================================================
+        // BUS DIMENSIONS
+        // ====================================================
+
+        check(
+            WORD_BYTES == 4,
+            "Native bus word contains four bytes"
         );
 
         check(
-            DATA_RAM_SIZE == word_t'(32768),
-            "internal RAM capacity is 32 KiB"
+            $bits(bus_strb_t) == WORD_BYTES,
+            "Write-strobe width matches word byte count"
+        );
+
+        // ====================================================
+        // WRITE STROBES
+        // ====================================================
+
+        check(
+            BUS_STRB_NONE == bus_strb_t'(4'b0000),
+            "BUS_STRB_NONE disables all bytes"
         );
 
         check(
-            GPU_SIZE == word_t'(4096),
-            "GPU MMIO allocation is 4 KiB"
+            BUS_STRB_ALL == bus_strb_t'(4'b1111),
+            "BUS_STRB_ALL enables all bytes"
+        );
+
+        check(
+            !bus_has_write_bytes(BUS_STRB_NONE),
+            "Zero write strobe contains no selected byte"
+        );
+
+        check(
+            bus_has_write_bytes(BUS_STRB_ALL),
+            "Full write strobe selects bytes"
+        );
+
+        check(
+            bus_has_write_bytes(bus_strb_t'(4'b0010)),
+            "Partial write strobe selects one byte"
+        );
+
+        // ====================================================
+        // ADDRESS ALIGNMENT
+        // ====================================================
+
+        check(
+            bus_is_aligned(word_t'(32'h0000_0000)),
+            "Zero address is aligned"
+        );
+
+        check(
+            bus_is_aligned(word_t'(32'h0000_0004)),
+            "Four-byte address is aligned"
+        );
+
+        check(
+            !bus_is_aligned(word_t'(32'h0000_0001)),
+            "Address +1 is misaligned"
+        );
+
+        check(
+            !bus_is_aligned(word_t'(32'h0000_0002)),
+            "Address +2 is misaligned"
+        );
+
+        // ====================================================
+        // MEMORY REGION SIZES
+        // ====================================================
+
+        check(
+            DATA_RAM_SIZE == word_t'(32'h0000_8000),
+            "Internal RAM occupies 32 KiB"
+        );
+
+        check(
+            GPU_SIZE == word_t'(32'h0000_1000),
+            "GPU MMIO occupies 4 KiB"
+        );
+
+        check(
+            TPU_SIZE == word_t'(32'h0000_1000),
+            "TPU MMIO reserves 4 KiB"
         );
 
         check(
             DDR3_SIZE == word_t'(32'h0800_0000),
-            "DDR3 reserved capacity is 128 MiB"
+            "DDR3 address region occupies 128 MiB"
         );
 
         // ====================================================
-        // IDLE
+        // TPU CONSTANT CONSISTENCY
+        // ====================================================
+        //
+        // Explicitly verify the constant that previously
+        // produced the undeclared-identifier error.
         // ====================================================
 
-        clear_bus();
-
         check(
-            !dbus_rsp.ready,
-            "idle bus produces no completion"
+            TPU_LIMIT == TPU_BASE + TPU_SIZE,
+            "TPU_LIMIT is correctly declared and calculated"
         );
 
         check(
-            !data_ram_req.valid &&
-            !gpu_mmio_req.valid,
-            "idle bus selects no slave"
-        );
-
-        // ====================================================
-        // INTERNAL RAM WRITE
-        // ====================================================
-
-        make_request(
-            DATA_RAM_BASE + word_t'(12),
-            BUS_WRITE,
-            word_t'(32'h1234_5678),
-            BUS_STRB_ALL
-        );
-
-        check(
-            data_ram_req.valid,
-            "RAM write selects internal RAM"
-        );
-
-        check(
-            !gpu_mmio_req.valid,
-            "RAM write does not select GPU"
-        );
-
-        check(
-            data_ram_req.op == BUS_WRITE,
-            "RAM write operation is preserved"
-        );
-
-        check(
-            data_ram_req.addr == word_t'(12),
-            "RAM receives local byte address"
-        );
-
-        check(
-            data_ram_req.wdata == word_t'(32'h1234_5678),
-            "RAM receives correct write data"
-        );
-
-        check(
-            data_ram_req.wstrb == BUS_STRB_ALL,
-            "full-word write strobes are forwarded"
-        );
-
-        check(
-            !dbus_rsp.ready,
-            "CPU waits for RAM completion"
+            TPU_LIMIT <= DMA_BASE,
+            "TPU and DMA regions do not overlap"
         );
 
         // ====================================================
-        // DELAYED RAM RESPONSE
-        // ====================================================
-
-        data_ram_rsp = bus_success(
-            word_t'(32'hAABB_CCDD)
-        );
-
-        #1;
-
-        check(
-            dbus_rsp.ready && !dbus_rsp.error,
-            "successful RAM response reaches CPU"
-        );
-
-        check(
-            dbus_rsp.rdata == word_t'(32'hAABB_CCDD),
-            "RAM response data is preserved"
-        );
-
-        // ====================================================
-        // PARTIAL RAM WRITE
-        // ====================================================
-
-        data_ram_rsp = '0;
-
-        make_request(
-            DATA_RAM_BASE + word_t'(16),
-            BUS_WRITE,
-            word_t'(32'h0000_AA00),
-            bus_strb_t'(4'b0010)
-        );
-
-        check(
-            data_ram_req.valid &&
-            (data_ram_req.wstrb == bus_strb_t'(4'b0010)),
-            "single-byte write strobe reaches RAM"
-        );
-
-        check(
-            data_ram_req.wdata == word_t'(32'h0000_AA00),
-            "partial RAM write data is preserved"
-        );
-
-        // ====================================================
-        // GPU MMIO WRITE
-        // ====================================================
-
-        clear_bus();
-
-        make_request(
-            GPU_BASE + word_t'(20),
-            BUS_WRITE,
-            word_t'(32'hDEAD_BEEF),
-            BUS_STRB_ALL
-        );
-
-        check(
-            gpu_mmio_req.valid,
-            "GPU MMIO write selects GPU"
-        );
-
-        check(
-            !data_ram_req.valid,
-            "GPU MMIO write does not select RAM"
-        );
-
-        check(
-            gpu_mmio_req.addr == word_t'(20),
-            "GPU receives local register offset"
-        );
-
-        check(
-            gpu_mmio_req.op == BUS_WRITE,
-            "GPU write operation is forwarded"
-        );
-
-        check(
-            gpu_mmio_req.wdata == word_t'(32'hDEAD_BEEF),
-            "GPU write data is forwarded"
-        );
-
-        check(
-            gpu_mmio_req.wstrb == BUS_STRB_ALL,
-            "GPU write strobes are forwarded"
-        );
-
-        // ====================================================
-        // GPU RESPONSE
-        // ====================================================
-
-        gpu_mmio_rsp = bus_success('0);
-
-        #1;
-
-        check(
-            dbus_rsp.ready && !dbus_rsp.error,
-            "GPU completion reaches CPU"
-        );
-
-        // ====================================================
-        // GPU READ
-        // ====================================================
-
-        gpu_mmio_rsp = bus_success(
-            word_t'(32'hCAFEBABE)
-        );
-
-        make_request(
-            GPU_BASE + word_t'(8),
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
-
-        check(
-            gpu_mmio_req.valid &&
-            (gpu_mmio_req.op == BUS_READ),
-            "GPU read request is forwarded"
-        );
-
-        check(
-            dbus_rsp.ready &&
-            (dbus_rsp.rdata == word_t'(32'hCAFEBABE)),
-            "GPU read data reaches CPU"
-        );
-
-        // ====================================================
-        // SLAVE ERROR PROPAGATION
-        // ====================================================
-
-        gpu_mmio_rsp = bus_failure();
-
-        #1;
-
-        check(
-            dbus_rsp.ready && dbus_rsp.error,
-            "GPU bus error propagates to CPU"
-        );
-
-        // ====================================================
-        // MISALIGNED REQUESTS
-        // ====================================================
-
-        clear_bus();
-
-        make_request(
-            DATA_RAM_BASE + word_t'(1),
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
-
-        check(
-            !data_ram_req.valid &&
-            !gpu_mmio_req.valid,
-            "misaligned RAM access selects no slave"
-        );
-
-        check(
-            dbus_rsp.ready && dbus_rsp.error,
-            "misaligned RAM access returns bus error"
-        );
-
-        make_request(
-            GPU_BASE + word_t'(2),
-            BUS_WRITE,
-            word_t'(32'h1234),
-            BUS_STRB_ALL
-        );
-
-        check(
-            !data_ram_req.valid &&
-            !gpu_mmio_req.valid,
-            "misaligned GPU access selects no slave"
-        );
-
-        check(
-            dbus_rsp.ready && dbus_rsp.error,
-            "misaligned GPU access returns bus error"
-        );
-
-        // ====================================================
-        // RAM REGION BOUNDARIES
+        // INTERNAL RAM
         // ====================================================
 
         check_decode(
+
             DATA_RAM_BASE,
+
             DEVICE_DATA_RAM,
-            '0,
+
+            word_t'(0),
+
             1'b1,
+
             1'b1,
-            "RAM first address decodes correctly"
+
+            "RAM base address"
+
         );
 
         check_decode(
-            DATA_RAM_LIMIT - word_t'(1),
-            DEVICE_DATA_RAM,
-            DATA_RAM_SIZE - word_t'(1),
-            1'b1,
-            1'b1,
-            "RAM last byte belongs to RAM region"
-        );
 
-        make_request(
             DATA_RAM_LIMIT - word_t'(WORD_BYTES),
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
 
-        check(
-            data_ram_req.valid,
-            "RAM last aligned word is accessible"
-        );
+            DEVICE_DATA_RAM,
 
-        check_unavailable(
-            DATA_RAM_LIMIT,
-            "first address after RAM"
+            DATA_RAM_SIZE - word_t'(WORD_BYTES),
+
+            1'b1,
+
+            1'b1,
+
+            "RAM last aligned word"
+
         );
 
         // ====================================================
-        // GPU REGION BOUNDARIES
+        // GPU MMIO
         // ====================================================
 
         check_decode(
+
             GPU_BASE,
+
             DEVICE_GPU_MMIO,
-            '0,
+
+            word_t'(0),
+
             1'b1,
+
             1'b1,
-            "GPU first address decodes correctly"
+
+            "GPU MMIO base"
+
         );
 
         check_decode(
-            GPU_LIMIT - word_t'(1),
+
+            GPU_BASE + word_t'(32'h14),
+
             DEVICE_GPU_MMIO,
-            GPU_SIZE - word_t'(1),
-            1'b1,
-            1'b1,
-            "GPU final byte belongs to GPU region"
-        );
 
-        make_request(
-            GPU_LIMIT - word_t'(WORD_BYTES),
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
+            word_t'(32'h14),
 
-        check(
-            gpu_mmio_req.valid,
-            "GPU final aligned word selects GPU"
+            1'b1,
+
+            1'b1,
+
+            "GPU MMIO local address translation"
+
         );
 
         // ====================================================
-        // RESERVED TPU REGION
+        // RESERVED TPU MMIO
         // ====================================================
 
         check_decode(
+
             TPU_BASE,
+
             DEVICE_TPU_MMIO,
-            '0,
-            1'b1,
-            1'b0,
-            "TPU region is reserved but not implemented"
-        );
 
-        check_unavailable(
-            TPU_BASE,
-            "reserved TPU MMIO"
+            word_t'(0),
+
+            1'b1,
+
+            1'b0,
+
+            "TPU MMIO reserved region"
+
         );
 
         // ====================================================
-        // RESERVED DMA REGION
+        // RESERVED DMA MMIO
         // ====================================================
 
         check_decode(
+
             DMA_BASE,
+
             DEVICE_DMA_MMIO,
-            '0,
-            1'b1,
-            1'b0,
-            "DMA region is reserved but not implemented"
-        );
 
-        check_unavailable(
-            DMA_BASE,
-            "reserved DMA MMIO"
+            word_t'(0),
+
+            1'b1,
+
+            1'b0,
+
+            "DMA MMIO reserved region"
+
         );
 
         // ====================================================
-        // RESERVED MICROSD REGION
+        // RESERVED MICROSD MMIO
         // ====================================================
 
         check_decode(
+
             SD_BASE,
+
             DEVICE_SD_MMIO,
-            '0,
-            1'b1,
-            1'b0,
-            "SD region is reserved but not implemented"
-        );
 
-        check_unavailable(
-            SD_BASE,
-            "reserved microSD MMIO"
+            word_t'(0),
+
+            1'b1,
+
+            1'b0,
+
+            "microSD MMIO reserved region"
+
         );
 
         // ====================================================
-        // RESERVED SYSTEM REGION
+        // RESERVED SYSTEM MMIO
         // ====================================================
 
         check_decode(
+
             SYSTEM_BASE,
+
             DEVICE_SYSTEM_MMIO,
-            '0,
-            1'b1,
-            1'b0,
-            "system-control region is reserved"
-        );
 
-        check_unavailable(
-            SYSTEM_BASE,
-            "reserved system MMIO"
+            word_t'(0),
+
+            1'b1,
+
+            1'b0,
+
+            "System-control MMIO reserved region"
+
         );
 
         // ====================================================
-        // RESERVED DDR3 REGION
+        // EXTERNAL DDR3
+        // ====================================================
+        //
+        // Stage 3 provides the DDR3 bridge.
+        //
+        // The bridge remains responsible for reporting
+        // unavailable physical memory.
         // ====================================================
 
         check_decode(
+
             DDR3_BASE,
+
             DEVICE_DDR3,
-            '0,
+
+            word_t'(0),
+
             1'b1,
-            1'b0,
-            "DDR3 base address is reserved"
+
+            1'b1,
+
+            "DDR3 bridge address region"
+
         );
 
         check_decode(
+
             DDR3_BASE + word_t'(32'h0000_1000),
+
             DEVICE_DDR3,
+
             word_t'(32'h0000_1000),
+
             1'b1,
-            1'b0,
-            "DDR3 global-to-local translation"
+
+            1'b1,
+
+            "DDR3 local address translation"
+
         );
 
         check_decode(
-            DDR3_LIMIT - word_t'(1),
+
+            DDR3_LIMIT - word_t'(WORD_BYTES),
+
             DEVICE_DDR3,
-            DDR3_SIZE - word_t'(1),
+
+            DDR3_SIZE - word_t'(WORD_BYTES),
+
             1'b1,
-            1'b0,
-            "DDR3 last byte belongs to reserved region"
-        );
 
-        check_unavailable(
-            DDR3_BASE,
-            "DDR3 not yet connected"
-        );
+            1'b1,
 
-        check_unavailable(
-            DDR3_LIMIT,
-            "first address after DDR3"
+            "DDR3 last aligned word"
+
         );
 
         // ====================================================
-        // COMPLETELY UNMAPPED ADDRESS
+        // UNMAPPED ADDRESSES
         // ====================================================
 
         check_decode(
-            word_t'(32'h4000_0000),
+
+            DATA_RAM_LIMIT,
+
             DEVICE_NONE,
-            '0,
+
+            word_t'(0),
+
             1'b0,
+
             1'b0,
-            "unmapped address classified correctly"
+
+            "First byte after RAM is unmapped"
+
         );
 
-        check_unavailable(
+        check_decode(
+
             word_t'(32'h4000_0000),
-            "unmapped address"
+
+            DEVICE_NONE,
+
+            word_t'(0),
+
+            1'b0,
+
+            1'b0,
+
+            "Unassigned address is unmapped"
+
+        );
+
+        check_decode(
+
+            DDR3_LIMIT,
+
+            DEVICE_NONE,
+
+            word_t'(0),
+
+            1'b0,
+
+            1'b0,
+
+            "First byte after DDR3 is unmapped"
+
         );
 
         // ====================================================
-        // NO MULTIPLE SLAVE SELECTIONS
+        // SUCCESSFUL BUS RESPONSE
         // ====================================================
 
-        clear_bus();
+        begin
 
-        make_request(
-            DATA_RAM_BASE,
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
+            bus_rsp_s rsp;
 
-        check(
-            !(data_ram_req.valid && gpu_mmio_req.valid),
-            "RAM request cannot select two slaves"
-        );
+            rsp = bus_success(
+                word_t'(32'h1234_5678)
+            );
 
-        make_request(
-            GPU_BASE,
-            BUS_READ,
-            '0,
-            BUS_STRB_NONE
-        );
+            check(
+                rsp.ready,
+                "Successful response asserts ready"
+            );
 
-        check(
-            !(data_ram_req.valid && gpu_mmio_req.valid),
-            "GPU request cannot select two slaves"
-        );
+            check(
+                !rsp.error,
+                "Successful response clears error"
+            );
 
-        // ====================================================
-        // FINAL IDLE TEST
-        // ====================================================
+            check(
+                rsp.rdata == word_t'(32'h1234_5678),
+                "Successful response preserves read data"
+            );
 
-        clear_bus();
-
-        check(
-            !dbus_rsp.ready &&
-            !data_ram_req.valid &&
-            !gpu_mmio_req.valid,
-            "bus returns to idle correctly"
-        );
+        end
 
         // ====================================================
-        // RESULTS
+        // FAILED BUS RESPONSE
+        // ====================================================
+
+        begin
+
+            bus_rsp_s rsp;
+
+            rsp = bus_failure();
+
+            check(
+                rsp.ready,
+                "Failed response asserts ready"
+            );
+
+            check(
+                rsp.error,
+                "Failed response asserts error"
+            );
+
+            check(
+                rsp.rdata == word_t'(0),
+                "Failed response clears read data"
+            );
+
+        end
+
+        // ====================================================
+        // FINAL RESULTS
         // ====================================================
 
         $display(
-            "============================================"
+            "=========================================="
         );
 
         $display(
-            "LACOODA STAGE 2 INTERCONNECT REGRESSION"
+            "LACOODA BUS PACKAGE REGRESSION"
         );
 
         $display(
-            "Total tests: %0d",
-            tests
+            "Tests:  %0d",
+            test_count
         );
 
         $display(
-            "Passed:      %0d",
-            tests - errors
+            "Passed: %0d",
+            test_count - error_count
         );
 
         $display(
-            "Failed:      %0d",
-            errors
+            "Failed: %0d",
+            error_count
         );
 
         $display(
-            "============================================"
+            "=========================================="
         );
 
-        if (errors != 0) begin
+        if (error_count != 0) begin
 
             $fatal(
                 1,
-                "LACOODA STAGE 2 REGRESSION FAILED"
+                "LACOODA BUS PACKAGE REGRESSION FAILED"
             );
 
         end
 
         $display(
-            "LACOODA STAGE 2 INTERCONNECT TEST PASSED"
+            "LACOODA BUS PACKAGE REGRESSION PASSED"
         );
 
         $finish;

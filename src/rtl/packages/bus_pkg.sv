@@ -3,31 +3,58 @@
 `define BUS_PKG_SV
 
 // ============================================================
-// LACOODA NATIVE BUS AND SYSTEM MEMORY MAP
+// LACOODA NATIVE BUS PACKAGE
 // ============================================================
 //
-// Stage 2 responsibilities:
+// PURPOSE
 //
-//   1. Preserve the Stage 1 bus request/response protocol.
-//   2. Define the complete CPU-visible address map.
-//   3. Identify mapped and reserved hardware regions.
-//   4. Provide reusable address classification functions.
-//   5. Guarantee that address ranges do not overlap.
+//   Define the native LACOODA bus protocol and the global
+//   CPU-visible memory address map.
 //
-// The bus is currently:
-//   - 32-bit, using cpu_pkg::word_t
-//   - Byte addressed
-//   - Word aligned
-//   - Single outstanding transaction per master
+// ARCHITECTURE
 //
-// A transaction completes at the rising clock edge when:
+//   Data width:       cpu_pkg::WORD_WIDTH
+//   Address width:    cpu_pkg::WORD_WIDTH
+//   Addressing:       Byte addressed
+//   Alignment:        Native word aligned
+//   Transactions:     One outstanding transaction per master
 //
-//     request.valid && response.ready
+// HANDSHAKE
 //
-// Stage 2 adds no physical DDR3, TPU, DMA or SD controller.
+//   A transaction completes on a rising clock edge when:
 //
-// Reserved regions must return a bus error until their
-// hardware is connected.
+//       request.valid && response.ready
+//
+//   The requesting master must hold the request stable until
+//   that handshake occurs.
+//
+// SYNTHESIS
+//
+//   This package contains no simulation system tasks.
+//
+//   Memory-map validation returns a Boolean value.
+//   Testbenches are responsible for reporting validation
+//   failures using $fatal.
+//
+// MEMORY REGIONS
+//
+//   Internal RAM:  0x00000000 - 0x00007FFF
+//   GPU MMIO:      0x10000000 - 0x10000FFF
+//   TPU MMIO:      0x10001000 - 0x10001FFF
+//   DMA MMIO:      0x10002000 - 0x10002FFF
+//   SD MMIO:       0x10003000 - 0x10003FFF
+//   System MMIO:   0x10004000 - 0x10004FFF
+//   DDR3:          0x80000000 - 0x87FFFFFF
+//
+// DDR3 NOTE
+//
+//   Stage 3 introduces a DDR3 bus bridge.
+//
+//   The bridge being present does not guarantee that the
+//   physical DDR3 controller is initialized or available.
+//
+//   Physical memory readiness is a runtime condition
+//   handled by the DDR3 bridge.
 // ============================================================
 
 package bus_pkg;
@@ -45,14 +72,20 @@ package bus_pkg;
     // BYTE WRITE STROBES
     // ========================================================
     //
-    // One bit per byte of the native CPU word.
+    // Each strobe bit controls one byte of the data word.
     //
-    // For a 32-bit word:
+    // For a 32-bit data word:
     //
-    //   wstrb[0] controls wdata[ 7: 0]
-    //   wstrb[1] controls wdata[15: 8]
-    //   wstrb[2] controls wdata[23:16]
-    //   wstrb[3] controls wdata[31:24]
+    //   wstrb[0] -> wdata[ 7: 0]
+    //   wstrb[1] -> wdata[15: 8]
+    //   wstrb[2] -> wdata[23:16]
+    //   wstrb[3] -> wdata[31:24]
+    //
+    // BUS_STRB_NONE:
+    //   No write bytes enabled.
+    //
+    // BUS_STRB_ALL:
+    //   All write bytes enabled.
     // ========================================================
 
     typedef logic [cpu_pkg::WORD_BYTES-1:0] bus_strb_t;
@@ -63,46 +96,100 @@ package bus_pkg;
     // ========================================================
     // BUS REQUEST
     // ========================================================
+    //
+    // valid:
+    //   A transaction is being requested.
+    //
+    // op:
+    //   Read or write operation.
+    //
+    // addr:
+    //   Byte address.
+    //
+    // wdata:
+    //   Data supplied by the requesting master.
+    //
+    // wstrb:
+    //   Write-byte enables.
+    //
+    // Read transactions should use BUS_STRB_NONE.
+    // ========================================================
 
     typedef struct packed {
+
         logic           valid;
+
         bus_op_e        op;
+
         cpu_pkg::word_t addr;
+
         cpu_pkg::word_t wdata;
+
         bus_strb_t      wstrb;
+
     } bus_req_s;
 
     // ========================================================
     // BUS RESPONSE
     // ========================================================
+    //
+    // ready:
+    //   The selected slave has completed the transaction.
+    //
+    // rdata:
+    //   Data returned by a successful read.
+    //
+    // error:
+    //   The transaction completed unsuccessfully.
+    //
+    // Error responses must also assert ready so the
+    // requesting master does not wait indefinitely.
+    // ========================================================
 
     typedef struct packed {
+
         logic           ready;
+
         cpu_pkg::word_t rdata;
+
         logic           error;
+
     } bus_rsp_s;
 
     // ========================================================
-    // DEVICE IDENTIFIERS
+    // GLOBAL DEVICE IDENTIFIERS
     // ========================================================
     //
-    // These identify global address regions.
+    // These values identify address regions.
     //
-    // A device identifier does not imply that the device
-    // has been implemented or connected.
+    // DEVICE_NONE:
+    //   Address is not assigned to a device.
     //
-    // DEVICE_NONE represents an unmapped address.
+    // Other identifiers:
+    //   Address belongs to the corresponding region.
+    //
+    // An assigned region does not necessarily have
+    // physically operational hardware attached.
     // ========================================================
 
     typedef enum logic [3:0] {
+
         DEVICE_NONE        = 4'h0,
+
         DEVICE_DATA_RAM    = 4'h1,
+
         DEVICE_GPU_MMIO    = 4'h2,
+
         DEVICE_TPU_MMIO    = 4'h3,
+
         DEVICE_DMA_MMIO    = 4'h4,
+
         DEVICE_SD_MMIO     = 4'h5,
+
         DEVICE_SYSTEM_MMIO = 4'h6,
+
         DEVICE_DDR3        = 4'h7
+
     } bus_device_e;
 
     // ========================================================
@@ -110,37 +197,45 @@ package bus_pkg;
     // ========================================================
     //
     // device:
-    //   Identifies the region containing the address.
+    //   Identifies the address region.
     //
     // local_addr:
-    //   Address relative to the selected region base.
+    //   Byte address relative to the region base.
     //
     // mapped:
-    //   Address belongs to a defined address region.
+    //   The address belongs to a defined region.
     //
     // implemented:
-    //   Stage 2 interconnect has a connected slave for
-    //   the selected region.
+    //   The current architecture provides a bus-accessible
+    //   slave for this region.
     //
-    // A reserved region is mapped but not implemented.
+    // Stage 3 provides a DDR3 bridge.
+    //
+    // Physical DDR3 availability is determined separately.
     // ========================================================
 
     typedef struct packed {
+
         bus_device_e     device;
+
         cpu_pkg::word_t local_addr;
+
         logic           mapped;
+
         logic           implemented;
+
     } bus_decode_s;
 
     // ========================================================
     // INTERNAL DATA RAM
     // ========================================================
     //
-    // Base:  0x00000000
-    // Size:  32 KiB
-    // Limit: 0x00008000, exclusive
+    // Base: 0x00000000
     //
-    // The capacity is inherited from memory_pkg.
+    // Size is derived from memory_pkg to avoid duplicating
+    // the RAM capacity definition.
+    //
+    // The upper limit is exclusive.
     // ========================================================
 
     localparam cpu_pkg::word_t DATA_RAM_BASE =
@@ -157,11 +252,9 @@ package bus_pkg;
     // GPU MMIO
     // ========================================================
     //
-    // Base:  0x10000000
-    // Size:  4 KiB
+    // GPU control and status registers.
     //
-    // This is GPU register address space.
-    // It is not framebuffer storage.
+    // This region does not contain framebuffer pixels.
     // ========================================================
 
     localparam cpu_pkg::word_t GPU_BASE =
@@ -203,9 +296,10 @@ package bus_pkg;
     // MICROSD CONTROLLER MMIO — RESERVED
     // ========================================================
     //
-    // This address region will contain controller registers.
+    // This region is for controller registers.
     //
-    // It does not represent the capacity of the SD card.
+    // SD card storage capacity is not directly represented
+    // by the size of this MMIO region.
     // ========================================================
 
     localparam cpu_pkg::word_t SD_BASE =
@@ -231,14 +325,18 @@ package bus_pkg;
         SYSTEM_BASE + SYSTEM_SIZE;
 
     // ========================================================
-    // EXTERNAL DDR3 — RESERVED
+    // EXTERNAL DDR3
     // ========================================================
     //
-    // Base:  0x80000000
-    // Size:  128 MiB
-    // Limit: 0x88000000, exclusive
+    // CPU-visible memory allocation:
     //
-    // Physical DDR3 integration belongs to Stage 3.
+    //   Base:  0x80000000
+    //   Size:  128 MiB
+    //   Limit: 0x88000000 (exclusive)
+    //
+    // The DDR3 bridge receives local addresses:
+    //
+    //   local_addr = global_addr - DDR3_BASE
     // ========================================================
 
     localparam cpu_pkg::word_t DDR3_BASE =
@@ -251,16 +349,33 @@ package bus_pkg;
         DDR3_BASE + DDR3_SIZE;
 
     // ========================================================
-    // BUS HELPERS
+    // ADDRESS ALIGNMENT
+    // ========================================================
+    //
+    // Returns 1 when the byte address is aligned to the
+    // native bus word size.
+    //
+    // The current CPU uses 32-bit words, so valid word
+    // addresses are multiples of four.
     // ========================================================
 
     function automatic logic bus_is_aligned(
         input cpu_pkg::word_t addr
     );
 
-        return (addr % cpu_pkg::WORD_BYTES) == 0;
+        return
+            (addr % cpu_pkg::WORD_BYTES) == 0;
 
     endfunction
+
+    // ========================================================
+    // WRITE-STROBE VALIDITY
+    // ========================================================
+    //
+    // Returns 1 when at least one byte is selected.
+    //
+    // This function does not distinguish reads from writes.
+    // ========================================================
 
     function automatic logic bus_has_write_bytes(
         input bus_strb_t wstrb
@@ -272,6 +387,9 @@ package bus_pkg;
 
     // ========================================================
     // SUCCESSFUL RESPONSE
+    // ========================================================
+    //
+    // Generates a completed, non-error response.
     // ========================================================
 
     function automatic bus_rsp_s bus_success(
@@ -293,6 +411,11 @@ package bus_pkg;
     // ========================================================
     // FAILED RESPONSE
     // ========================================================
+    //
+    // Generates a completed transaction with an error.
+    //
+    // ready must be asserted even on failure.
+    // ========================================================
 
     function automatic bus_rsp_s bus_failure();
 
@@ -312,17 +435,21 @@ package bus_pkg;
     // REGION MEMBERSHIP
     // ========================================================
     //
-    // All regions use inclusive base and exclusive limit:
+    // Address ranges use:
     //
-    //     base <= addr < limit
+    //   base <= addr < limit
     //
-    // Unsigned cpu_pkg::word_t comparisons are used.
+    // The limit is exclusive.
     // ========================================================
 
     function automatic logic bus_in_region(
+
         input cpu_pkg::word_t addr,
+
         input cpu_pkg::word_t region_base,
+
         input cpu_pkg::word_t region_limit
+
     );
 
         return
@@ -332,20 +459,22 @@ package bus_pkg;
     endfunction
 
     // ========================================================
-    // GLOBAL ADDRESS DECODER
+    // GLOBAL ADDRESS CLASSIFICATION
     // ========================================================
     //
-    // This function is the single authoritative classifier
-    // of the Stage 2 CPU-visible data address space.
+    // Returns the matching device and peripheral-local
+    // byte address.
     //
-    // Only DATA_RAM and GPU_MMIO are currently implemented.
+    // Region order follows ascending global addresses.
     //
-    // TPU, DMA, SD, SYSTEM, and DDR3 are reserved.
+    // Reserved devices are recognized but marked as
+    // unimplemented.
     //
-    // The surrounding gaps remain completely unmapped.
+    // DDR3 is marked implemented because Stage 3 introduces
+    // a bus bridge. The bridge itself may still reject access
+    // when its backend is unavailable.
     //
-    // No address alignment check is performed here.
-    // Alignment is validated separately by the interconnect.
+    // Alignment is checked by the interconnect, not here.
     // ========================================================
 
     function automatic bus_decode_s bus_decode_address(
@@ -355,7 +484,12 @@ package bus_pkg;
         bus_decode_s result;
 
         result = '0;
+
         result.device = DEVICE_NONE;
+
+        // ----------------------------------------------------
+        // INTERNAL DATA RAM
+        // ----------------------------------------------------
 
         if (
             bus_in_region(
@@ -366,11 +500,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_DATA_RAM;
+
             result.local_addr  = addr - DATA_RAM_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b1;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // GPU MMIO
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 GPU_BASE,
@@ -379,11 +522,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_GPU_MMIO;
+
             result.local_addr  = addr - GPU_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b1;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // TPU MMIO — RESERVED
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 TPU_BASE,
@@ -392,11 +544,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_TPU_MMIO;
+
             result.local_addr  = addr - TPU_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b0;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // DMA MMIO — RESERVED
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 DMA_BASE,
@@ -405,11 +566,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_DMA_MMIO;
+
             result.local_addr  = addr - DMA_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b0;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // MICROSD MMIO — RESERVED
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 SD_BASE,
@@ -418,11 +588,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_SD_MMIO;
+
             result.local_addr  = addr - SD_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b0;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // SYSTEM CONTROL MMIO — RESERVED
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 SYSTEM_BASE,
@@ -431,11 +610,20 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_SYSTEM_MMIO;
+
             result.local_addr  = addr - SYSTEM_BASE;
+
             result.mapped      = 1'b1;
+
             result.implemented = 1'b0;
 
-        end else if (
+        end
+
+        // ----------------------------------------------------
+        // EXTERNAL DDR3 — STAGE 3 BRIDGE
+        // ----------------------------------------------------
+
+        else if (
             bus_in_region(
                 addr,
                 DDR3_BASE,
@@ -444,9 +632,12 @@ package bus_pkg;
         ) begin
 
             result.device      = DEVICE_DDR3;
+
             result.local_addr  = addr - DDR3_BASE;
+
             result.mapped      = 1'b1;
-            result.implemented = 1'b0;
+
+            result.implemented = 1'b1;
 
         end
 
@@ -455,96 +646,146 @@ package bus_pkg;
     endfunction
 
     // ========================================================
-    // ADDRESS-MAP CONFIGURATION VALIDATION
+    // MEMORY-MAP CONFIGURATION VALIDATION
     // ========================================================
     //
-    // Every allocated region must:
+    // PURE COMBINATIONAL FUNCTION
     //
-    //   - Have nonzero size.
-    //   - Have a base aligned to its size.
-    //   - Have a limit greater than its base.
-    //   - Not overlap another allocated region.
+    // Returns:
     //
-    // The current addresses are ordered:
+    //   1 = memory-map configuration is valid
+    //   0 = memory-map configuration is invalid
     //
-    //   DATA_RAM < GPU < TPU < DMA < SD < SYSTEM < DDR3
+    // This function never invokes $fatal, $error, $display,
+    // or any other simulation-only system task.
     //
-    // Therefore validating successive exclusive limits
-    // establishes non-overlap for the entire map.
+    // Tests:
     //
-    // Intended for simulation/elaboration checks.
+    //   1. Every region has a nonzero size.
+    //   2. Every base is aligned to its region size.
+    //   3. Every region has an increasing address range.
+    //   4. Consecutive regions do not overlap.
+    //
+    // The size parameters are compile-time constants.
+    //
+    // This is an address-map configuration check rather
+    // than a runtime transaction validation operation.
     // ========================================================
 
     function automatic bit bus_validate_memory_map();
 
-        if (
-            (DATA_RAM_SIZE == 0) ||
-            (GPU_SIZE == 0) ||
-            (TPU_SIZE == 0) ||
-            (DMA_SIZE == 0) ||
-            (SD_SIZE == 0) ||
-            (SYSTEM_SIZE == 0) ||
-            (DDR3_SIZE == 0)
-        ) begin
+        bit sizes_valid;
+        bit alignment_valid;
+        bit ranges_valid;
+        bit ordering_valid;
 
-            $fatal(
-                1,
-                "LACOODA memory map contains a zero-size region"
-            );
+        // ----------------------------------------------------
+        // NONZERO REGION SIZES
+        // ----------------------------------------------------
 
-        end
+        sizes_valid =
 
-        if (
-            ((DATA_RAM_BASE % DATA_RAM_SIZE) != 0) ||
-            ((GPU_BASE % GPU_SIZE) != 0) ||
-            ((TPU_BASE % TPU_SIZE) != 0) ||
-            ((DMA_BASE % DMA_SIZE) != 0) ||
-            ((SD_BASE % SD_SIZE) != 0) ||
-            ((SYSTEM_BASE % SYSTEM_SIZE) != 0) ||
-            ((DDR3_BASE % DDR3_SIZE) != 0)
-        ) begin
+            (DATA_RAM_SIZE != 0) &&
 
-            $fatal(
-                1,
-                "LACOODA memory map has an incorrectly aligned region"
-            );
+            (GPU_SIZE != 0) &&
 
-        end
+            (TPU_SIZE != 0) &&
 
-        if (
-            !(DATA_RAM_BASE < DATA_RAM_LIMIT) ||
-            !(GPU_BASE < GPU_LIMIT) ||
-            !(TPU_BASE < TPU_LIMIT) ||
-            !(DMA_BASE < DMA_LIMIT) ||
-            !(SD_BASE < SD_LIMIT) ||
-            !(SYSTEM_BASE < SYSTEM_LIMIT) ||
-            !(DDR3_BASE < DDR3_LIMIT)
-        ) begin
+            (DMA_SIZE != 0) &&
 
-            $fatal(
-                1,
-                "LACOODA memory map contains an invalid range"
-            );
+            (SD_SIZE != 0) &&
 
-        end
+            (SYSTEM_SIZE != 0) &&
 
-        if (
-            !(DATA_RAM_LIMIT <= GPU_BASE) ||
-            !(GPU_LIMIT <= TPU_BASE) ||
-            !(TPU_LIMIT <= DMA_BASE) ||
-            !(DMA_LIMIT <= SD_BASE) ||
-            !(SD_LIMIT <= SYSTEM_BASE) ||
-            !(SYSTEM_LIMIT <= DDR3_BASE)
-        ) begin
+            (DDR3_SIZE != 0);
 
-            $fatal(
-                1,
-                "LACOODA memory map contains overlapping regions"
-            );
+        // ----------------------------------------------------
+        // REGION BASE ALIGNMENT
+        // ----------------------------------------------------
+        //
+        // Every declared region size must divide its base.
+        //
+        // Size values in the current address map are fixed
+        // nonzero constants.
+        // ----------------------------------------------------
 
-        end
+        alignment_valid =
 
-        return 1'b1;
+            ((DATA_RAM_BASE % DATA_RAM_SIZE) == 0) &&
+
+            ((GPU_BASE % GPU_SIZE) == 0) &&
+
+            ((TPU_BASE % TPU_SIZE) == 0) &&
+
+            ((DMA_BASE % DMA_SIZE) == 0) &&
+
+            ((SD_BASE % SD_SIZE) == 0) &&
+
+            ((SYSTEM_BASE % SYSTEM_SIZE) == 0) &&
+
+            ((DDR3_BASE % DDR3_SIZE) == 0);
+
+        // ----------------------------------------------------
+        // VALID EXCLUSIVE LIMITS
+        // ----------------------------------------------------
+        //
+        // A region must have:
+        //
+        //   base < limit
+        //
+        // This also detects wraparound when a calculated
+        // limit becomes less than its base.
+        // ----------------------------------------------------
+
+        ranges_valid =
+
+            (DATA_RAM_BASE < DATA_RAM_LIMIT) &&
+
+            (GPU_BASE < GPU_LIMIT) &&
+
+            (TPU_BASE < TPU_LIMIT) &&
+
+            (DMA_BASE < DMA_LIMIT) &&
+
+            (SD_BASE < SD_LIMIT) &&
+
+            (SYSTEM_BASE < SYSTEM_LIMIT) &&
+
+            (DDR3_BASE < DDR3_LIMIT);
+
+        // ----------------------------------------------------
+        // REGION ORDER AND NON-OVERLAP
+        // ----------------------------------------------------
+        //
+        // Regions are defined in ascending address order.
+        //
+        // Every region must end at or before the next
+        // region begins.
+        // ----------------------------------------------------
+
+        ordering_valid =
+
+            (DATA_RAM_LIMIT <= GPU_BASE) &&
+
+            (GPU_LIMIT <= TPU_BASE) &&
+
+            (TPU_LIMIT <= DMA_BASE) &&
+
+            (DMA_LIMIT <= SD_BASE) &&
+
+            (SD_LIMIT <= SYSTEM_BASE) &&
+
+            (SYSTEM_LIMIT <= DDR3_BASE);
+
+        // ----------------------------------------------------
+        // FINAL RESULT
+        // ----------------------------------------------------
+
+        return
+            sizes_valid &&
+            alignment_valid &&
+            ranges_valid &&
+            ordering_valid;
 
     endfunction
 

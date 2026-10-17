@@ -38,8 +38,8 @@ module gpu_register (
     input logic clk,
     input logic rst,
 
-    input  bus_pkg::bus_req_s mmio_req,
-    output bus_pkg::bus_rsp_s mmio_rsp,
+    input  bus_pkg::bus_req_s gpu_mmio_bus_req,
+    output bus_pkg::bus_rsp_s gpu_mmio_bus_rsp,
 
     input  gpu_pkg::gpu_status_s status,
     output gpu_pkg::gpu_config_s gpu_cfg
@@ -53,7 +53,7 @@ module gpu_register (
     gpu_pkg::gpu_addr_t local_addr;
 
     assign local_addr =
-        gpu_pkg::gpu_addr_t'(mmio_req.addr);
+        gpu_pkg::gpu_addr_t'(gpu_mmio_bus_req.addr);
 
     // ========================================================
     // REGISTER DECODING
@@ -67,7 +67,7 @@ module gpu_register (
     logic access_valid;
 
     assign addr_aligned =
-        bus_pkg::bus_is_aligned(mmio_req.addr);
+        bus_pkg::bus_is_aligned(gpu_mmio_bus_req.addr);
 
     // --------------------------------------------------------
     // Known and writable register classification.
@@ -121,8 +121,8 @@ module gpu_register (
     // ========================================================
 
     assign write_strobes_valid =
-        (mmio_req.op == bus_pkg::BUS_READ) ||
-        (mmio_req.wstrb == bus_pkg::BUS_STRB_ALL);
+        (gpu_mmio_bus_req.op == bus_pkg::BUS_READ) ||
+        (gpu_mmio_bus_req.wstrb == bus_pkg::BUS_STRB_ALL);
 
     // ========================================================
     // ACCESS VALIDITY
@@ -133,7 +133,7 @@ module gpu_register (
         addr_known &&
         write_strobes_valid &&
         (
-            (mmio_req.op == bus_pkg::BUS_READ) ||
+            (gpu_mmio_bus_req.op == bus_pkg::BUS_READ) ||
             addr_writable
         );
 
@@ -153,45 +153,45 @@ module gpu_register (
             gpu_cfg <= '0;
 
         end else if (
-            mmio_req.valid &&
-            mmio_rsp.ready &&
+            gpu_mmio_bus_req.valid &&
+            gpu_mmio_bus_rsp.ready &&
             access_valid &&
-            (mmio_req.op == bus_pkg::BUS_WRITE)
+            (gpu_mmio_bus_req.op == bus_pkg::BUS_WRITE)
         ) begin
 
             case (local_addr)
 
                 gpu_pkg::GPU_REG_CONTROL: begin
 
-                    gpu_cfg.control <= mmio_req.wdata;
+                    gpu_cfg.control <= gpu_mmio_bus_req.wdata;
 
                 end
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
                     gpu_cfg.framebuffer_base <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
                     gpu_cfg.framebuffer_width <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
                     gpu_cfg.framebuffer_height <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
 
                 gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
                     gpu_cfg.clear_color <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
 
@@ -214,72 +214,72 @@ module gpu_register (
 
     always_comb begin
 
-        mmio_rsp = '0;
+        gpu_mmio_bus_rsp = '0;
 
-        if (mmio_req.valid && !rst) begin
+        if (gpu_mmio_bus_req.valid && !rst) begin
 
-            mmio_rsp.ready = 1'b1;
-            mmio_rsp.error = !access_valid;
+            gpu_mmio_bus_rsp.ready = 1'b1;
+            gpu_mmio_bus_rsp.error = !access_valid;
 
             if (
                 access_valid &&
-                (mmio_req.op == bus_pkg::BUS_READ)
+                (gpu_mmio_bus_req.op == bus_pkg::BUS_READ)
             ) begin
 
                 case (local_addr)
 
                     gpu_pkg::GPU_REG_ID: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_pkg::GPU_ID_VALUE;
 
                     end
 
                     gpu_pkg::GPU_REG_CONTROL: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.control;
 
                     end
 
                     gpu_pkg::GPU_REG_STATUS: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             cpu_pkg::word_t'(status);
 
                     end
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_base;
 
                     end
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_width;
 
                     end
 
                     gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_height;
 
                     end
 
                     gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.clear_color;
 
                     end
 
                     default: begin
 
-                        mmio_rsp.rdata = '0;
+                        gpu_mmio_bus_rsp.rdata = '0;
 
                     end
 

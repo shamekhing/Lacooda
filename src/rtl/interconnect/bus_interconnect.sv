@@ -1,226 +1,214 @@
-`timescale 1ns / 1ps
+`timescale 1ns/1ps
 
 // ============================================================
-// LACOODA BUS INTERCONNECT — STAGE 2
+// LACOODA DATA BUS INTERCONNECT — STAGE 3
 // ============================================================
 //
-// Single-master CPU data bus interconnect.
+// One upstream master:
+//   CPU data bus
 //
-// Connected slaves:
-//   - Internal data RAM
-//   - GPU MMIO
+// Three connected downstream slaves:
+//   Internal data RAM
+//   GPU MMIO
+//   DDR3 bridge
 //
-// Reserved regions:
-//   - TPU MMIO
-//   - DMA MMIO
-//   - microSD MMIO
-//   - System MMIO
-//   - External DDR3
+// Global addresses are converted to device-local
+// byte addresses.
 //
-// Responsibilities:
+// Unmapped addresses and unimplemented devices return
+// an immediate error response.
 //
-//   1. Decode the global CPU address.
-//   2. Validate word alignment.
-//   3. Forward requests to the selected slave.
-//   4. Translate the global byte address to a local address.
-//   5. Forward byte write strobes without modification.
-//   6. Return the selected slave response.
-//   7. Complete invalid and reserved accesses with errors.
+// The interconnect is combinational.
 //
-// IMPORTANT:
+// The master must hold request fields stable until the
+// selected slave returns ready.
 //
-//   This interconnect is combinational.
-//
-//   It does not register, arbitrate, buffer or reorder
-//   transactions.
-//
-//   The CPU master must preserve its request until the
-//   selected slave completes the transaction.
-//
-//   Bus-master arbitration is deferred to Stage 4.
+// Arbitration is not implemented here.
 // ============================================================
 
 module bus_interconnect (
 
-    // ========================================================
-    // CPU DATA BUS
-    // ========================================================
+    // CPU data bus
+    input  bus_pkg::bus_req_s shared_bus_req,
+    output bus_pkg::bus_rsp_s shared_bus_rsp,
 
-    input  bus_pkg::bus_req_s dbus_req,
-    output bus_pkg::bus_rsp_s dbus_rsp,
+    // Internal data RAM
+    output bus_pkg::bus_req_s ram_bus_req,
+    input  bus_pkg::bus_rsp_s ram_bus_rsp,
 
-    // ========================================================
-    // INTERNAL DATA RAM
-    // ========================================================
-
-    output bus_pkg::bus_req_s data_ram_req,
-    input  bus_pkg::bus_rsp_s data_ram_rsp,
-
-    // ========================================================
     // GPU MMIO
-    // ========================================================
+    output bus_pkg::bus_req_s gpu_mmio_bus_req,
+    input  bus_pkg::bus_rsp_s gpu_mmio_bus_rsp,
 
-    output bus_pkg::bus_req_s gpu_mmio_req,
-    input  bus_pkg::bus_rsp_s gpu_mmio_rsp
-
+    // DDR3 bridge
+    output bus_pkg::bus_req_s ddr3_bus_req,
+    input  bus_pkg::bus_rsp_s ddr3_bus_rsp
 );
 
-  // ========================================================
-  // ADDRESS DECODER SIGNALS
-  // ========================================================
+    // ========================================================
+    // ADDRESS DECODE
+    // ========================================================
+    //
+    // Reuse the authoritative decoder function.
+    //
+    // This avoids depending on a particular version of
+    // the separate address_decoder module's port list.
+    //
+    // The existing address_decoder.sv can remain unchanged.
+    // ========================================================
 
-  logic data_ram_sel;
-  logic gpu_mmio_sel;
+    bus_pkg::bus_decode_s decode;
 
-  logic addr_aligned;
+    logic address_aligned;
 
-  bus_pkg::bus_decode_s decode;
+    always_comb begin
+        decode = bus_pkg::bus_decode_address(shared_bus_req.addr);
+    end
 
-  // ========================================================
-  // ADDRESS DECODER
-  // ========================================================
+    assign address_aligned =
+        bus_pkg::bus_is_aligned(shared_bus_req.addr);
 
-  address_decoder u_address_decoder (
+    // ========================================================
+    // RAM REQUEST
+    // ========================================================
 
-      .addr(dbus_req.addr),
+    always_comb begin
 
-      .data_ram_sel(data_ram_sel),
-      .gpu_mmio_sel(gpu_mmio_sel),
+        ram_bus_req = '0;
 
-      .decode(decode)
+        if (
+            shared_bus_req.valid &&
+            address_aligned &&
+            decode.implemented &&
+            (decode.device == bus_pkg::DEVICE_DATA_RAM)
+        ) begin
 
-  );
+            ram_bus_req = shared_bus_req;
+            ram_bus_req.addr = decode.local_addr;
 
-  // ========================================================
-  // ADDRESS ALIGNMENT
-  // ========================================================
-  //
-  // Stage 2 enforces word alignment at the interconnect.
-  //
-  // Peripheral requests are suppressed for misaligned
-  // global addresses.
-  //
-  // A misaligned request completes with an error instead.
-  // ========================================================
-
-  assign addr_aligned = bus_pkg::bus_is_aligned(dbus_req.addr);
-
-  // ========================================================
-  // INTERNAL DATA RAM REQUEST
-  // ========================================================
-  //
-  // Forward the complete request only when:
-  //
-  //   - CPU request is valid.
-  //   - Address is aligned.
-  //   - Decoder selects internal RAM.
-  //
-  // The RAM receives its local byte address.
-  //
-  // All other fields, including the write strobes,
-  // are preserved.
-  // ========================================================
-
-  always_comb begin
-
-    data_ram_req = '0;
-
-    if (dbus_req.valid && addr_aligned && data_ram_sel) begin
-
-      data_ram_req = dbus_req;
-
-      data_ram_req.addr = decode.local_addr;
+        end
 
     end
 
-  end
+    // ========================================================
+    // GPU REQUEST
+    // ========================================================
 
-  // ========================================================
-  // GPU MMIO REQUEST
-  // ========================================================
-  //
-  // GPU registers receive addresses relative to GPU_BASE.
-  //
-  // Example:
-  //
-  //   CPU global address = 0x10000014
-  //   GPU base           = 0x10000000
-  //
-  //   GPU local address  = 0x00000014
-  // ========================================================
+    always_comb begin
 
-  always_comb begin
+        gpu_mmio_bus_req = '0;
 
-    gpu_mmio_req = '0;
+        if (
+            shared_bus_req.valid &&
+            address_aligned &&
+            decode.implemented &&
+            (decode.device == bus_pkg::DEVICE_GPU_MMIO)
+        ) begin
 
-    if (dbus_req.valid && addr_aligned && gpu_mmio_sel) begin
+            gpu_mmio_bus_req = shared_bus_req;
+            gpu_mmio_bus_req.addr = decode.local_addr;
 
-      gpu_mmio_req = dbus_req;
-
-      gpu_mmio_req.addr = decode.local_addr;
+        end
 
     end
 
-  end
+    // ========================================================
+    // DDR3 REQUEST
+    // ========================================================
+    //
+    // Forward the native bus transaction unchanged,
+    // except for translating its address to a DDR3-local
+    // byte address.
+    // ========================================================
 
-  // ========================================================
-  // RESPONSE ROUTING
-  // ========================================================
-  //
-  // The response is selected using the same decode result
-  // as the outgoing slave request.
-  //
-  // Idle request:
-  //   No response.
-  //
-  // Misaligned request:
-  //   Immediate bus error.
-  //
-  // Connected RAM:
-  //   Return RAM response.
-  //
-  // Connected GPU:
-  //   Return GPU response.
-  //
-  // Reserved address:
-  //   Immediate bus error.
-  //
-  // Unmapped address:
-  //   Immediate bus error.
-  //
-  // The request master must hold the address stable while
-  // awaiting a delayed slave response.
-  // ========================================================
+    always_comb begin
 
-  always_comb begin
+        ddr3_bus_req = '0;
 
-    dbus_rsp = '0;
+        if (
+            shared_bus_req.valid &&
+            address_aligned &&
+            decode.implemented &&
+            (decode.device == bus_pkg::DEVICE_DDR3)
+        ) begin
 
-    if (dbus_req.valid) begin
+            ddr3_bus_req = shared_bus_req;
+            ddr3_bus_req.addr = decode.local_addr;
 
-      if (!addr_aligned) begin
-
-        dbus_rsp = bus_pkg::bus_failure();
-
-      end else if (decode.implemented && (decode.device == bus_pkg::DEVICE_DATA_RAM)) begin
-
-        dbus_rsp = data_ram_rsp;
-
-      end else if (decode.implemented && (decode.device == bus_pkg::DEVICE_GPU_MMIO)) begin
-
-        dbus_rsp = gpu_mmio_rsp;
-
-      end else begin
-
-        // Until Stage 3, DDR3 and unimplemented TPU,
-        // DMA, microSD, and system-control registers fail.
-
-        dbus_rsp = bus_pkg::bus_failure();
-
-      end
+        end
 
     end
 
-  end
+    // ========================================================
+    // RESPONSE MULTIPLEXER
+    // ========================================================
+    //
+    // Idle:
+    //   No response.
+    //
+    // Invalid alignment:
+    //   Immediate bus error.
+    //
+    // Connected device:
+    //   Forward the device's actual response.
+    //
+    // Unmapped or reserved device:
+    //   Immediate bus error.
+    // ========================================================
+
+    always_comb begin
+
+        shared_bus_rsp = '0;
+
+        if (shared_bus_req.valid) begin
+
+            if (!address_aligned) begin
+
+                shared_bus_rsp = bus_pkg::bus_failure();
+
+            end else begin
+
+                case (decode.device)
+
+                    bus_pkg::DEVICE_DATA_RAM: begin
+
+                        if (decode.implemented)
+                            shared_bus_rsp = ram_bus_rsp;
+                        else
+                            shared_bus_rsp = bus_pkg::bus_failure();
+
+                    end
+
+                    bus_pkg::DEVICE_GPU_MMIO: begin
+
+                        if (decode.implemented)
+                            shared_bus_rsp = gpu_mmio_bus_rsp;
+                        else
+                            shared_bus_rsp = bus_pkg::bus_failure();
+
+                    end
+
+                    bus_pkg::DEVICE_DDR3: begin
+
+                        if (decode.implemented)
+                            shared_bus_rsp = ddr3_bus_rsp;
+                        else
+                            shared_bus_rsp = bus_pkg::bus_failure();
+
+                    end
+
+                    default: begin
+
+                        shared_bus_rsp = bus_pkg::bus_failure();
+
+                    end
+
+                endcase
+
+            end
+
+        end
+
+    end
 
 endmodule

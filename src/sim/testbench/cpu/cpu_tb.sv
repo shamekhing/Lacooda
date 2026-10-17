@@ -23,11 +23,11 @@ module cpu_tb;
     logic run = 1'b0;
 
     // Typed CPU bus interfaces.
-    bus_pkg::bus_req_s i_req;
-    bus_pkg::bus_rsp_s i_rsp;
+    bus_pkg::bus_req_s cpu_instr_bus_req;
+    bus_pkg::bus_rsp_s cpu_instr_bus_rsp;
     logic ibus_allow;
-    bus_pkg::bus_req_s dbus_req;
-    bus_pkg::bus_rsp_s dbus_rsp;
+    bus_pkg::bus_req_s cpu_bus_req;
+    bus_pkg::bus_rsp_s cpu_bus_rsp;
 
     word_t pc;
     instruction_t instruction;
@@ -44,10 +44,10 @@ module cpu_tb;
         .rst(rst),
         .run(run),
 
-        .ibus_req(i_req),
-        .ibus_rsp(i_rsp),
-        .dbus_req(dbus_req),
-        .dbus_rsp(dbus_rsp),
+        .cpu_instr_bus_req(cpu_instr_bus_req),
+        .cpu_instr_bus_rsp(cpu_instr_bus_rsp),
+        .cpu_bus_req(cpu_bus_req),
+        .cpu_bus_rsp(cpu_bus_rsp),
 
         .retire_valid(execution_valid),
         .illegal_instr(illegal_instruction)
@@ -59,13 +59,13 @@ module cpu_tb;
     // Controllable instruction-bus slave used only by this testbench.
     // It can insert arbitrary fetch wait states through ibus_allow.
     always_comb begin
-        i_rsp.ready = i_req.valid && ibus_allow;
-        i_rsp.rdata = '0;
+        cpu_instr_bus_rsp.ready = cpu_instr_bus_req.valid && ibus_allow;
+        cpu_instr_bus_rsp.rdata = '0;
 
-        if (i_req.valid &&
-            i_req.addr % WORD_BYTES == 0 &&
-            (i_req.addr / WORD_BYTES) < 14)
-            i_rsp.rdata = program_words[i_req.addr / WORD_BYTES];
+        if (cpu_instr_bus_req.valid &&
+            cpu_instr_bus_req.addr % WORD_BYTES == 0 &&
+            (cpu_instr_bus_req.addr / WORD_BYTES) < 14)
+            cpu_instr_bus_rsp.rdata = program_words[cpu_instr_bus_req.addr / WORD_BYTES];
     end
 
     task automatic check(input logic condition, input string description);
@@ -122,8 +122,8 @@ module cpu_tb;
         program_words[13] = word_t'(222);
 
         ibus_allow = 1'b0;
-        dbus_rsp.ready = 1'b0;
-        dbus_rsp.rdata = '0;
+        cpu_bus_rsp.ready = 1'b0;
+        cpu_bus_rsp.rdata = '0;
 
         // Reset architectural state.
         @(posedge clk);
@@ -139,8 +139,8 @@ module cpu_tb;
         // ----------------------------------------------------
         @(posedge clk); // Starts first fetch request.
         #1;
-        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
-              i_req.addr === word_t'(0) && i_req.wdata === '0,
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.op == bus_pkg::BUS_READ &&
+              cpu_instr_bus_req.addr === word_t'(0) && cpu_instr_bus_req.wdata === '0,
               "I-BUS starts fetch at PC 0");
 
         // Pause after valid has been asserted. The started request must not
@@ -148,14 +148,14 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
-              i_req.addr === word_t'(0) && i_req.wdata === '0,
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.op == bus_pkg::BUS_READ &&
+              cpu_instr_bus_req.addr === word_t'(0) && cpu_instr_bus_req.wdata === '0,
               "in-flight I-BUS request survives run deassertion");
 
         @(posedge clk);
         #1;
-        check(i_req.valid && i_req.op == bus_pkg::BUS_READ &&
-              i_req.addr === word_t'(0) && i_req.wdata === '0,
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.op == bus_pkg::BUS_READ &&
+              cpu_instr_bus_req.addr === word_t'(0) && cpu_instr_bus_req.wdata === '0,
               "I-BUS address remains stable while ready is low");
 
         // Accept the instruction word; the immediate beat completes on the
@@ -180,7 +180,7 @@ module cpu_tb;
               "PC advances past instruction and immediate");
         check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[1] === word_t'(100),
               "MOVI R1 retires after I-BUS fetch");
-        check(!i_req.valid,
+        check(!cpu_instr_bus_req.valid,
               "paused CPU does not start another fetch");
 
         // Resume and execute MOVI R2.
@@ -189,7 +189,7 @@ module cpu_tb;
         wait_for_buffered_pc(word_t'(2 * WORD_BYTES));
         wait (execution_valid === 1'b1);
         #1;
-        check(execution_valid && !dbus_req.valid,
+        check(execution_valid && !cpu_bus_req.valid,
               "ordinary instruction executes without D-BUS traffic");
         @(posedge clk); // Retire MOVI R2.
         #1;
@@ -199,11 +199,11 @@ module cpu_tb;
         // ----------------------------------------------------
         wait_for_buffered_pc(word_t'(4 * WORD_BYTES));
         // The effective address is computed by the multi-cycle ALU first.
-        wait (dbus_req.valid === 1'b1);
+        wait (cpu_bus_req.valid === 1'b1);
         #1;
-        check(dbus_req.valid && (dbus_req.op == bus_pkg::BUS_WRITE) &&
-              dbus_req.addr === word_t'(9 * WORD_BYTES) &&
-              dbus_req.wdata === word_t'(100),
+        check(cpu_bus_req.valid && (cpu_bus_req.op == bus_pkg::BUS_WRITE) &&
+              cpu_bus_req.addr === word_t'(9 * WORD_BYTES) &&
+              cpu_bus_req.wdata === word_t'(100),
               "STORE presents complete D-BUS request");
         check(!execution_valid,
               "STORE does not retire while D-BUS ready is low");
@@ -211,28 +211,28 @@ module cpu_tb;
         @(negedge clk);
         run = 1'b0;
         #1;
-        check(dbus_req.valid && dbus_req.op == bus_pkg::BUS_WRITE,
+        check(cpu_bus_req.valid && cpu_bus_req.op == bus_pkg::BUS_WRITE,
               "in-flight STORE survives run deassertion");
 
         @(posedge clk);
         #1;
         check(pc === word_t'(4 * WORD_BYTES) &&
-              dbus_req.valid &&
-              dbus_req.addr === word_t'(9 * WORD_BYTES) &&
-              dbus_req.wdata === word_t'(100),
+              cpu_bus_req.valid &&
+              cpu_bus_req.addr === word_t'(9 * WORD_BYTES) &&
+              cpu_bus_req.wdata === word_t'(100),
               "STORE PC/request remain stable while waiting");
 
         @(negedge clk);
-        dbus_rsp.ready = 1'b1;
+        cpu_bus_rsp.ready = 1'b1;
         #1;
-        check(dbus_req.valid && execution_valid,
+        check(cpu_bus_req.valid && execution_valid,
               "STORE completes when D-BUS ready is asserted");
         @(posedge clk); // Retire STORE.
         #1;
-        dbus_rsp.ready = 1'b0;
+        cpu_bus_rsp.ready = 1'b0;
         check(pc === word_t'(6 * WORD_BYTES),
               "PC advances after STORE handshake");
-        check(!i_req.valid,
+        check(!cpu_instr_bus_req.valid,
               "run=0 prevents next fetch after completed STORE");
 
         // ----------------------------------------------------
@@ -240,12 +240,12 @@ module cpu_tb;
         // ----------------------------------------------------
         @(negedge clk);
         run = 1'b1;
-        dbus_rsp.rdata = word_t'(100);
+        cpu_bus_rsp.rdata = word_t'(100);
         wait_for_buffered_pc(word_t'(6 * WORD_BYTES));
-        wait (dbus_req.valid === 1'b1);
+        wait (cpu_bus_req.valid === 1'b1);
         #1;
-        check(dbus_req.valid && dbus_req.op == bus_pkg::BUS_READ &&
-              dbus_req.addr === word_t'(9 * WORD_BYTES),
+        check(cpu_bus_req.valid && cpu_bus_req.op == bus_pkg::BUS_READ &&
+              cpu_bus_req.addr === word_t'(9 * WORD_BYTES),
               "LOAD presents D-BUS read request");
         check(!execution_valid,
               "LOAD does not retire while D-BUS ready is low");
@@ -256,14 +256,14 @@ module cpu_tb;
               "stalled LOAD does not write R3 early");
 
         @(negedge clk);
-        dbus_rsp.ready = 1'b1;
+        cpu_bus_rsp.ready = 1'b1;
         #1;
-        check(dbus_req.valid && dbus_req.op == bus_pkg::BUS_READ && execution_valid,
+        check(cpu_bus_req.valid && cpu_bus_req.op == bus_pkg::BUS_READ && execution_valid,
               "LOAD completes on D-BUS handshake");
         @(posedge clk); // Retire LOAD and write R3.
         #1;
-        dbus_rsp.ready = 1'b0;
-        dbus_rsp.rdata = '0;
+        cpu_bus_rsp.ready = 1'b0;
+        cpu_bus_rsp.rdata = '0;
         check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[3] === word_t'(100),
               "LOAD writes D-BUS data to R3");
 

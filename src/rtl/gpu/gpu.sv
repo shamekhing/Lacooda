@@ -23,8 +23,8 @@ module gpu (
     input logic clk,
     input logic rst,
 
-    input  bus_pkg::bus_req_s mmio_req,
-    output bus_pkg::bus_rsp_s mmio_rsp
+    input  bus_pkg::bus_req_s gpu_mmio_bus_req,
+    output bus_pkg::bus_rsp_s gpu_mmio_bus_rsp
 );
 
 
@@ -77,8 +77,8 @@ module gpu (
         .clk       (clk),
         .rst       (rst),
 
-        .mmio_req (mmio_req),
-        .mmio_rsp (mmio_rsp),
+        .gpu_mmio_bus_req (gpu_mmio_bus_req),
+        .gpu_mmio_bus_rsp (gpu_mmio_bus_rsp),
 
         .status    (status),
         .gpu_cfg    (gpu_cfg)

@@ -25,7 +25,7 @@
 // IMPORTANT:
 //   The old packed concatenation:
 //
-//       assign ibus_rsp = {ibus_req.valid, rdata};
+//       assign cpu_instr_bus_rsp = {cpu_instr_bus_req.valid, rdata};
 //
 //   is no longer valid after adding the response error bit.
 //
@@ -34,8 +34,8 @@
 
 module instruction_rom (
 
-    input  bus_pkg::bus_req_s ibus_req,
-    output bus_pkg::bus_rsp_s ibus_rsp
+    input  bus_pkg::bus_req_s cpu_instr_bus_req,
+    output bus_pkg::bus_rsp_s cpu_instr_bus_rsp
 
 );
 
@@ -69,10 +69,10 @@ module instruction_rom (
     logic addr_valid;
 
     assign addr_aligned =
-        bus_pkg::bus_is_aligned(ibus_req.addr);
+        bus_pkg::bus_is_aligned(cpu_instr_bus_req.addr);
 
     assign addr_in_range =
-        (ibus_req.addr / cpu_pkg::WORD_BYTES)
+        (cpu_instr_bus_req.addr / cpu_pkg::WORD_BYTES)
         < memory_pkg::INSTRUCTION_ROM_WORDS;
 
     assign addr_valid =
@@ -93,30 +93,30 @@ module instruction_rom (
 
     always_comb begin
 
-        ibus_rsp = '0;
+        cpu_instr_bus_rsp = '0;
 
-        if (ibus_req.valid) begin
+        if (cpu_instr_bus_req.valid) begin
 
-            ibus_rsp.ready = 1'b1;
+            cpu_instr_bus_rsp.ready = 1'b1;
 
             if (
-                (ibus_req.op == bus_pkg::BUS_READ) &&
+                (cpu_instr_bus_req.op == bus_pkg::BUS_READ) &&
                 addr_valid
             ) begin
 
-                ibus_rsp.rdata =
+                cpu_instr_bus_rsp.rdata =
                     cpu_pkg::word_t'(
                         rom_words[
-                            ibus_req.addr / cpu_pkg::WORD_BYTES
+                            cpu_instr_bus_req.addr / cpu_pkg::WORD_BYTES
                         ]
                     );
 
-                ibus_rsp.error = 1'b0;
+                cpu_instr_bus_rsp.error = 1'b0;
 
             end else begin
 
-                ibus_rsp.rdata = '0;
-                ibus_rsp.error = 1'b1;
+                cpu_instr_bus_rsp.rdata = '0;
+                cpu_instr_bus_rsp.error = 1'b1;
 
             end
 

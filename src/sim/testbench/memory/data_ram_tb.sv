@@ -6,11 +6,11 @@ module data_ram_tb;
     logic clk = 1'b0;
     always #5 clk = ~clk;
     logic rst = 1'b1;
-    bus_pkg::bus_req_s data_ram_req;
-    bus_pkg::bus_rsp_s data_ram_rsp;
+    bus_pkg::bus_req_s ram_bus_req;
+    bus_pkg::bus_rsp_s ram_bus_rsp;
 
     data_ram dut (
-        .clk(clk), .rst(rst), .data_ram_req(data_ram_req), .data_ram_rsp(data_ram_rsp)
+        .clk(clk), .rst(rst), .ram_bus_req(ram_bus_req), .ram_bus_rsp(ram_bus_rsp)
     );
 
     task automatic transact(
@@ -20,31 +20,33 @@ module data_ram_tb;
         input word_t expected_rdata
     );
         @(negedge clk);
-        data_ram_req.valid = 1'b1;
-        data_ram_req.op = op;
-        data_ram_req.addr = addr;
-        data_ram_req.wdata = wdata;
+        ram_bus_req.valid = 1'b1;
+        ram_bus_req.op = op;
+        ram_bus_req.addr = addr;
+        ram_bus_req.wdata = wdata;
+        ram_bus_req.wstrb = (op == bus_pkg::BUS_WRITE)
+            ? bus_pkg::BUS_STRB_ALL : bus_pkg::BUS_STRB_NONE;
         #1;
-        if (data_ram_rsp.ready !== 1'b0)
+        if (ram_bus_rsp.ready !== 1'b0)
             $fatal(1, "memory responded before synchronous access");
         @(posedge clk);
         #1;
-        if (data_ram_rsp.ready !== 1'b1)
+        if (ram_bus_rsp.ready !== 1'b1)
             $fatal(1, "memory did not complete access at address %h", addr);
-        if (op == bus_pkg::BUS_READ && data_ram_rsp.rdata !== expected_rdata)
-            $fatal(1, "read at %h: expected %h, got %h", addr, expected_rdata, data_ram_rsp.rdata);
+        if (op == bus_pkg::BUS_READ && ram_bus_rsp.rdata !== expected_rdata)
+            $fatal(1, "read at %h: expected %h, got %h", addr, expected_rdata, ram_bus_rsp.rdata);
         @(negedge clk);
-        data_ram_req.valid = 1'b0;
+        ram_bus_req.valid = 1'b0;
         @(posedge clk);
         #1;
-        if (data_ram_rsp.ready !== 1'b0)
+        if (ram_bus_rsp.ready !== 1'b0)
             $fatal(1, "memory response did not clear");
     endtask
 
     initial begin
         $dumpfile("data_ram.vcd");
         $dumpvars(0, data_ram_tb);
-        data_ram_req = '0;
+        ram_bus_req = '0;
         repeat (2) @(posedge clk);
         @(negedge clk);
         rst = 1'b0;

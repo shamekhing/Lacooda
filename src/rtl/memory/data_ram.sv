@@ -50,8 +50,8 @@ module data_ram (
     input logic clk,
     input logic rst,
 
-    input  bus_pkg::bus_req_s data_ram_req,
-    output bus_pkg::bus_rsp_s data_ram_rsp
+    input  bus_pkg::bus_req_s ram_bus_req,
+    output bus_pkg::bus_rsp_s ram_bus_rsp
 
 );
 
@@ -98,12 +98,17 @@ module data_ram (
     logic addr_valid;
 
     logic [RAM_INDEX_WIDTH-1:0] word_index;
+    bus_pkg::bus_strb_t write_strobes;
+    cpu_pkg::word_t write_data;
+
+    assign write_strobes = ram_bus_req.wstrb;
+    assign write_data = ram_bus_req.wdata;
 
     assign addr_aligned =
-        bus_pkg::bus_is_aligned(data_ram_req.addr);
+        bus_pkg::bus_is_aligned(ram_bus_req.addr);
 
     assign addr_in_range =
-        data_ram_req.addr < RAM_SIZE_BYTES;
+        ram_bus_req.addr < RAM_SIZE_BYTES;
 
     assign addr_valid =
         addr_aligned && addr_in_range;
@@ -115,7 +120,7 @@ module data_ram (
 
     assign word_index =
         RAM_INDEX_WIDTH'(
-            data_ram_req.addr / cpu_pkg::WORD_BYTES
+            ram_bus_req.addr / cpu_pkg::WORD_BYTES
         );
 
     // ========================================================
@@ -168,7 +173,7 @@ module data_ram (
 
             pending <= 1'b0;
 
-        end else if (data_ram_req.valid) begin
+        end else if (ram_bus_req.valid) begin
 
             // ------------------------------------------------
             // ACCEPT NEW TRANSACTION
@@ -202,7 +207,7 @@ module data_ram (
             // ------------------------------------------------
 
             else if (
-                data_ram_req.op == bus_pkg::BUS_WRITE
+                ram_bus_req.op == bus_pkg::BUS_WRITE
             ) begin
 
                 for (
@@ -211,12 +216,12 @@ module data_ram (
                     byte_index++
                 ) begin
 
-                    if (data_ram_req.wstrb[byte_index]) begin
+                    if (write_strobes[byte_index]) begin
 
                         ram_words[word_index]
                             [8*byte_index +: 8]
                             <=
-                            data_ram_req.wdata
+                            write_data
                             [8*byte_index +: 8];
 
                     end
@@ -252,13 +257,13 @@ module data_ram (
 
     always_comb begin
 
-        data_ram_rsp = '0;
+        ram_bus_rsp = '0;
 
         if (!rst && pending) begin
 
-            data_ram_rsp.ready = 1'b1;
-            data_ram_rsp.rdata = read_data;
-            data_ram_rsp.error = response_error;
+            ram_bus_rsp.ready = 1'b1;
+            ram_bus_rsp.rdata = read_data;
+            ram_bus_rsp.error = response_error;
 
         end
 

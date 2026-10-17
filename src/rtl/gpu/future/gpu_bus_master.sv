@@ -46,8 +46,8 @@ module gpu_bus_master (
     // LACOODA MASTER BUS
     // --------------------------------------------------------
 
-    output bus_pkg::bus_req_s master_req,
-    input  bus_pkg::bus_rsp_s master_rsp
+    output bus_pkg::bus_req_s gpu_bus_req,
+    input  bus_pkg::bus_rsp_s gpu_bus_rsp
 );
 
 
@@ -119,7 +119,7 @@ module gpu_bus_master (
 
                 GPU_MEM_WAIT: begin
 
-                    if (master_rsp.ready) begin
+                    if (gpu_bus_rsp.ready) begin
 
                         request_reg <= '0;
 
@@ -154,20 +154,20 @@ module gpu_bus_master (
 
     always_comb begin
 
-        master_req = '0;
+        gpu_bus_req = '0;
 
         if (state == GPU_MEM_WAIT) begin
 
-            master_req.valid =
+            gpu_bus_req.valid =
                 1'b1;
 
-            master_req.op =
+            gpu_bus_req.op =
                 request_reg.op;
 
-            master_req.addr =
+            gpu_bus_req.addr =
                 request_reg.addr;
 
-            master_req.wdata =
+            gpu_bus_req.wdata =
                 request_reg.wdata;
 
         end
@@ -189,14 +189,14 @@ module gpu_bus_master (
 
         if (
             (state == GPU_MEM_WAIT) &&
-            master_rsp.ready
+            gpu_bus_rsp.ready
         ) begin
 
             gpu_rsp.ready =
                 1'b1;
 
             gpu_rsp.rdata =
-                master_rsp.rdata;
+                gpu_bus_rsp.rdata;
 
         end
 

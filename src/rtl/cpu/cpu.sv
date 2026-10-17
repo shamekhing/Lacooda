@@ -38,11 +38,11 @@ module cpu (
     input logic rst,
     input logic run,
 
-    output bus_pkg::bus_req_s ibus_req,
-    input  bus_pkg::bus_rsp_s ibus_rsp,
+    output bus_pkg::bus_req_s cpu_instr_bus_req,
+    input  bus_pkg::bus_rsp_s cpu_instr_bus_rsp,
 
-    output bus_pkg::bus_req_s dbus_req,
-    input  bus_pkg::bus_rsp_s dbus_rsp,
+    output bus_pkg::bus_req_s cpu_bus_req,
+    input  bus_pkg::bus_rsp_s cpu_bus_rsp,
 
     output logic retire_valid,
     output logic illegal_instr
@@ -81,16 +81,16 @@ module cpu (
     // The interconnect and RAM perform address validation.
     // ========================================================
 
-    assign dbus_req.valid = dbus_valid;
+    assign cpu_bus_req.valid = dbus_valid;
 
-    assign dbus_req.op =
+    assign cpu_bus_req.op =
         dbus_write
             ? bus_pkg::BUS_WRITE
             : bus_pkg::BUS_READ;
 
-    assign dbus_req.addr  = dbus_addr;
-    assign dbus_req.wdata = dbus_wdata;
-    assign dbus_req.wstrb = bus_pkg::BUS_STRB_ALL;
+    assign cpu_bus_req.addr  = dbus_addr;
+    assign cpu_bus_req.wdata = dbus_wdata;
+    assign cpu_bus_req.wstrb = bus_pkg::BUS_STRB_ALL;
 
     // ========================================================
     // INSTRUCTION EXECUTION ENABLE
@@ -139,8 +139,8 @@ module cpu (
         .redirect              (redirect),
         .redirect_target       (redirect_target),
 
-        .ibus_req              (ibus_req),
-        .ibus_rsp              (ibus_rsp),
+        .cpu_instr_bus_req              (cpu_instr_bus_req),
+        .cpu_instr_bus_rsp              (cpu_instr_bus_rsp),
 
         .instruction           (instruction),
         .immediate_word        (immediate_word),
@@ -175,8 +175,8 @@ module cpu (
 
         .carry_in        (1'b0),
 
-        .dbus_ready      (dbus_rsp.ready),
-        .dbus_rdata      (dbus_rsp.rdata),
+        .dbus_ready      (cpu_bus_rsp.ready),
+        .dbus_rdata      (cpu_bus_rsp.rdata),
 
         .illegal_instr   (illegal_instr),
         .retire_valid    (retire_valid),

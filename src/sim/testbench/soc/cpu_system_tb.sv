@@ -32,7 +32,11 @@ module system_tb;
         .rst(rst),
         .run(run),
         .retire_valid(execution_valid),
-        .illegal_instr(illegal_instruction)
+        .illegal_instr(illegal_instruction),
+        .gpu_bus_req('0),
+        .tpu_bus_req('0),
+        .ddr3_backend_ready(1'b0),
+        .ddr3_backend_bus_rsp('0)
     );
 
     assign pc = dut.u_cpu.u_instruction_fetch.pc;
@@ -118,11 +122,11 @@ module system_tb;
             encode_store(reg_addr_t'(1), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.dbus_req.valid && dut.dbus_req.op == bus_pkg::BUS_WRITE && dut.dbus_rsp.ready)
+        assert (dut.cpu_bus_req.valid && dut.cpu_bus_req.op == bus_pkg::BUS_WRITE && dut.cpu_bus_rsp.ready)
             else $fatal(1, "STORE D-BUS handshake wrong");
-        assert (dut.dbus_req.addr === word_t'(72))
-            else $fatal(1, "STORE address wrong: %0d", dut.dbus_req.addr);
-        assert (dut.dbus_req.wdata === word_t'(100))
+        assert (dut.cpu_bus_req.addr === word_t'(72))
+            else $fatal(1, "STORE address wrong: %0d", dut.cpu_bus_req.addr);
+        assert (dut.cpu_bus_req.wdata === word_t'(100))
             else $fatal(1, "STORE data wrong");
         @(posedge clk); // Commit STORE and retire instruction.
         #1;
@@ -133,10 +137,10 @@ module system_tb;
             encode_load(reg_addr_t'(3), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.dbus_req.valid && dut.dbus_req.op == bus_pkg::BUS_READ && dut.dbus_rsp.ready)
+        assert (dut.cpu_bus_req.valid && dut.cpu_bus_req.op == bus_pkg::BUS_READ && dut.cpu_bus_rsp.ready)
             else $fatal(1, "LOAD D-BUS handshake wrong");
-        assert (dut.dbus_rsp.rdata === word_t'(100))
-            else $fatal(1, "LOAD data expected 100, got %0d", dut.dbus_rsp.rdata);
+        assert (dut.cpu_bus_rsp.rdata === word_t'(100))
+            else $fatal(1, "LOAD data expected 100, got %0d", dut.cpu_bus_rsp.rdata);
         @(posedge clk); // Commit LOAD writeback and retire.
         #1;
 

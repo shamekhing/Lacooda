@@ -38,8 +38,8 @@ module instruction_fetch (
     input logic redirect,
     input cpu_pkg::word_t redirect_target,
 
-    output bus_pkg::bus_req_s ibus_req,
-    input  bus_pkg::bus_rsp_s ibus_rsp,
+    output bus_pkg::bus_req_s cpu_instr_bus_req,
+    input  bus_pkg::bus_rsp_s cpu_instr_bus_rsp,
 
     output cpu_pkg::instruction_t instruction,
     output cpu_pkg::word_t immediate_word,
@@ -96,20 +96,20 @@ module instruction_fetch (
     // Write data and strobes are always zero.
     // ========================================================
 
-    assign ibus_req.valid =
+    assign cpu_instr_bus_req.valid =
         fetch_state != FETCH_IDLE;
 
-    assign ibus_req.op =
+    assign cpu_instr_bus_req.op =
         bus_pkg::BUS_READ;
 
-    assign ibus_req.addr =
+    assign cpu_instr_bus_req.addr =
         (fetch_state == FETCH_IMM)
             ? pc + cpu_pkg::word_t'(cpu_pkg::WORD_BYTES)
             : pc;
 
-    assign ibus_req.wdata = '0;
+    assign cpu_instr_bus_req.wdata = '0;
 
-    assign ibus_req.wstrb =
+    assign cpu_instr_bus_req.wstrb =
         bus_pkg::BUS_STRB_NONE;
 
     // ========================================================
@@ -177,16 +177,16 @@ module instruction_fetch (
 
                 FETCH_INSTR: begin
 
-                    if (ibus_rsp.ready) begin
+                    if (cpu_instr_bus_rsp.ready) begin
 
                         instruction <=
                             cpu_pkg::instruction_t'(
-                                ibus_rsp.rdata
+                                cpu_instr_bus_rsp.rdata
                             );
 
                         if (
                             cpu_pkg::instr_uses_imm(
-                                ibus_rsp.rdata
+                                cpu_instr_bus_rsp.rdata
                             )
                         ) begin
 
@@ -212,9 +212,9 @@ module instruction_fetch (
 
                 FETCH_IMM: begin
 
-                    if (ibus_rsp.ready) begin
+                    if (cpu_instr_bus_rsp.ready) begin
 
-                        immediate_word <= ibus_rsp.rdata;
+                        immediate_word <= cpu_instr_bus_rsp.rdata;
 
                         fetch_state <= FETCH_IDLE;
 

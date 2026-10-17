@@ -21,8 +21,8 @@ module instruction_fetch_tb;
     logic redirect = 1'b0;
     word_t redirect_target = '0;
 
-    bus_pkg::bus_req_s ibus_req;
-    bus_pkg::bus_rsp_s ibus_rsp;
+    bus_pkg::bus_req_s cpu_instr_bus_req;
+    bus_pkg::bus_rsp_s cpu_instr_bus_rsp;
 
     word_t pc;
     instruction_t instruction;
@@ -42,8 +42,8 @@ module instruction_fetch_tb;
         .retire(retire),
         .redirect(redirect),
         .redirect_target(redirect_target),
-        .ibus_req(ibus_req),
-        .ibus_rsp(ibus_rsp),
+        .cpu_instr_bus_req(cpu_instr_bus_req),
+        .cpu_instr_bus_rsp(cpu_instr_bus_rsp),
         .instruction(instruction),
         .immediate_word(immediate_word),
         .instruction_available(instruction_available)
@@ -70,7 +70,7 @@ module instruction_fetch_tb;
 
         @(posedge clk);
         #1;
-        check(pc === '0 && !ibus_req.valid && !instruction_available,
+        check(pc === '0 && !cpu_instr_bus_req.valid && !instruction_available,
               "reset clears PC/fetch state");
 
         @(negedge clk);
@@ -78,14 +78,14 @@ module instruction_fetch_tb;
         run = 1'b1;
         @(posedge clk);
         #1;
-        check(ibus_req.valid && ibus_req.addr === word_t'(0),
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.addr === word_t'(0),
               "run starts I-BUS request at current PC");
 
         // A running CPU must not consume response data before ready.
         @(posedge clk);
         #1;
-        check(ibus_req.valid && !instruction_available &&
-              ibus_req.addr === word_t'(0),
+        check(cpu_instr_bus_req.valid && !instruction_available &&
+              cpu_instr_bus_req.addr === word_t'(0),
               "waiting I-BUS request does not fill the buffer");
 
         // Started request survives pause and keeps address stable.
@@ -93,16 +93,16 @@ module instruction_fetch_tb;
         run = 1'b0;
         @(posedge clk);
         #1;
-        check(ibus_req.valid && ibus_req.addr === word_t'(0),
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.addr === word_t'(0),
               "waiting I-BUS request is held across pause");
 
         // Accept a one-word instruction (no immediate follows).
         @(negedge clk);
-        ibus_rsp.rdata = 'h1234;
-        ibus_rsp.ready = 1'b1;
+        cpu_instr_bus_rsp.rdata = 'h1234;
+        cpu_instr_bus_rsp.ready = 1'b1;
         @(posedge clk);
         #1;
-        ibus_rsp.ready = 1'b0;
+        cpu_instr_bus_rsp.ready = 1'b0;
         check(instruction_available && instruction === instruction_t'('h1234),
               "I-BUS handshake fills instruction buffer");
         check(pc === word_t'(0),
@@ -116,7 +116,7 @@ module instruction_fetch_tb;
         retire = 1'b0;
         check(pc === word_t'(WORD_BYTES),
               "sequential retirement advances PC by one word");
-        check(!instruction_available && !ibus_req.valid,
+        check(!instruction_available && !cpu_instr_bus_req.valid,
               "paused retirement leaves fetch idle");
 
         // Resume: fetch an instruction that uses an immediate word.
@@ -124,17 +124,17 @@ module instruction_fetch_tb;
         run = 1'b1;
         @(posedge clk);
         #1;
-        check(ibus_req.valid && ibus_req.addr === word_t'(WORD_BYTES),
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.addr === word_t'(WORD_BYTES),
               "resume fetches sequential PC");
 
         @(negedge clk);
-        ibus_rsp.rdata = movi_instr;
-        ibus_rsp.ready = 1'b1;
+        cpu_instr_bus_rsp.rdata = movi_instr;
+        cpu_instr_bus_rsp.ready = 1'b1;
         @(posedge clk);
         #1;
-        ibus_rsp.ready = 1'b0;
-        check(!instruction_available && ibus_req.valid &&
-              ibus_req.addr === word_t'(2 * WORD_BYTES),
+        cpu_instr_bus_rsp.ready = 1'b0;
+        check(!instruction_available && cpu_instr_bus_req.valid &&
+              cpu_instr_bus_req.addr === word_t'(2 * WORD_BYTES),
               "immediate fetch follows the instruction word");
 
         // The immediate request is held until accepted, even when paused.
@@ -142,15 +142,15 @@ module instruction_fetch_tb;
         run = 1'b0;
         @(posedge clk);
         #1;
-        check(ibus_req.valid && ibus_req.addr === word_t'(2 * WORD_BYTES),
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.addr === word_t'(2 * WORD_BYTES),
               "waiting immediate request is held across pause");
 
         @(negedge clk);
-        ibus_rsp.rdata = word_t'(32'hABCD_1234);
-        ibus_rsp.ready = 1'b1;
+        cpu_instr_bus_rsp.rdata = word_t'(32'hABCD_1234);
+        cpu_instr_bus_rsp.ready = 1'b1;
         @(posedge clk);
         #1;
-        ibus_rsp.ready = 1'b0;
+        cpu_instr_bus_rsp.ready = 1'b0;
         check(instruction_available && instruction === movi_instr &&
               immediate_word === word_t'(32'hABCD_1234),
               "instruction and immediate word are buffered together");
@@ -176,7 +176,7 @@ module instruction_fetch_tb;
         redirect = 1'b0;
         check(pc === word_t'(8 * WORD_BYTES),
               "redirect retirement loads target PC");
-        check(ibus_req.valid && ibus_req.addr === word_t'(8 * WORD_BYTES),
+        check(cpu_instr_bus_req.valid && cpu_instr_bus_req.addr === word_t'(8 * WORD_BYTES),
               "run starts target fetch immediately after redirect");
 
         $display("========================================");

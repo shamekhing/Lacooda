@@ -176,7 +176,6 @@ module cpu (
         .carry_flag      (carry_flag),
 
         .dbus_ready      (cpu_bus_rsp.ready),
-        .dbus_error      (cpu_bus_rsp.error),
         .dbus_rdata      (cpu_bus_rsp.rdata),
 
         .illegal_instr   (illegal_instr),

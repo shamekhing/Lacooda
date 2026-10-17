@@ -53,7 +53,6 @@ module cpu_core_tb;
         .carry_in(carry_in),
 
         .dbus_ready(dbus_ready),
-        .dbus_error(1'b0),
         .dbus_rdata(dbus_read_data),
 
         .illegal_instr(illegal_instruction),
@@ -177,16 +176,17 @@ module cpu_core_tb;
 
         tests = tests + 1;
 
-        if (operand_a !== expected) begin
+        if (dut.u_cpu_datapath.u_cpu_register.registers[address] !== expected) begin
             $display(
                 "FAIL: R%0d expected=%h actual=%h",
                 address,
                 expected,
-                operand_a
+                dut.u_cpu_datapath.u_cpu_register.registers[address]
             );
             errors = errors + 1;
         end else begin
-            $display("PASS: R%0d = %h", address, operand_a);
+            $display("PASS: R%0d = %h", address,
+                     dut.u_cpu_datapath.u_cpu_register.registers[address]);
         end
     endtask
 
@@ -336,7 +336,7 @@ module cpu_core_tb;
         #1;
 
         tests = tests + 1;
-        if (!(instruction_valid && execution_valid && !illegal_instruction &&
+        if (!(instruction_valid && !execution_valid && !illegal_instruction &&
               dbus_valid && dbus_write && dbus_ready &&
               dbus_address == word_t'(9 * WORD_BYTES) &&
               dbus_write_data == STORE_TEST_VALUE)) begin
@@ -350,6 +350,12 @@ module cpu_core_tb;
                      dbus_address, dbus_write_data);
         end
 
+        @(posedge clk);
+        #1;
+        if (execution_valid !== 1'b1) begin
+            $display("FAIL: STORE did not retire after bus acceptance");
+            errors = errors + 1;
+        end
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;
@@ -397,13 +403,19 @@ module cpu_core_tb;
         #1;
 
         tests = tests + 1;
-        if (!(dbus_valid && !dbus_write && dbus_ready && execution_valid)) begin
+        if (!(dbus_valid && !dbus_write && dbus_ready && !execution_valid)) begin
             $display("FAIL: LOAD did not complete when dbus_ready asserted");
             errors = errors + 1;
         end else begin
             $display("PASS: LOAD completes on valid/ready handshake");
         end
 
+        @(posedge clk);
+        #1;
+        if (execution_valid !== 1'b1) begin
+            $display("FAIL: LOAD did not retire after bus acceptance");
+            errors = errors + 1;
+        end
         @(posedge clk);
         #1;
         instruction_enable = 1'b0;

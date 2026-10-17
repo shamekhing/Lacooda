@@ -13,10 +13,8 @@
 //
 // The instruction-fetch unit decides which word to request.
 //
-// This implementation preserves the original combinational
-// ROM behavior.
-//
-// There are no wait states.
+// ROM data and response are registered. A request is accepted on one
+// rising edge and acknowledged during the following cycle.
 //
 // Invalid accesses complete with an error.
 //
@@ -33,6 +31,9 @@
 // ============================================================
 
 module instruction_rom (
+
+    input logic clk,
+    input logic rst,
 
     input  bus_pkg::bus_req_s cpu_instr_bus_req,
     output bus_pkg::bus_rsp_s cpu_instr_bus_rsp
@@ -79,10 +80,10 @@ module instruction_rom (
         addr_aligned && addr_in_range;
 
     // ========================================================
-    // COMBINATIONAL RESPONSE
+    // REGISTERED RESPONSE
     // ========================================================
     //
-    // A valid read completes immediately.
+    // A valid read completes after one rising edge.
     //
     // A misaligned or out-of-range request returns an error.
     //
@@ -91,37 +92,27 @@ module instruction_rom (
     // The ROM array is never modified.
     // ========================================================
 
-    always_comb begin
+    logic response_pending;
+    bus_pkg::bus_rsp_s response_reg;
 
-        cpu_instr_bus_rsp = '0;
+    assign cpu_instr_bus_rsp = response_pending ? response_reg : '0;
 
-        if (cpu_instr_bus_req.valid) begin
-
-            cpu_instr_bus_rsp.ready = 1'b1;
-
-            if (
-                (cpu_instr_bus_req.op == bus_pkg::BUS_READ) &&
-                addr_valid
-            ) begin
-
-                cpu_instr_bus_rsp.rdata =
-                    cpu_pkg::word_t'(
-                        rom_words[
-                            cpu_instr_bus_req.addr / cpu_pkg::WORD_BYTES
-                        ]
-                    );
-
-                cpu_instr_bus_rsp.error = 1'b0;
-
-            end else begin
-
-                cpu_instr_bus_rsp.rdata = '0;
-                cpu_instr_bus_rsp.error = 1'b1;
-
-            end
-
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            response_pending <= 1'b0;
+            response_reg <= '0;
+        end else if (response_pending) begin
+            response_pending <= 1'b0;
+        end else if (cpu_instr_bus_req.valid) begin
+            response_pending <= 1'b1;
+            response_reg.ready <= 1'b1;
+            response_reg.error <= (cpu_instr_bus_req.op != bus_pkg::BUS_READ) || !addr_valid;
+            if ((cpu_instr_bus_req.op == bus_pkg::BUS_READ) && addr_valid)
+                response_reg.rdata <= cpu_pkg::word_t'(
+                    rom_words[cpu_instr_bus_req.addr / cpu_pkg::WORD_BYTES]);
+            else
+                response_reg.rdata <= '0;
         end
-
     end
 
 endmodule

@@ -426,11 +426,11 @@ module memory_subsystem (
 An `8192 × 32` array loaded at elaboration by
 `$readmemh(memory_pkg::INSTRUCTION_ROM_INIT_FILE, rom_words)`.
 
-* `ibus_rsp = {ibus_req.valid, rdata}` → `ready` mirrors `valid` (zero wait
-  states), and `rdata` is **combinational**.
+* The ROM samples a request on a rising edge and returns a registered
+  `ready`, `rdata`, and `error` response in the following cycle.
 * Alignment/range check: address must be word-aligned (`addr % WORD_BYTES == 0`)
   and `< INSTRUCTION_ROM_WORDS`. Misaligned/out-of-range reads return zero
-  and still complete.
+  with `error=1`.
 * Indexing: `rom_words[ibus_req.addr / WORD_BYTES]` (byte address → word index).
 
 ### 6.2 `data_ram` — `src/rtl/memory/data_ram.sv`
@@ -481,16 +481,15 @@ assign dbus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
 assign dbus_req.addr  = dbus_addr;
 assign dbus_req.wdata = dbus_wdata;
 
-assign core_enable = instruction_available && !rst;
-assign retire       = instruction_available && !rst && (retire_valid || illegal_instr);
+assign core_enable = instruction_available && !rst && !fault_latched;
+assign retire      = retire_valid && !fault_latched;
 ```
 
 * `core_enable` gates the execution core: a *buffered* instruction is always
   allowed to finish even if `run` is de-asserted meanwhile (this also guarantees
   a waiting D-BUS request cannot be abandoned).
 * `retire` is fed back to `instruction_fetch` to advance the PC. Illegal
-  instructions `retire` too (they have no side effects) so the fetch unit cannot
-  wedge at a bad `pc`.
+  instructions and bus errors latch a fault and stop execution until reset.
 * Instantiated children: `instruction_fetch` (`u_instruction_fetch`) and
   `cpu_core` (`u_cpu_core`). Tests observe internal operands, results, and
   status through the instance hierarchy.
@@ -544,9 +543,11 @@ reports completion. Children: `cpu_decoder`, `cpu_datapath`, `branch_unit`.
 
 | State | Transition |
 | --- | --- |
-| `EX_IDLE` | If `core_enable && decode_valid`, pulse `alu_start` and go to `EX_ALU`. |
+| `EX_IDLE` | If `core_enable && decode_valid`, register source addresses and immediate control, then go to `EX_CAPTURE`. |
+| `EX_CAPTURE` | Capture register-file values and pulse `alu_start`, then go to `EX_ALU`. |
 | `EX_ALU` | When `alu_done`, go to `EX_MEM` if `memory_op`, else back to `EX_IDLE`. |
-| `EX_MEM` | When `mem_accept` (`dbus_valid && dbus_ready`) or `!core_enable`, go to `EX_IDLE`. |
+| `EX_MEM` | On `mem_accept` (`dbus_valid && dbus_ready`), capture read data and go to `EX_MEM_RETIRE`. |
+| `EX_MEM_RETIRE` | Retire the memory operation and return to `EX_IDLE`. |
 
 * **D-BUS master** — the effective address is the ALU result (`ALU_ADD`):
 
@@ -561,11 +562,11 @@ assign dbus_wdata = store_data;      // raw RS2
   Because `core_enable` stays asserted while the wrapper stalls the PC, the
   request payload is held stable until `dbus_ready`.
 * **Retirement / writes** — a normal instruction completes when `alu_done`
-  pulses; a LOAD/STORE additionally waits for the bus accept:
+  pulses; a LOAD/STORE retires one cycle after the bus accept:
 
 ```systemverilog
 assign retire_valid = core_enable && decode_valid && !rst &&
-                      ( (!memory_op && alu_done) || mem_accept );
+                      ( (!memory_op && alu_done) || (ex_state == EX_MEM_RETIRE) );
 assign effective_register_write = register_write_enable && retire_valid;
 assign effective_flags_write    = flags_write_enable    && retire_valid;
 ```
@@ -929,8 +930,13 @@ regression, including instruction fetch, CPU, system, and GPU tests.
 ### 10.5 Gowin project
 
 `lacooda.gprj` lists the RTL sources, constraints, and hex images for the Gowin
-IDE (device `GW2A-LV18PG256C8/I7`). Note it still lists the (empty)
-(git-ignored except the process-config JSON files).
+IDE (device `GW2A-LV18PG256C8/I7`). Generated implementation files under
+`impl/` are ignored except the process configuration JSON files.
+
+The active SDC and Gowin process configuration now use a 10 ns (100 MHz)
+**timing-analysis target**. The board input remains 27 MHz; a PLL and a new
+timing run are required before hardware can operate at 100 MHz. The existing
+PnR reports under `impl/pnr/` predate these RTL changes.
 
 ### 10.6 Testbenches
 
@@ -945,6 +951,7 @@ IDE (device `GW2A-LV18PG256C8/I7`). Note it still lists the (empty)
 | `cpu/branch_unit_tb.sv` | `branch_unit` | Each branch condition |
 | `cpu/instruction_fetch_tb.sv` | `instruction_fetch` | Fetch FSM + buffering |
 | `cpu/cpu_tb.sv` | `cpu` | I-BUS + D-BUS end-to-end |
+| `memory/instruction_rom_tb.sv` | `instruction_rom` | Registered response and fetch errors |
 | `memory/data_ram_tb.sv` | `data_ram` | Synchronous handshake, alignment |
 | `bus/bus_interconnect_tb.sv` | `bus_interconnect` | Routing + response mux |
 | `gpu/gpu_tb.sv` | `gpu` | MMIO read/write of all registers |

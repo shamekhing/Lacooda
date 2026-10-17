@@ -12,6 +12,8 @@ module memory_subsystem (
     output bus_pkg::bus_rsp_s ram_bus_rsp
 );
     instruction_rom u_instruction_rom (
+        .clk (clk),
+        .rst (rst),
         .cpu_instr_bus_req (cpu_instr_bus_req),
         .cpu_instr_bus_rsp (cpu_instr_bus_rsp)
     );

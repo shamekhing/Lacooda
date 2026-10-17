@@ -230,8 +230,12 @@ module cpu_tb;
         @(negedge clk);
         cpu_bus_rsp.ready = 1'b1;
         #1;
-        check(cpu_bus_req.valid && execution_valid,
-              "STORE completes when D-BUS ready is asserted");
+        check(cpu_bus_req.valid && !execution_valid,
+              "STORE accepts D-BUS response before retirement");
+        @(posedge clk); // Capture STORE response.
+        #1;
+        check(execution_valid && !cpu_bus_req.valid,
+              "STORE retires one cycle after bus acceptance");
         @(posedge clk); // Retire STORE.
         #1;
         cpu_bus_rsp.ready = 1'b0;
@@ -263,8 +267,12 @@ module cpu_tb;
         @(negedge clk);
         cpu_bus_rsp.ready = 1'b1;
         #1;
-        check(cpu_bus_req.valid && cpu_bus_req.op == bus_pkg::BUS_READ && execution_valid,
-              "LOAD completes on D-BUS handshake");
+        check(cpu_bus_req.valid && cpu_bus_req.op == bus_pkg::BUS_READ && !execution_valid,
+              "LOAD accepts D-BUS response before retirement");
+        @(posedge clk); // Capture LOAD response.
+        #1;
+        check(execution_valid && !cpu_bus_req.valid,
+              "LOAD retires one cycle after bus acceptance");
         @(posedge clk); // Retire LOAD and write R3.
         #1;
         cpu_bus_rsp.ready = 1'b0;

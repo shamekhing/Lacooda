@@ -216,6 +216,14 @@ run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/soc/system.sv \
     src/sim/testbench/soc/cpu_system_tb.sv
 
+run_test "INSTRUCTION ROM TEST" instruction_rom_tb instruction_rom_sim instruction_rom.vcd \
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/memory/instruction_rom.sv \
+    src/sim/testbench/memory/instruction_rom_tb.sv
+
 run_test "GPU MMIO REGISTER TEST" gpu_tb gpu_sim gpu.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \

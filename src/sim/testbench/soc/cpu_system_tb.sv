@@ -122,11 +122,7 @@ module system_tb;
             encode_store(reg_addr_t'(1), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.cpu_bus_req.valid && dut.cpu_bus_req.op == bus_pkg::BUS_WRITE && dut.cpu_bus_rsp.ready)
-            else $fatal(1, "STORE D-BUS handshake wrong");
-        assert (dut.cpu_bus_req.addr === word_t'(72))
-            else $fatal(1, "STORE address wrong: %0d", dut.cpu_bus_req.addr);
-        assert (dut.cpu_bus_req.wdata === word_t'(100))
+        assert (dut.u_memory.u_data_ram.ram_words[72 / WORD_BYTES] === word_t'(100))
             else $fatal(1, "STORE data wrong");
         @(posedge clk); // Commit STORE and retire instruction.
         #1;
@@ -137,10 +133,8 @@ module system_tb;
             encode_load(reg_addr_t'(3), reg_addr_t'(2)),
             word_t'(72)
         );
-        assert (dut.cpu_bus_req.valid && dut.cpu_bus_req.op == bus_pkg::BUS_READ && dut.cpu_bus_rsp.ready)
-            else $fatal(1, "LOAD D-BUS handshake wrong");
-        assert (dut.cpu_bus_rsp.rdata === word_t'(100))
-            else $fatal(1, "LOAD data expected 100, got %0d", dut.cpu_bus_rsp.rdata);
+        assert (dut.u_cpu.u_cpu_core.mem_rdata_reg === word_t'(100))
+            else $fatal(1, "LOAD data expected 100, got %0d", dut.u_cpu.u_cpu_core.mem_rdata_reg);
         @(posedge clk); // Commit LOAD writeback and retire.
         #1;
 

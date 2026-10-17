@@ -33,10 +33,12 @@ module cpu_core (
     // dbus_rdata is consumed by LOAD when dbus_valid && dbus_ready.
     // --------------------------------------------------------
     input  logic dbus_ready,
+    input  logic dbus_error,
     input  cpu_pkg::word_t dbus_rdata,
 
     output logic illegal_instr,
     output logic retire_valid,
+    output logic carry_flag,
 
     // Stage 6 control-flow alu_result returned to the fetch wrapper.
     output logic redirect,
@@ -237,7 +239,8 @@ module cpu_core (
         .operand_b(operand_b),
         .store_data(store_data),
         .alu_result(alu_result),
-        .alu_done(alu_done)
+        .alu_done(alu_done),
+        .carry_flag(carry_flag)
     );
 
     // --------------------------------------------------------
@@ -267,6 +270,6 @@ module cpu_core (
         decode_valid &&
         !rst &&
         ( (!memory_op && alu_done) ||
-          mem_accept );
+          (mem_accept && !dbus_error) );
 
 endmodule

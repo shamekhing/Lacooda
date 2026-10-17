@@ -13,8 +13,8 @@
 //   clk27  : 27 MHz system clock
 //   btn_n0 : Active-low reset button
 //   btn_n1 : Active-low run button
-//   led0   : CPU instruction retirement
-//   led1   : Illegal instruction
+//   led0   : Stretched CPU instruction retirement
+//   led1   : Sticky CPU fault (fetch, data bus, illegal instruction)
 //   led2-5 : Reserved
 //
 // STAGE 4
@@ -92,7 +92,13 @@ module fpga_top (
     // ========================================================
 
     logic retire_valid;
-    logic illegal_instr;
+    logic cpu_fault;
+    logic [19:0] activity_count;
+    always_ff @(posedge clk27) begin
+        if (rst) activity_count <= '0;
+        else if (retire_valid) activity_count <= '1;
+        else if (activity_count != '0) activity_count <= activity_count - 1'b1;
+    end
 
     // ========================================================
     // GPU MEMORY MASTER
@@ -159,7 +165,8 @@ module fpga_top (
         .run                (run),
 
         .retire_valid       (retire_valid),
-        .illegal_instr      (illegal_instr),
+        .illegal_instr      (),
+        .cpu_fault          (cpu_fault),
 
         .gpu_bus_req        (gpu_bus_req),
         .gpu_bus_rsp        (gpu_bus_rsp),
@@ -178,8 +185,8 @@ module fpga_top (
     // BOARD STATUS OUTPUTS
     // ========================================================
 
-    assign led0 = retire_valid;
-    assign led1 = illegal_instr;
+    assign led0 = activity_count != '0;
+    assign led1 = cpu_fault;
 
     assign led2 = 1'b0;
     assign led3 = 1'b0;

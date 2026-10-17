@@ -712,11 +712,16 @@ cout_bit = (x_bit & y_bit) | (carry_ff & (x_bit ^ y_bit));
 
 * Carries preload (`ld_carry_ff`): `NEG → 1`, `ABS → sign(a)`, `SUB → 1`,
   `ADC/SBC → carry_in`, else `0`.
+  `ADC` consumes the stored STATUS.C bit. `SBC` computes `a - b - (1 - C)`,
+  so C=1 means no incoming borrow. Both require the preceding instruction
+  to write flags (the S bit in its encoding).
 * **MUL/MULH** — iterative shift-add into a double-width accumulator
   (`macc <= b_bit ? macc + mcand : macc; mcand <= mcand << 1;`).
+  `MULH` returns the high half of an unsigned product.
 * **DIV/MOD** — restoring division: shift the dividend in MSB-first
   (`rev(...)`), subtract the divisor when the partial remainder is ≥ it, build
   the quotient one bit per cycle.
+  Division by zero returns zero and sets STATUS.DZ when flags are written.
 * **Signed special cases** avoid implementation-defined overflow:
   `MIN / -1` returns `MSB_ONE` for DIV and `0` for MOD.
 * Side channels: `carry` (carry-out / no-borrow), `overflow` (signed overflow,

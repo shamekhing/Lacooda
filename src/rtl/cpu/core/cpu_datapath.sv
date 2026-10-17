@@ -53,7 +53,8 @@ module cpu_datapath (
     output cpu_pkg::word_t operand_b,
     output cpu_pkg::word_t store_data,
     output cpu_pkg::word_t alu_result,
-    output logic alu_done
+    output logic alu_done,
+    output logic carry_flag
 );
     cpu_pkg::word_t rs2_data;
     cpu_pkg::word_t writeback_data;
@@ -64,6 +65,7 @@ module cpu_datapath (
     logic alu_busy;
     cpu_pkg::flags_s flags;
     cpu_pkg::status_t status;
+    assign carry_flag = status[2];
 
     // =========================================================
     // WRITE ENABLE CONTROL

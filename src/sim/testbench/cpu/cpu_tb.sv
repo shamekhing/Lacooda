@@ -26,6 +26,7 @@ module cpu_tb;
     bus_pkg::bus_req_s cpu_instr_bus_req;
     bus_pkg::bus_rsp_s cpu_instr_bus_rsp;
     logic ibus_allow;
+    logic ibus_error = 1'b0;
     bus_pkg::bus_req_s cpu_bus_req;
     bus_pkg::bus_rsp_s cpu_bus_rsp;
 
@@ -33,6 +34,7 @@ module cpu_tb;
     instruction_t instruction;
     logic execution_valid;
     logic illegal_instruction;
+    logic fault;
 
     instruction_t program_words [0:13];
 
@@ -50,7 +52,8 @@ module cpu_tb;
         .cpu_bus_rsp(cpu_bus_rsp),
 
         .retire_valid(execution_valid),
-        .illegal_instr(illegal_instruction)
+        .illegal_instr(illegal_instruction),
+        .fault(fault)
     );
 
     assign pc = dut.u_instruction_fetch.pc;
@@ -60,6 +63,7 @@ module cpu_tb;
     // It can insert arbitrary fetch wait states through ibus_allow.
     always_comb begin
         cpu_instr_bus_rsp.ready = cpu_instr_bus_req.valid && ibus_allow;
+        cpu_instr_bus_rsp.error = ibus_error;
         cpu_instr_bus_rsp.rdata = '0;
 
         if (cpu_instr_bus_req.valid &&
@@ -91,6 +95,7 @@ module cpu_tb;
     endtask
 
     initial begin
+        cpu_bus_rsp.error = 1'b0;
         $dumpfile("cpu.vcd");
         $dumpvars(0, cpu_tb);
 
@@ -291,6 +296,64 @@ module cpu_tb;
         #1;
         check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(222),
               "CPU resumes normally after independent I/D bus stalls");
+
+        // Carry chaining and a failed LOAD must not silently commit data.
+        @(negedge clk);
+        rst = 1'b1;
+        program_words[0] = encode_instruction(ALU_PASS_B, reg_addr_t'(1), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[1] = '1;
+        program_words[2] = encode_instruction(ALU_PASS_B, reg_addr_t'(2), ZERO_REG, ZERO_REG, 1'b1, 1'b0);
+        program_words[3] = word_t'(1);
+        program_words[4] = encode_instruction(ALU_ADD, reg_addr_t'(3), reg_addr_t'(1), reg_addr_t'(2), 1'b0, 1'b1);
+        program_words[5] = encode_instruction(ALU_ADC, reg_addr_t'(4), ZERO_REG, ZERO_REG, 1'b0, 1'b0);
+        program_words[6] = encode_load(reg_addr_t'(5), ZERO_REG);
+        program_words[7] = '0;
+        ibus_allow = 1'b1;
+        cpu_bus_rsp.ready = 1'b0;
+        @(negedge clk);
+        rst = 1'b0;
+        run = 1'b1;
+        wait_for_buffered_pc(word_t'(5 * WORD_BYTES));
+        wait (execution_valid === 1'b1);
+        @(posedge clk);
+        #1;
+        check(dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[4] === word_t'(1),
+              "ADC consumes carry from prior ADD");
+        wait (cpu_bus_req.valid === 1'b1);
+        @(negedge clk);
+        cpu_bus_rsp.error = 1'b1;
+        cpu_bus_rsp.ready = 1'b1;
+        @(posedge clk);
+        #1;
+        check(fault && !execution_valid &&
+              dut.u_cpu_core.u_cpu_datapath.u_cpu_register.registers[5] === '0,
+              "failed LOAD latches fault without writeback");
+
+        // A fetch error also stops the CPU before an instruction is buffered.
+        @(negedge clk);
+        rst = 1'b1;
+        cpu_bus_rsp.error = 1'b0;
+        cpu_bus_rsp.ready = 1'b0;
+        @(negedge clk);
+        rst = 1'b0;
+        ibus_error = 1'b1;
+        @(posedge clk);
+        @(posedge clk);
+        @(posedge clk);
+        #1;
+        check(fault && !dut.u_instruction_fetch.instruction_available,
+              "instruction bus error latches fault");
+
+        @(negedge clk);
+        rst = 1'b1;
+        ibus_error = 1'b0;
+        program_words[0] = '1;
+        @(negedge clk);
+        rst = 1'b0;
+        repeat (4) @(posedge clk);
+        #1;
+        check(fault && pc === '0 && !execution_valid,
+              "illegal instruction latches fault without retiring");
 
         $display("========================================");
         $display("LACOODA FINAL CPU I-BUS/D-BUS TEST SUMMARY");

@@ -22,14 +22,8 @@
 //
 // Current CPU stores are full-word stores.
 //
-// IMPORTANT:
-//   cpu_core currently has no memory-fault input.
-//
-//   The extended response error field is not an architectural
-//   exception until cpu_core is extended to handle it.
-//
-//   Do not interpret this wrapper as complete CPU exception
-//   support.
+// Bus and decode errors latch fault and halt execution until reset.
+// This is a stop indication, not a vectored exception handler.
 // ============================================================
 
 module cpu (
@@ -45,7 +39,8 @@ module cpu (
     input  bus_pkg::bus_rsp_s cpu_bus_rsp,
 
     output logic retire_valid,
-    output logic illegal_instr
+    output logic illegal_instr,
+    output logic fault
 
 );
 
@@ -54,6 +49,15 @@ module cpu (
     // ========================================================
 
     logic core_enable;
+    logic carry_flag;
+    logic fetch_fault;
+    logic fault_latched;
+    assign fault = fault_latched;
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) fault_latched <= 1'b0;
+        else if (fetch_fault || (dbus_valid && cpu_bus_rsp.ready && cpu_bus_rsp.error) ||
+                 (instruction_available && illegal_instr)) fault_latched <= 1'b1;
+    end
 
     logic redirect;
     cpu_pkg::word_t redirect_target;
@@ -103,7 +107,7 @@ module cpu (
     // ========================================================
 
     assign core_enable =
-        instruction_available && !rst;
+        instruction_available && !rst && !fault_latched;
 
     // ========================================================
     // FETCHED INSTRUCTION
@@ -122,7 +126,7 @@ module cpu (
     assign retire =
         instruction_available &&
         !rst &&
-        (retire_valid || illegal_instr);
+        retire_valid && !fault_latched;
 
     // ========================================================
     // INSTRUCTION FETCH
@@ -132,7 +136,7 @@ module cpu (
 
         .clk                   (clk),
         .rst                   (rst),
-        .run                   (run),
+        .run                   (run && !fault_latched),
 
         .retire                (retire),
 
@@ -145,7 +149,8 @@ module cpu (
         .instruction           (instruction),
         .immediate_word        (immediate_word),
 
-        .instruction_available (instruction_available)
+        .instruction_available (instruction_available),
+        .fault                 (fetch_fault)
 
     );
 
@@ -153,14 +158,8 @@ module cpu (
     // EXECUTION CORE
     // ========================================================
     //
-    // The existing core interface is preserved.
-    //
-    // A response with error=1 still asserts ready.
-    //
-    // Therefore a failed access currently appears as a
-    // completed access to cpu_core.
-    //
-    // Proper CPU fault handling requires extending cpu_core.
+    // Failed data transactions complete the bus handshake but cannot
+    // retire or write back. The wrapper latches the error as a fault.
     // ========================================================
 
     cpu_core u_cpu_core (
@@ -173,9 +172,11 @@ module cpu (
         .instruction_word(instruction),
         .immediate_word  (immediate_word),
 
-        .carry_in        (1'b0),
+        .carry_in        (carry_flag),
+        .carry_flag      (carry_flag),
 
         .dbus_ready      (cpu_bus_rsp.ready),
+        .dbus_error      (cpu_bus_rsp.error),
         .dbus_rdata      (cpu_bus_rsp.rdata),
 
         .illegal_instr   (illegal_instr),

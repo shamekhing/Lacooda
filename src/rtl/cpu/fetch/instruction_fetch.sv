@@ -23,9 +23,7 @@
 //   - Explicitly drive the new write-strobe field.
 //   - Preserve the original fetch state machine.
 //
-// The existing CPU does not implement instruction-fetch
-// exceptions. Error responses therefore need an explicit
-// fault-handling policy before full integration is complete.
+// An instruction-bus error latches fault and stops fetch until reset.
 // ============================================================
 
 module instruction_fetch (
@@ -43,7 +41,8 @@ module instruction_fetch (
 
     output cpu_pkg::instruction_t instruction,
     output cpu_pkg::word_t immediate_word,
-    output logic instruction_available
+    output logic instruction_available,
+    output logic fault
 
 );
 
@@ -127,6 +126,7 @@ module instruction_fetch (
     always_ff @(posedge clk or posedge rst) begin
 
         if (rst) begin
+            fault <= 1'b0;
 
             fetch_state           <= FETCH_IDLE;
             instruction_available <= 1'b0;
@@ -134,6 +134,9 @@ module instruction_fetch (
             instruction           <= '0;
             immediate_word        <= '0;
 
+        end else if (fault) begin
+            fetch_state <= FETCH_IDLE;
+            instruction_available <= 1'b0;
         end else if (retire) begin
 
             // ------------------------------------------------
@@ -178,6 +181,10 @@ module instruction_fetch (
                 FETCH_INSTR: begin
 
                     if (cpu_instr_bus_rsp.ready) begin
+                        if (cpu_instr_bus_rsp.error) begin
+                            fault <= 1'b1;
+                            fetch_state <= FETCH_IDLE;
+                        end else begin
 
                         instruction <=
                             cpu_pkg::instruction_t'(
@@ -202,6 +209,7 @@ module instruction_fetch (
 
                         end
 
+                        end
                     end
 
                 end
@@ -213,6 +221,10 @@ module instruction_fetch (
                 FETCH_IMM: begin
 
                     if (cpu_instr_bus_rsp.ready) begin
+                        if (cpu_instr_bus_rsp.error) begin
+                            fault <= 1'b1;
+                            fetch_state <= FETCH_IDLE;
+                        end else begin
 
                         immediate_word <= cpu_instr_bus_rsp.rdata;
 
@@ -220,6 +232,7 @@ module instruction_fetch (
 
                         instruction_available <= 1'b1;
 
+                        end
                     end
 
                 end

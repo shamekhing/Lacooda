@@ -61,6 +61,7 @@ module system (
 
     output logic retire_valid,
     output logic illegal_instr,
+    output logic cpu_fault,
 
     // ========================================================
     // GPU MEMORY MASTER
@@ -174,7 +175,8 @@ module system (
         .cpu_bus_rsp      (cpu_bus_rsp),
 
         .retire_valid  (retire_valid),
-        .illegal_instr (illegal_instr)
+        .illegal_instr (illegal_instr),
+        .fault         (cpu_fault)
 
     );
 

@@ -44,6 +44,7 @@ module shifter (
 
     logic [cpu_pkg::WORD_WIDTH-1:0] a_r, a_sr, r_sr;
     logic [COUNTER_WIDTH-1:0]       cnt, limit, rot_pre;
+    logic [COUNTER_WIDTH-1:0]       sh_amt_r;
 
     // ------------------------------------------------------------
     // Preload
@@ -78,7 +79,7 @@ module shifter (
                     ? cpu_pkg::WORD_WIDTH
                     : {1'b0, rot_k};
 
-    assign shift_hold = is_shift && (cnt < sh_amt);
+    assign shift_hold = is_shift && (cnt < sh_amt_r);
     assign shift_fill = is_sar ? a_r[cpu_pkg::WORD_WIDTH-1] : 1'b0;
     assign emitting   = is_rotate ? (cnt >= rot_pre) : 1'b1;
 
@@ -116,6 +117,7 @@ module shifter (
             cnt     <= '0;
             limit   <= '0;
             rot_pre <= '0;
+            sh_amt_r <= '0;
             a_r     <= '0;
             a_sr    <= '0;
             r_sr    <= '0;
@@ -128,6 +130,7 @@ module shifter (
                         a_sr    <= ld_a_sr;
                         r_sr    <= '0;
                         rot_pre <= ld_rot_pre;
+                        sh_amt_r <= sh_amt;
                         limit   <= ld_limit;
                         cnt     <= '0;
                         state   <= S_RUN;

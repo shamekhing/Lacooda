@@ -53,6 +53,7 @@ module cpu_core_tb;
         .carry_in(carry_in),
 
         .dbus_ready(dbus_ready),
+        .dbus_error(1'b0),
         .dbus_rdata(dbus_read_data),
 
         .illegal_instr(illegal_instruction),

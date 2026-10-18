@@ -21,9 +21,11 @@
         <File path="src/rtl/cpu/fetch/program_counter.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/gpu/gpu.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/gpu/mmio/gpu_register.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/interconnect/address_decoder.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/interconnect/bus_arbiter.sv" type="file.verilog" enable="1"/>
-        <File path="src/rtl/interconnect/bus_interconnect.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/rpu/rpu_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/rpu/rpu_decoder.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/rpu/rpu_slave_port.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/rpu/rpu_crossbar.sv" type="file.verilog" enable="1"/>
+        <File path="src/rtl/rpu/rpu_top.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/data_ram.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/ddr3_bridge.sv" type="file.verilog" enable="1"/>
         <File path="src/rtl/memory/instruction_rom.sv" type="file.verilog" enable="1"/>

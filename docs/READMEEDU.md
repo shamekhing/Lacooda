@@ -1939,24 +1939,100 @@ Conceptually:
 
 A system must define what happens if no slave owns an address.
 
-The current simple design preserves a no-fault behavior:
+The Stage 3 interconnect used a **no-fault** response:
 
 ``` text
 unmapped read/write:
 ready = 1
 read_data = 0
+error = 0
 ```
 
-That is a policy, not a universal truth.
+That was a policy, not a universal truth.
 
-A future architecture could instead introduce:
+The Stage 5 RPU deliberately changed the policy:
 
 ``` text
-bus fault
-exception
-trap
-error response
+unmapped, reserved, or unaligned access:
+ready = 1
+read_data = 0
+error = 1
 ```
+
+No slave request is issued, and the CPU latches a fault. The RPU can
+distinguish an unmapped address (`mapped = 0`) from a mapped but reserved region
+(`mapped = 1, valid = 0`), even though both produce the same bus error. A future
+architecture can build exceptions or traps on top of that classification.
+
+------------------------------------------------------------------------
+
+## 55A. SoC Stage 5 Update --- The RPU Replaces the Shared Bus
+
+> Here "Stage 5" refers to the SoC integration stage, not the CPU fetch stage
+> described in Part VII.
+
+The Stage 4 SoC used two modules in series:
+
+``` text
+CPU/GPU/TPU -> bus_arbiter -> bus_interconnect -> RAM / GPU MMIO / DDR3
+```
+
+The arbiter allowed only one master at a time. The interconnect had only one
+incoming request port. Even when the CPU fetched from ROM while the GPU touched
+DDR3, the data path serialized everything that entered the arbiter.
+
+Stage 5 replaces that structure with a **Routing Processing Unit (RPU)**:
+
+``` text
+CPU_I ----\
+CPU_D -----\
+GPU --------> RPU decoder -> 4 x 4 crossbar -> ROM
+TPU -------/                  per-slave       DATA_RAM
+                              arbitration      GPU_MMIO
+                                               DDR3
+```
+
+The RPU has five jobs:
+
+``` text
+1. decode       (master, address) -> slave + local address
+2. arbitrate    one round-robin arbiter per slave
+3. route        request to the selected slave port
+4. return       response only to the originating master
+5. fault        immediate error for invalid/reserved/unaligned accesses
+```
+
+Two consequences matter:
+
+* Transactions to **different slaves** proceed in parallel.
+* Transactions to the **same slave** arbitrate independently of every other
+  slave.
+
+### Master-qualified routing
+
+The RPU selects a route using both the master and the address. This preserves
+the existing Harvard behaviour without changing the CPU or boot program:
+
+``` text
+CPU_I, address 0x0000_0000 -> instruction ROM
+CPU_D, address 0x0000_0000 -> data RAM
+```
+
+The overlap is legal because the two masters have disjoint permissions. The map
+validator checks overlap **per master**, not globally.
+
+### What happened to the old modules
+
+``` text
+bus_arbiter.sv       removed
+bus_interconnect.sv  removed
+address_decoder.sv   removed (it was never instantiated)
+bus_pkg.sv           now protocol-only
+rpu_pkg.sv           owns the memory map and routing policy
+```
+
+The detailed RPU reference, route table, and extension checklists are in
+[`docs/RPU.md`](RPU.md).
 
 ------------------------------------------------------------------------
 
@@ -1976,7 +2052,9 @@ program counter
 branch unit
 instruction fetch
 data memory
-bus interconnect
+RPU decoder
+RPU slave port
+RPU crossbar
 CPU boundary
 CPU system
 ```
@@ -2376,7 +2454,7 @@ CPU = general program execution
 GPU = graphics
 AI accelerator = inference
 DDR = shared working memory
-bus/interconnect = communication
+RPU = communication and routing
 ```
 
 ------------------------------------------------------------------------
@@ -2615,8 +2693,10 @@ Wires alone do not require a folder.
 
 Routing/decoding/arbitration is a subsystem.
 
-Once the project has an actual interconnect, `rtl/bus/` reflects real
-architectural ownership.
+Once the project has an actual interconnect, `rtl/rpu/` reflects real
+architectural ownership. The earlier `rtl/bus/` narrative became
+`src/rtl/rpu/` in Stage 5, when the RPU replaced the shared arbiter and
+single-lane interconnect.
 
 ------------------------------------------------------------------------
 
@@ -3059,7 +3139,7 @@ CPU
  |
  +-- I-BUS ----\
  |              \
- +-- D-BUS ------> system interconnect
+ +-- D-BUS ------> RPU routing fabric
                     |
                     +-- local BRAM
                     +-- DDR3 controller
@@ -3070,9 +3150,9 @@ CPU
                     +-- AI accelerator
 ```
 
-As more masters appear---for example CPU instruction fetch, CPU data
-access, GPU memory access, and AI DMA---the interconnect may require
-arbitration.
+As more masters appear---GPUs, DMA engines, AI accelerators---each slave port
+gets its own arbiter. Transactions to different slaves proceed in parallel;
+transactions to the same slave are serialized fairly.
 
 That is a **SoC stage**, not a reason to reopen the CPU internals.
 
@@ -3113,15 +3193,12 @@ The complete journey can be compressed into one picture:
                               |                             |
 ==============================|=============================|========
                               |                             |
-                    +---------v---------+          +--------v--------+
-                    | instruction side |          | interconnect    |
-                    | memory/system    |          | address cpu_decoder |
-                    +------------------+          +--------+--------+
-                                                           |
-                                                   +-------+-------+
-                                                   | data memory   |
-                                                   | MMIO / DDR... |
-                                                   +---------------+
+                    +---------v-----------------------------v-------+
+                    |                    RPU                        |
+                    |   decode | per-slave arbitrate | route       |
+                    +----+----------------+-----------------+-------+
+                         |                |                 |
+                   instruction ROM    data RAM        MMIO / DDR...
 ```
 
 And the timing mental model is:
@@ -3441,7 +3518,7 @@ A sensible continuation is:
 ``` text
 1. Freeze CPU I-BUS/D-BUS interfaces.
 2. Define complete SoC address map.
-3. Add a proper interconnect policy.
+3. Extend the RPU routing policy (timeouts, QoS, more masters/slaves).
 4. Add MMIO.
 5. Bring up simple GPIO/input.
 6. Integrate external DDR3 controller.
@@ -4079,11 +4156,11 @@ The SoC now names bus ports by their role:
 
 | Interface | Purpose |
 | --- | --- |
-| `ibus_req` / `ibus_rsp` | CPU instruction fetch requests and responses |
-| `dbus_req` / `dbus_rsp` | CPU load/store requests and responses |
-| `gpu_mmio_req` / `gpu_mmio_rsp` | CPU access to GPU control and status registers |
-| `data_ram_req` / `data_ram_rsp` | Interconnect access to local data memory |
-| `data_ram_req` / `data_ram_rsp` | Local request and response at the data RAM slave |
+| `cpu_instr_bus_req` / `cpu_instr_bus_rsp` | CPU instruction fetch master |
+| `cpu_bus_req` / `cpu_bus_rsp` | CPU load/store master |
+| `gpu_mmio_bus_req` / `gpu_mmio_bus_rsp` | CPU access to GPU control and status registers |
+| `rom_bus_req` / `rom_bus_rsp` | RPU access to the instruction ROM slave |
+| `ram_bus_req` / `ram_bus_rsp` | RPU access to the local data RAM slave |
 
 The GPU register block previously called its CPU-facing MMIO port `ibus`.
 That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
@@ -4093,22 +4170,21 @@ That name is reserved for CPU instruction fetch. Its port is now `mmio_req` /
 `cpu` now exposes both instruction and data master ports. It no longer
 instantiates the instruction ROM. In `system.sv`, `u_memory` is an instance of
 `memory_subsystem`; it owns the existing `instruction_rom` ROM and the
-synchronous `data_ram` BRAM. These remain physically separate memories,
-so instruction fetch does not contend with local data access. The data bus
-still passes through `bus_interconnect`, which maps local data RAM and GPU
-MMIO into the CPU address space. This refactor does not change the bus
-transaction format or make the reserved DDR3 address range operational.
+synchronous `data_ram` BRAM. These remain physically separate memories, so
+instruction fetch does not contend with local data access. Both CPU masters now
+enter the RPU, which maps instruction ROM, local data RAM, GPU MMIO, and the
+DDR3 bridge through a master-qualified address map. The RPU replaced the former
+`bus_arbiter` / `bus_interconnect` pair and the unused `address_decoder` module.
+This refactor does not change the bus transaction format or make the reserved
+DDR3 address range operational.
 
 The Tang Primer 20K has limited on-chip block RAM and onboard DDR3. A future
 GPU framebuffer or TPU tensor store will need an actual DDR3 controller and
-a shared-memory path. When GPU or TPU engines become bus masters, the
-interconnect will also need arbitration and ports for those masters; the
-current interconnect accepts only the CPU data port. GPU MMIO is a slave
-control interface and does not provide GPU memory access by itself.
+a shared-memory path. The RPU already provides separate GPU and TPU master
+ports and per-slave arbitration, so future engines can connect without
+redesigning the interconnect. GPU MMIO remains a slave control interface and
+does not provide GPU memory access by itself.
 
-The affected testbenches, `run.sh`, and `lacooda.gprj` were updated for these
-names and the new module. Focused SoC, bus interconnect, GPU MMIO, and
-synchronous data RAM simulations pass. The full `run.sh --no-gui` regression
-still stops at the instruction-fetch test, which has four failing checks;
-the separate CPU interface test times out. Those tests need follow-up before
-the complete regression can be considered passing.
+The affected testbenches, `run.sh`, and `lacooda.gprj` were updated for the RPU.
+Focused RPU, SoC, GPU MMIO, and synchronous data RAM simulations pass, and
+`./run.sh --no-gui` passes the complete regression.

@@ -37,6 +37,17 @@ package memory_pkg;
     localparam int GPU_MMIO_BYTES = 4 * 1024;
 
     // ========================================================
+    // External DDR3 window
+    // ========================================================
+    //
+    // The SoC owns a 128 MiB CPU-visible DDR3 region. The
+    // physical DDR3 device and controller may be larger; this
+    // is the address window exposed through the DDR3 bridge.
+    // ========================================================
+
+    localparam int DDR3_BYTES = 128 * 1024 * 1024;
+
+    // ========================================================
     // Memory depths
     // ========================================================
 

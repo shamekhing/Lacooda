@@ -23,7 +23,7 @@ exist in the tree but are **not wired** (`gpu_core`, `pixel_engine`,
 2. [Repository Layout](#2-repository-layout)
 3. [The Layered Mental Model](#3-the-layered-mental-model)
 4. [Foundation: The Packages](#4-foundation-the-packages)
-5. [The Bus Contract](#5-the-bus-contract)
+5. [The Bus and RPU Contract](#5-the-bus-and-rpu-contract)
 6. [Memory Subsystem](#6-memory-subsystem)
 7. [CPU — Top to Bottom](#7-cpu--top-to-bottom)
 8. [The ALU — Unit to Bit Operations](#8-the-alu--unit-to-bit-operations)
@@ -44,7 +44,7 @@ It is built from five subsystems:
 | Subsystem | Top module | Role |
 | --- | --- | --- |
 | CPU | `cpu` | Fetch, decode, execute; I-BUS + D-BUS bus master |
-| Bus | `bus_interconnect` (+ `address_decoder`) | Routes CPU data accesses to slaves |
+| RPU | `rpu_top` | 4×4 routing fabric: decode, per-slave arbitration, response routing |
 | Memory | `memory_subsystem` | Instruction ROM + data BRAM |
 | GPU | `gpu` | CPU-visible MMIO register block |
 | Board | `fpga_top` | Pins, buttons, LEDs; wraps `system` |
@@ -59,8 +59,13 @@ Key architectural facts:
   second full word.
 * **Multi-cycle, bit-serial ALU**: every ALU op takes roughly `WORD_WIDTH` clock
   cycles and shares a single 1-bit adder.
-* **Single bus master** (the CPU data port). Memory and MMIO are slaves.
-* Memory-mapped I/O: data RAM at `0x00000000`, GPU registers at `0x10000000`.
+* **Four bus masters** (CPU instruction, CPU data, GPU memory, TPU memory).
+  Memory and MMIO are slaves.
+* **RPU routing fabric**: master-qualified address decode, per-slave round-robin
+  arbitration, owner-tagged response routing, and immediate bus errors for
+  invalid or reserved accesses.
+* Memory-mapped I/O: instruction ROM at `0x00000000` (CPU_I only), data RAM at
+  `0x00000000` (data masters), GPU registers at `0x10000000`.
 
 ---
 
@@ -69,15 +74,16 @@ Key architectural facts:
 | Path | Contents |
 | --- | --- |
 | `src/rtl/packages/` | Shared types/constants (`opcode_pkg`, `cpu_pkg`, `memory_pkg`, `bus_pkg`, `gpu_pkg`, `alu_pkg`) |
-| `src/rtl/interconnect/` | `address_decoder`, `bus_interconnect` |
+| `src/rtl/rpu/` | `rpu_pkg`, `rpu_decoder`, `rpu_slave_port`, `rpu_crossbar`, `rpu_top` |
 | `src/rtl/cpu/` | `cpu` top; `fetch/`, `core/`, `alu/` sub-folders |
-| `src/rtl/memory/` | `instruction_rom`, `data_ram`, `memory_subsystem` (plus unused `gpu_bus_master`) |
+| `src/rtl/memory/` | `instruction_rom`, `data_ram`, `memory_subsystem` |
 | `src/rtl/gpu/` | `gpu` top, `mmio/gpu_register`, and unwired modules in `future/` |
 | `src/rtl/soc/` | `system` (SoC), `fpga_top` (board wrapper) |
-| `src/sim/testbench/` | Unit + integration testbenches (`cpu/`, `bus/`, `memory/`, `gpu/`, `soc/`) |
+| `src/sim/testbench/` | Unit + integration testbenches (`cpu/`, `rpu/`, `memory/`, `gpu/`, `soc/`) |
 | `src/sim/build/`, `src/sim/waveforms/` | Compiled sims and VCD dumps (git-ignored) |
 | `src/programs/` | Hex memory images (`boot_program.hex`, `data_ram_init.hex`) |
 | `src/constraints/` | `sipeed_tang_primer_20k.cst` (pins), `.sdc` (clock) |
+| `docs/` | `READMEEDU.md` (design journey), `RPU.md` (routing-fabric reference), `RPU_AUDIT.md` (inventory and capability evidence) |
 | `run.sh` | Icarus Verilog regression + GTKWave launcher |
 | `lacooda.gprj` | Gowin IDE project file list |
 
@@ -96,7 +102,7 @@ below it:
 L0  Board      fpga_top
                   └─ system
 L1  SoC          ├─ cpu
-                 ├─ bus_interconnect → address_decoder
+                 ├─ rpu_top → rpu_decoder | rpu_crossbar → rpu_slave_port ×4
                  ├─ memory_subsystem → instruction_rom | data_ram
                  └─ gpu → gpu_register
 L2  CPU edge       cpu → instruction_fetch (I-BUS) | cpu_core (D-BUS)
@@ -104,7 +110,7 @@ L3  Datapath         cpu_core → cpu_decoder | cpu_datapath | branch_unit
 L4  Storage          cpu_datapath → cpu_register | status_register
 L5  ALU unit         cpu_datapath → alu → arithmetic | logic_unit | shifter | comparator
 L6  Bit ops          1-bit adder · shift-add multiply · restoring divide · serial compare · bit logic
--1  Foundation       packages: opcode_pkg → cpu_pkg → memory_pkg → bus_pkg / gpu_pkg ; alu_pkg
+-1  Foundation       packages: opcode_pkg → cpu_pkg → memory_pkg → bus_pkg → rpu_pkg ; gpu_pkg ; alu_pkg
 ```
 
 The layers below `cpu` are pure *combinational wiring plus small FSMs*; the only
@@ -131,8 +137,13 @@ fpga_top  (src/rtl/soc/fpga_top.sv)
    │     │  │  └─ u_comparator : comparator
    │     │  └─ u_status_register : status_register
    │     └─ u_branch_unit : branch_unit
-   ├─ u_bus_interconnect : bus_interconnect
-   │  └─ u_address_decoder : address_decoder
+   ├─ u_rpu : rpu_top
+   │  ├─ u_decoder : rpu_decoder
+   │  └─ u_crossbar : rpu_crossbar
+   │     ├─ u_slave_rom : rpu_slave_port
+   │     ├─ u_slave_ram : rpu_slave_port
+   │     ├─ u_slave_gpu : rpu_slave_port
+   │     └─ u_slave_ddr3 : rpu_slave_port
    ├─ u_memory : memory_subsystem
    │  ├─ u_instruction_rom : instruction_rom
    │  └─ u_data_ram : data_ram
@@ -154,8 +165,11 @@ cpu_pkg     (imports opcode_pkg; NEVER imports memory_pkg)
     ↓
 memory_pkg  (uses cpu_pkg::WORD_BYTES)
     ↓
-bus_pkg     (uses cpu_pkg + memory_pkg)      gpu_pkg (uses cpu_pkg + bus_pkg + memory_pkg)
-                                             alu_pkg (uses cpu_pkg)
+bus_pkg     (protocol only; uses cpu_pkg)
+rpu_pkg     (routing policy; uses cpu_pkg + memory_pkg)
+
+gpu_pkg     (uses cpu_pkg + bus_pkg + memory_pkg)
+alu_pkg     (uses cpu_pkg)
 ```
 
 The dependency arrow is deliberately one-way to avoid circular package imports:
@@ -267,6 +281,8 @@ Central source of truth for memory and MMIO **sizes** (not addresses).
 * `DATA_RAM_BYTES = 32 * 1024` (32 KiB) → `DATA_RAM_WORDS` = 8192 words.
 * `GPU_MMIO_BYTES = 4 * 1024` (4 KiB) — the address space occupied by GPU
   registers. **Not framebuffer memory.**
+* `DDR3_BYTES = 128 * 1024 * 1024` (128 MiB) — the CPU-visible DDR3 window
+  exposed through the DDR3 bridge.
 * `INSTRUCTION_ROM_INIT_FILE = "src/programs/boot_program.hex"`,
   `DATA_RAM_INIT_FILE = "src/programs/data_ram_init.hex"`.
 * `validate_configuration()` — asserts sizes are positive and byte counts are
@@ -277,39 +293,50 @@ simulations must be launched from the repository root (see `run.sh`).
 
 ### 4.4 `bus_pkg` — `src/rtl/packages/bus_pkg.sv`
 
-Owns the bus protocol types and the absolute memory map.
+Owns the native bus **protocol only**. The memory map and routing policy now
+live in `rpu_pkg`.
 
 ```systemverilog
 typedef enum logic { BUS_READ = 1'b0, BUS_WRITE = 1'b1 } bus_op_e;
+typedef logic [cpu_pkg::WORD_BYTES-1:0] bus_strb_t;
 
 typedef struct packed {
-    logic    valid;
-    bus_op_e op;
-    word_t   addr;    // cpu_pkg::word_t
-    word_t   wdata;
+    logic      valid;
+    bus_op_e   op;
+    word_t     addr;
+    word_t     wdata;
+    bus_strb_t wstrb;
 } bus_req_s;
 
 typedef struct packed {
     logic  ready;
     word_t rdata;
+    logic  error;
 } bus_rsp_s;
 ```
 
-Memory-map constants (see [Appendix C](#appendix-c--address-map)):
+Helpers: `bus_is_aligned`, `bus_has_write_bytes`, `bus_success`, `bus_failure`.
 
-* `DATA_RAM_BASE = 0`, `DATA_RAM_SIZE = DATA_RAM_WORDS * WORD_BYTES`,
-  `DATA_RAM_LIMIT = 0x0000_8000`.
-* `GPU_BASE = 0x1000_0000`, `GPU_SIZE = 0x0000_1000`,
-  `GPU_LIMIT = 0x1000_1000`.
-* `DDR3_BASE = 0x8000_0000`, `DDR3_SIZE = 0x0800_0000`,
-  `DDR3_LIMIT = 0x8800_0000` — **reserves the intended future map only; it does
-  not make DDR3 functional.**
+### 4.5 `rpu_pkg` — `src/rtl/rpu/rpu_pkg.sv`
 
-### 4.5 `gpu_pkg` — `src/rtl/packages/gpu_pkg.sv`
+Owns the SoC routing policy:
+
+* `rpu_master_e` — CPU_I, CPU_D, GPU, TPU.
+* `rpu_slave_e` — ROM, DATA_RAM, GPU_MMIO, DDR3, plus `RPU_S_NONE`.
+* `rpu_route_s` — `{valid, mapped, slave, local_addr}`.
+* Region constants (`RPU_ROM_BASE`, `RPU_RAM_LIMIT`, …).
+* `rpu_decode(master, addr)` — master-qualified address decode.
+* `rpu_validate_map()` — checks power-of-two sizes, alignment, per-master
+  overlap, and implemented slave IDs.
+
+The route table is documented in [Appendix C](#appendix-c--address-map) and in
+[`docs/RPU.md`](docs/RPU.md).
+
+### 4.6 `gpu_pkg` — `src/rtl/packages/gpu_pkg.sv`
 
 Defines the GPU's local MMIO address type, register map, config/status structs,
-and pixel format. The *absolute* base address is owned by `bus_pkg`; the GPU
-only sees a **local** address after the interconnect subtracts `GPU_BASE`.
+and pixel format. The *absolute* base address is owned by `rpu_pkg`; the GPU
+only sees a **local** address after the RPU subtracts `GPU_BASE`.
 
 * `GPU_ADDR_WIDTH = $clog2(GPU_MMIO_BYTES) = 12`; `typedef logic [11:0] gpu_addr_t;`
 * `typedef enum gpu_addr_t { ... } gpu_reg_addr_e;`:
@@ -336,7 +363,7 @@ only sees a **local** address after the interconnect subtracts `GPU_BASE`.
 * Internal (non-bus) structs `gpu_pixel_req_s`, `gpu_pixel_write_s`,
   `gpu_mem_req_s`, `gpu_mem_rsp_s` describe graphics-side operations.
 
-### 4.6 `alu_pkg` — `src/rtl/packages/alu_pkg.sv`
+### 4.7 `alu_pkg` — `src/rtl/packages/alu_pkg.sv`
 
 Shared ALU constants and load-time helpers. It does **not** replace `cpu_pkg` or
 `opcode_pkg`.
@@ -355,10 +382,13 @@ Shared ALU constants and load-time helpers. It does **not** replace `cpu_pkg` or
 
 ---
 
-## 5. The Bus Contract
+## 5. The Bus and RPU Contract
+
+### 5.1 Native bus protocol
 
 The same transaction protocol is used on the CPU instruction bus (I-BUS), the CPU
-data bus (D-BUS), and inside the SoC. It is a simple **valid/ready** handshake:
+data bus (D-BUS), the GPU/TPU memory ports, and inside the SoC. It is a simple
+**valid/ready** handshake:
 
 ```
 Transaction completes when:  req.valid && rsp.ready
@@ -366,41 +396,85 @@ Transaction completes when:  req.valid && rsp.ready
 
 Rules:
 
-* A request payload (`op`, `addr`, `wdata`) is held **stable** from assertion
-  until `ready` — the master must not change it mid-transaction.
+* A request payload (`op`, `addr`, `wdata`, `wstrb`) is held **stable** from
+  assertion until `ready` — the master must not change it mid-transaction.
 * `op` is one `bus_op_e`: `BUS_READ` or `BUS_WRITE`.
-* Data is exactly **one `word_t` (32 bits)**. There are no byte-enable signals,
-  which is why every MMIO register is word-granular.
+* Data is exactly **one `word_t` (32 bits)**. `wstrb` enables individual bytes;
+  MMIO registers remain word-granular.
 * `valid` does not have to fall between back-to-back transactions; a new request
   may follow immediately in the next cycle.
+* A response is meaningful only in the cycle where `ready` is asserted. `rdata`
+  and `error` are ignored otherwise.
 
-### 5.1 `address_decoder` — `src/rtl/interconnect/address_decoder.sv`
+### 5.2 RPU routing
 
-Pure combinational range comparison on the global byte address:
+`rpu_top` connects four masters to four slave ports:
 
-```systemverilog
-data_ram_sel = (addr >= DATA_RAM_BASE) && (addr < DATA_RAM_LIMIT); // [0x0, 0x8000)
-gpu_mmio_sel = (addr >= GPU_BASE)        && (addr < GPU_LIMIT);          // [0x1000_0000, 0x1000_1000)
+| Master | Port | Typical traffic |
+| --- | --- | --- |
+| CPU_I | `cpu_instr_bus_*` | Instruction fetch |
+| CPU_D | `cpu_bus_*` | Loads, stores, MMIO |
+| GPU | `gpu_bus_*` | Future GPU memory traffic |
+| TPU | `tpu_bus_*` | Future TPU memory traffic |
+
+The decoder selects a route from `(master, address)`. It returns
+`{valid, mapped, slave, local_addr}`. The crossbar forwards the request to the
+selected slave with the base subtracted:
+
+```
+local_addr = global_addr - region_base
 ```
 
-It produces two one-hot select signals and nothing else.
+ROM and RAM both have base zero, so their local address equals the global
+address. GPU MMIO subtracts `0x1000_0000`; DDR3 subtracts `0x8000_0000`.
 
-### 5.2 `bus_interconnect` — `src/rtl/interconnect/bus_interconnect.sv`
+The same global address may mean different slaves for different masters. This is
+intentional: CPU_I sees ROM at `0x0`, while CPU_D/GPU/TPU see DATA_RAM at `0x0`.
+The route table and its master masks are in [Appendix C](#appendix-c--address-map).
 
-Routes the **single CPU D-BUS master** to one of two slaves and muxes the
-response back.
+### 5.3 Per-slave arbitration and response routing
 
-* Instantiates `address_decoder`.
-* **Data-memory request**: `valid = dbus_req.valid && data_ram_sel`,
-  `addr = dbus_req.addr - DATA_RAM_BASE` (global → memory-local byte address).
-* **GPU request**: `valid = dbus_req.valid && gpu_mmio_sel`,
-  `addr = dbus_req.addr - GPU_BASE` (e.g. `0x1000_0020 - 0x1000_0000 = 0x20`).
-* **Response mux**: passes through the selected slave's `bus_rsp_s`; for an
-  **unmapped** address it synthesizes `ready = 1, rdata = 0` (no bus fault) so
-  the CPU can never hang on a bad address.
+Each slave port contains its own round-robin arbiter, priority register, and
+owner state:
 
-> There is currently **one bus master** and **no arbitration**. Adding a GPU/TPU
-> master will require arbitration and extra master ports here.
+* When idle, the port scans from `priority_reg` and selects the first valid
+  requester.
+* If the slave asserts `ready` in that same cycle, the transaction completes on
+  the next rising edge and priority rotates immediately.
+* Otherwise the port registers the owner and remains in `SP_ACTIVE` until the
+  slave completes. The owner's request must remain stable.
+* Only the selected or registered owner receives `slave_rsp`. Every other master
+  sees a zero response.
+
+Because each slave has an independent port, a CPU_I fetch from ROM, a CPU_D RAM
+access, and a GPU DDR3 access can be in flight at the same time. Contention is
+only possible between masters targeting the same slave.
+
+### 5.4 Error responses
+
+The RPU synthesizes an immediate error response when:
+
+* the address is not word-aligned,
+* the address is outside every declared region (`mapped = 0`),
+* the address is inside a reserved region (`mapped = 1`, `valid = 0`).
+
+```
+ready = 1, rdata = 0, error = 1
+```
+
+No slave request is issued. The error completes on the next rising edge, so the
+CPU's fault latch can stop execution instead of hanging. This matches the former
+interconnect's fault behaviour for unmapped addresses.
+
+### 5.5 Relationship to the old interconnect
+
+The former `bus_arbiter` serialized CPU/GPU/TPU traffic into one shared request,
+and `bus_interconnect` routed that single request to one of two slaves. The
+unused `address_decoder` module was never instantiated; the interconnect called
+`bus_pkg::bus_decode_address()` directly.
+
+The RPU replaces all three: decode is in `rpu_pkg`, arbitration is per slave, and
+request/response routing is in `rpu_crossbar`. `bus_pkg` is now protocol-only.
 
 ---
 
@@ -410,14 +484,14 @@ response back.
 container. It instantiates two **physically separate** memories so instruction
 fetch never contends with local data access:
 
-* `instruction_rom` — I-BUS slave (a read-only ROM).
-* `data_ram` — memory-bus slave (read/write BRAM).
+* `instruction_rom` — RPU slave port `s0` (a read-only ROM).
+* `data_ram` — RPU slave port `s1` (read/write BRAM).
 
 ```systemverilog
 module memory_subsystem (
     input  logic clk, rst,
-    input  bus_pkg::bus_req_s ibus_req, output bus_pkg::bus_rsp_s ibus_rsp, // instruction ROM
-    input  bus_pkg::bus_req_s data_ram_req,  output bus_pkg::bus_rsp_s data_ram_rsp    // data BRAM
+    input  bus_pkg::bus_req_s rom_bus_req, output bus_pkg::bus_rsp_s rom_bus_rsp,
+    input  bus_pkg::bus_req_s ram_bus_req, output bus_pkg::bus_rsp_s ram_bus_rsp
 );
 ```
 
@@ -431,7 +505,7 @@ An `8192 × 32` array loaded at elaboration by
 * Alignment/range check: address must be word-aligned (`addr % WORD_BYTES == 0`)
   and `< INSTRUCTION_ROM_WORDS`. Misaligned/out-of-range reads return zero
   with `error=1`.
-* Indexing: `rom_words[ibus_req.addr / WORD_BYTES]` (byte address → word index).
+* Indexing: `rom_words[cpu_instr_bus_req.addr / WORD_BYTES]` (byte address → word index).
 
 ### 6.2 `data_ram` — `src/rtl/memory/data_ram.sv`
 
@@ -440,7 +514,7 @@ timing is intentionally **synchronous**, so Gowin can infer BSRAM.
 
 * Array: `8192 × 32` `word_t`, initialized by
   `$readmemh(memory_pkg::DATA_RAM_INIT_FILE, ram_words)`.
-* **Range checking is not repeated here.** The interconnect already decided the
+* **Range checking is not repeated here.** The RPU already decided the
   address belongs to data memory; this module only checks **word alignment**
   (`addr % WORD_BYTES == 0`). Misaligned access → completes normally, reads zero,
   writes nothing.
@@ -470,16 +544,17 @@ immediately follow (valid need not fall between transactions).
 ### 7.1 `cpu` — `src/rtl/cpu/cpu.sv`
 
 The CPU boundary. It contains everything needed to execute the ISA and exposes
-**two typed bus-master ports**: an I-BUS (instruction fetch) and a D-BUS
+**two typed RPU master ports**: an I-BUS (instruction fetch) and a D-BUS
 (LOAD/STORE). Instruction memory and data memory live outside it.
 
 Key internal glue:
 
 ```systemverilog
-assign dbus_req.valid = dbus_valid;
-assign dbus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
-assign dbus_req.addr  = dbus_addr;
-assign dbus_req.wdata = dbus_wdata;
+assign cpu_bus_req.valid = dbus_valid;
+assign cpu_bus_req.op    = dbus_write ? bus_pkg::BUS_WRITE : bus_pkg::BUS_READ;
+assign cpu_bus_req.addr  = dbus_addr;
+assign cpu_bus_req.wdata = dbus_wdata;
+assign cpu_bus_req.wstrb = bus_pkg::BUS_STRB_ALL;
 
 assign core_enable = instruction_available && !rst && !fault_latched;
 assign retire      = retire_valid && !fault_latched;
@@ -499,8 +574,9 @@ assign retire      = retire_valid && !fault_latched;
 Owns the PC and a **one-entry instruction buffer**, and is the I-BUS master.
 
 * Instantiates `program_counter` (`u_program_counter`).
-* I-BUS request: `ibus_req.op = BUS_READ`, `ibus_req.addr = (FETCH_IMM) ? pc +
-  WORD_BYTES : pc`, `ibus_req.valid = (fetch_state != FETCH_IDLE)`.
+* I-BUS request: `cpu_instr_bus_req.op = BUS_READ`,
+  `cpu_instr_bus_req.addr = (FETCH_IMM) ? pc + WORD_BYTES : pc`,
+  `cpu_instr_bus_req.valid = (fetch_state != FETCH_IDLE)`.
 * Fetch FSM:
 
 | State | Behavior |
@@ -816,9 +892,9 @@ framebuffer_valid) read as zero. Future GPU components are meant to be added
 
 ### 9.2 `gpu_register` — `src/rtl/gpu/mmio/gpu_register.sv`
 
-A direct **bus slave** implementing the MMIO register bank.
+A direct **RPU slave** implementing the MMIO register bank.
 
-* The interconnect has already matched this address and subtracted `GPU_BASE`,
+* The RPU has already matched this address and subtracted `GPU_BASE`,
   so `mmio_req.addr` is a **GPU-local byte address**:
   `local_addr = gpu_addr_t'(mmio_req.addr)`.
 * **Writes** (`valid && op == BUS_WRITE`) are decoded into `gpu_cfg`:
@@ -916,16 +992,18 @@ so the relative `INSTRUCTION_ROM_INIT_FILE`/`DATA_RAM_INIT_FILE` paths resolve.
   5. CPU core (`cpu_core_tb`)
   6. Program counter / branch unit / instruction fetch (individual TBs)
   7. Data memory (`data_ram_tb`)
-  8. Bus interconnect (`bus_interconnect_tb`)
+  8. RPU decoder, slave port, and crossbar (`rpu_decoder_tb`, `rpu_slave_port_tb`, `rpu_crossbar_tb`)
   9. CPU I-BUS/D-BUS (`cpu_tb`)
-  10. CPU system end-to-end (`system_tb`)
+  10. CPU system end-to-end through the RPU (`system_tb`)
   11. GPU MMIO register (`gpu_tb`)
+  12. DDR3 bridge (`ddr3_bridge_tb`)
 * Unless `--no-gui` is given it opens GTKWave on all waveforms. The legacy
   `--word32`/`--both` flags add `-DLACOODA_WORD_WIDTH` defines but the design is
   hard-locked to 32 bits (see [Appendix F](#appendix-f--not-wired--reserved)).
 
 **Current status (verified):** `./run.sh --no-gui` passes the complete
-regression, including instruction fetch, CPU, system, and GPU tests.
+regression, including the RPU decoder/slave-port/crossbar tests, instruction
+fetch, CPU, system, GPU, and DDR3 bridge tests.
 
 ### 10.5 Gowin project
 
@@ -953,9 +1031,12 @@ PnR reports under `impl/pnr/` predate these RTL changes.
 | `cpu/cpu_tb.sv` | `cpu` | I-BUS + D-BUS end-to-end |
 | `memory/instruction_rom_tb.sv` | `instruction_rom` | Registered response and fetch errors |
 | `memory/data_ram_tb.sv` | `data_ram` | Synchronous handshake, alignment |
-| `bus/bus_interconnect_tb.sv` | `bus_interconnect` | Routing + response mux |
+| `memory/ddr3_bridge_tb.sv` | `ddr3_bridge` | Native bridge FSM, backend stalls and errors |
+| `rpu/rpu_decoder_tb.sv` | `rpu_decoder` | Map validation, master masks, local translation |
+| `rpu/rpu_slave_port_tb.sv` | `rpu_slave_port` | Round-robin, owner stability, response isolation |
+| `rpu/rpu_crossbar_tb.sv` | `rpu_crossbar` | Parallel routing, contention, errors, backpressure |
 | `gpu/gpu_tb.sv` | `gpu` | MMIO read/write of all registers |
-| `soc/cpu_system_tb.sv` | `system` | Full program: MOVI/STORE/LOAD/BEQ |
+| `soc/cpu_system_tb.sv` | `system` | Full program through the RPU: MOVI/STORE/LOAD/BEQ |
 
 ---
 
@@ -1021,21 +1102,32 @@ Worked examples (from `boot_program.hex`):
 
 ### Appendix C — Address Map
 
-| Region | Base | Size | Limit (exclusive) | Owner |
-| --- | --- | --- | --- | --- |
-| Data RAM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `data_ram` |
-| GPU MMIO | `0x1000_0000` | 4 KiB (`0x1000`) | `0x1000_1000` | `gpu_register` |
-| DDR3 (reserved) | `0x8000_0000` | 128 MiB (`0x0800_0000`) | `0x8800_0000` | *none — reserved only* |
+| Region | Base | Size | Limit (exclusive) | Slave | Masters | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| ROM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `instruction_rom` | CPU_I | implemented |
+| Data RAM | `0x0000_0000` | 32 KiB (`0x8000`) | `0x0000_8000` | `data_ram` | CPU_D, GPU, TPU | implemented |
+| GPU MMIO | `0x1000_0000` | 4 KiB (`0x1000`) | `0x1000_1000` | `gpu_register` | CPU_D, GPU, TPU | implemented |
+| TPU MMIO | `0x1000_1000` | 4 KiB | `0x1000_2000` | — | data masters | reserved |
+| DMA MMIO | `0x1000_2000` | 4 KiB | `0x1000_3000` | — | data masters | reserved |
+| SD MMIO | `0x1000_3000` | 4 KiB | `0x1000_4000` | — | data masters | reserved |
+| System MMIO | `0x1000_4000` | 4 KiB | `0x1000_5000` | — | data masters | reserved |
+| DDR3 | `0x8000_0000` | 128 MiB (`0x0800_0000`) | `0x8800_0000` | `ddr3_bridge` | CPU_D, GPU, TPU | bridge only |
 
-Instruction memory is not in the CPU address space at all: it is a separate ROM
-reachable only through the I-BUS.
+The ROM and Data RAM overlap at `[0x0, 0x8000)` is intentional: the master sets
+are disjoint. CPU_I sees ROM; CPU_D/GPU/TPU see Data RAM. A CPU_I fetch outside
+ROM faults, and a data-master access cannot read ROM. `rpu_validate_map()`
+checks overlap per master, not globally.
+
+The DDR3 window is routed to the native `ddr3_bridge`, but no physical DDR3
+controller is connected in this configuration. The bridge returns a bus error
+when the backend is unavailable.
 
 ### Appendix D — Module Tree
 
 | Module | File | Instantiates |
 | --- | --- | --- |
 | `fpga_top` | `src/rtl/soc/fpga_top.sv` | `system` |
-| `system` | `src/rtl/soc/system.sv` | `cpu`, `bus_interconnect`, `memory_subsystem`, `gpu` |
+| `system` | `src/rtl/soc/system.sv` | `cpu`, `rpu_top`, `memory_subsystem`, `gpu`, `ddr3_bridge` |
 | `cpu` | `src/rtl/cpu/cpu.sv` | `instruction_fetch`, `cpu_core` |
 | `instruction_fetch` | `src/rtl/cpu/fetch/instruction_fetch.sv` | `program_counter` |
 | `program_counter` | `src/rtl/cpu/fetch/program_counter.sv` | — |
@@ -1050,8 +1142,10 @@ reachable only through the I-BUS.
 | `logic_unit` | `src/rtl/cpu/alu/logic_unit.sv` | — |
 | `shifter` | `src/rtl/cpu/alu/shifter.sv` | — |
 | `comparator` | `src/rtl/cpu/alu/comparator.sv` | — |
-| `bus_interconnect` | `src/rtl/interconnect/bus_interconnect.sv` | `address_decoder` |
-| `address_decoder` | `src/rtl/interconnect/address_decoder.sv` | — |
+| `rpu_top` | `src/rtl/rpu/rpu_top.sv` | `rpu_crossbar` |
+| `rpu_crossbar` | `src/rtl/rpu/rpu_crossbar.sv` | `rpu_decoder`, `rpu_slave_port` ×4 |
+| `rpu_decoder` | `src/rtl/rpu/rpu_decoder.sv` | — |
+| `rpu_slave_port` | `src/rtl/rpu/rpu_slave_port.sv` | — |
 | `memory_subsystem` | `src/rtl/memory/memory_subsystem.sv` | `instruction_rom`, `data_ram` |
 | `instruction_rom` | `src/rtl/memory/instruction_rom.sv` | — |
 | `data_ram` | `src/rtl/memory/data_ram.sv` | — |
@@ -1071,7 +1165,10 @@ reachable only through the I-BUS.
 | **redirect** | A taken branch/jump requesting the PC load `redirect_target`. |
 | **effective address** | `RS1 + sign-extended immediate word`, computed as `ALU_ADD` for LOAD/STORE. |
 | **I-BUS / D-BUS** | The CPU's instruction-fetch and load/store master buses. |
-| **GPU-local address** | A byte address with `GPU_BASE` already subtracted by the interconnect. |
+| **RPU** | Routing Processing Unit: decode, arbitration, and request/response routing fabric. |
+| **master-qualified route** | A route selected by `(master, address)`, allowing CPU_I and CPU_D to see different slaves at the same address. |
+| **slave port** | One RPU arbitration/response-routing instance dedicated to one slave. |
+| **GPU-local address** | A byte address with `GPU_BASE` already subtracted by the RPU. |
 | **bit-serial** | Computing one bit per clock through a shared narrow datapath. |
 
 ### Appendix F — Not Wired / Reserved
@@ -1086,8 +1183,12 @@ are listed here for orientation only:
   (`base + (y*width + x) * PIXEL_BYTES` with bounds check). Not instantiated.
 * `src/rtl/gpu/future/gpu_bus_master.sv` — a GPU-side **bus master** bridge
   (`gpu_mem_req_s` ↔ `bus_req_s`, one outstanding transaction). Not instantiated.
-* **DDR3** — `bus_pkg` reserves `[0x8000_0000, 0x8800_0000)` but there is no DDR3
-  controller; the region is unmapped and the `.cst` DDR3 pins are commented out.
+* **DDR3** — the RPU routes `[0x8000_0000, 0x8800_0000)` to `ddr3_bridge`,
+  but no physical DDR3 controller is connected; the bridge returns a bus error
+  while `ddr3_backend_ready` is low and the `.cst` DDR3 pins are commented out.
+* **Legacy bus modules** — `bus_arbiter`, `bus_interconnect`, and
+  `address_decoder` were removed in Stage 5 and replaced by the RPU. Their
+  history remains in git; the live tree has no references to them.
 * **`--word32` / `--both` and `_64.hex` files** — legacy from a parameterized
   era; `cpu_pkg::WORD_WIDTH` is now hard-locked to 32 and `memory_pkg` points at
   the 32-bit `boot_program.hex` and `data_ram_init.hex` images.

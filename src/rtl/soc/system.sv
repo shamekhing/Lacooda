@@ -1,48 +1,37 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA SYSTEM — STAGE 4
+// LACOODA SYSTEM — STAGE 5
 // ============================================================
 //
 // SYSTEM ARCHITECTURE
 //
-//                    CPU
-//                     |
-//                     | CPU data bus
-//                     v
-//                +----------+
-// GPU master --->|          |
-// TPU master --->| Arbiter  |
-//                |          |
-//                +-----+----+
-//                      |
-//                      v
-//                Bus Interconnect
-//                      |
-//          +-----------+-----------+
-//          |           |           |
-//          v           v           v
-//      Data RAM     GPU MMIO   DDR3 Bridge
-//                                  |
-//                                  v
-//                            DDR3 Backend
+//   CPU_I ──┐
+//   CPU_D ──┤
+//   GPU   ──┼──> RPU (4 x 4 routing fabric) ──┬──> ROM
+//   TPU   ──┘                                 ├──> DATA RAM
+//                                             ├──> GPU MMIO
+//                                             └──> DDR3 bridge
+//                                                      |
+//                                                      v
+//                                                DDR3 backend
 //
-// The CPU instruction bus remains independent.
+// The RPU replaces the former global arbiter and single-lane
+// data interconnect. Each slave has its own round-robin port,
+// so transactions to different slaves proceed in parallel.
 //
-// GPU MMIO is a slave, whereas the future GPU memory
-// interface is a master.
+// The CPU instruction and data buses are separate RPU masters.
+// Master-qualified routing lets CPU_I see ROM at address 0 and
+// CPU_D/GPU/TPU see DATA_RAM at address 0, preserving the
+// existing boot program and PC reset value.
 //
-// Those interfaces must not be confused.
+// GPU MMIO is a slave, whereas the GPU memory interface is a
+// master. The two interfaces must not be confused. The same
+// distinction applies to the future TPU MMIO slave and TPU
+// memory master.
 //
-// The same distinction applies to the TPU:
-//
-//   TPU MMIO registers are future bus slaves.
-//   TPU memory requests are future bus-master traffic.
-//
-// The arbiter forwards only one master's request at a time.
-//
-// Stage 4 does not implement GPU/TPU execution engines,
-// DMA, DDR3 physical signaling, or cache coherency.
+// Stage 5 does not implement GPU/TPU execution engines, DMA,
+// DDR3 physical signaling, or cache coherency.
 // ============================================================
 
 module system (
@@ -70,9 +59,6 @@ module system (
     // GPU-generated memory transactions.
     //
     // This is separate from the GPU MMIO slave interface.
-    //
-    // An external or future internal GPU engine may present
-    // requests using this native bus connection.
     // ========================================================
 
     input  bus_pkg::bus_req_s gpu_bus_req,
@@ -89,12 +75,8 @@ module system (
     // DDR3 BACKEND
     // ========================================================
     //
-    // Interface to the Stage 3 DDR3 bridge backend.
-    //
-    // The backend must share this module's clock domain.
-    //
-    // A generated Gowin DDR3 controller requires a separate
-    // controller-specific adapter.
+    // Interface to the DDR3 bridge backend. The backend must
+    // share this module's clock domain.
     // ========================================================
 
     input logic ddr3_backend_ready,
@@ -105,34 +87,28 @@ module system (
 );
 
     // ========================================================
-    // CPU INSTRUCTION BUS
+    // CPU INSTRUCTION BUS (CPU_I RPU MASTER)
     // ========================================================
 
     bus_pkg::bus_req_s cpu_instr_bus_req;
     bus_pkg::bus_rsp_s cpu_instr_bus_rsp;
 
     // ========================================================
-    // CPU DATA BUS
+    // CPU DATA BUS (CPU_D RPU MASTER)
     // ========================================================
 
     bus_pkg::bus_req_s cpu_bus_req;
     bus_pkg::bus_rsp_s cpu_bus_rsp;
 
     // ========================================================
-    // SHARED DATA BUS
-    // ========================================================
-    //
-    // The arbiter produces one downstream transaction.
-    //
-    // The interconnect treats it exactly like the original
-    // Stage 3 CPU data-bus request.
+    // ROM SLAVE BUS
     // ========================================================
 
-    bus_pkg::bus_req_s shared_bus_req;
-    bus_pkg::bus_rsp_s shared_bus_rsp;
+    bus_pkg::bus_req_s rom_bus_req;
+    bus_pkg::bus_rsp_s rom_bus_rsp;
 
     // ========================================================
-    // INTERNAL RAM BUS
+    // INTERNAL RAM SLAVE BUS
     // ========================================================
 
     bus_pkg::bus_req_s ram_bus_req;
@@ -146,7 +122,7 @@ module system (
     bus_pkg::bus_rsp_s gpu_mmio_bus_rsp;
 
     // ========================================================
-    // DDR3 BRIDGE BUS
+    // DDR3 BRIDGE SLAVE BUS
     // ========================================================
 
     bus_pkg::bus_req_s ddr3_bus_req;
@@ -156,10 +132,8 @@ module system (
     // CPU
     // ========================================================
     //
-    // CPU instruction accesses bypass the shared data
-    // arbiter and continue using instruction ROM.
-    //
-    // CPU loads and stores enter the arbiter.
+    // Both the instruction bus and the data bus are RPU
+    // masters. The CPU no longer connects directly to memory.
     // ========================================================
 
     cpu u_cpu (
@@ -181,64 +155,54 @@ module system (
     );
 
     // ========================================================
-    // THREE-MASTER ARBITER
+    // ROUTING PROCESSING UNIT
     // ========================================================
     //
-    // CPU, GPU and TPU requests compete for one shared
-    // data-bus transaction interface.
+    // Four masters, four implemented slaves. The RPU performs
+    // per-slave arbitration and routes each response back to
+    // the originating master only.
     //
-    // Priority rotates after successful completion,
-    // including transactions that finish with bus errors.
+    // All arbitration, ownership, and routing state remains
+    // internal to the RPU.
     // ========================================================
 
-    bus_arbiter u_bus_arbiter (
+    rpu_top u_rpu (
 
-        .clk       (clk),
-        .rst       (rst),
+        .clk                 (clk),
+        .rst                 (rst),
 
-        .cpu_bus_req   (cpu_bus_req),
-        .cpu_bus_rsp   (cpu_bus_rsp),
+        .cpu_instr_bus_req   (cpu_instr_bus_req),
+        .cpu_instr_bus_rsp   (cpu_instr_bus_rsp),
 
-        .gpu_bus_req   (gpu_bus_req),
-        .gpu_bus_rsp   (gpu_bus_rsp),
+        .cpu_bus_req         (cpu_bus_req),
+        .cpu_bus_rsp         (cpu_bus_rsp),
 
-        .tpu_bus_req   (tpu_bus_req),
-        .tpu_bus_rsp   (tpu_bus_rsp),
+        .gpu_bus_req         (gpu_bus_req),
+        .gpu_bus_rsp         (gpu_bus_rsp),
 
-        .shared_bus_req (shared_bus_req),
-        .shared_bus_rsp (shared_bus_rsp)
+        .tpu_bus_req         (tpu_bus_req),
+        .tpu_bus_rsp         (tpu_bus_rsp),
 
-    );
+        .rom_bus_req         (rom_bus_req),
+        .rom_bus_rsp         (rom_bus_rsp),
 
-    // ========================================================
-    // DATA BUS INTERCONNECT
-    // ========================================================
-    //
-    // The interconnect sees only one incoming request.
-    //
-    // It does not need to know which master generated it.
-    //
-    // The arbiter retains that ownership information.
-    // ========================================================
+        .ram_bus_req         (ram_bus_req),
+        .ram_bus_rsp         (ram_bus_rsp),
 
-    bus_interconnect u_bus_interconnect (
+        .gpu_mmio_bus_req    (gpu_mmio_bus_req),
+        .gpu_mmio_bus_rsp    (gpu_mmio_bus_rsp),
 
-        .shared_bus_req     (shared_bus_req),
-        .shared_bus_rsp     (shared_bus_rsp),
-
-        .ram_bus_req (ram_bus_req),
-        .ram_bus_rsp (ram_bus_rsp),
-
-        .gpu_mmio_bus_req (gpu_mmio_bus_req),
-        .gpu_mmio_bus_rsp (gpu_mmio_bus_rsp),
-
-        .ddr3_bus_req     (ddr3_bus_req),
-        .ddr3_bus_rsp     (ddr3_bus_rsp)
+        .ddr3_bus_req        (ddr3_bus_req),
+        .ddr3_bus_rsp        (ddr3_bus_rsp)
 
     );
 
     // ========================================================
     // INTERNAL MEMORY SUBSYSTEM
+    // ========================================================
+    //
+    // ROM and RAM are independent RPU slaves. The memory
+    // subsystem no longer owns the CPU instruction connection.
     // ========================================================
 
     memory_subsystem u_memory (
@@ -246,22 +210,22 @@ module system (
         .clk          (clk),
         .rst          (rst),
 
-        .cpu_instr_bus_req     (cpu_instr_bus_req),
-        .cpu_instr_bus_rsp     (cpu_instr_bus_rsp),
+        .rom_bus_req  (rom_bus_req),
+        .rom_bus_rsp  (rom_bus_rsp),
 
-        .ram_bus_req (ram_bus_req),
-        .ram_bus_rsp (ram_bus_rsp)
+        .ram_bus_req  (ram_bus_req),
+        .ram_bus_rsp  (ram_bus_rsp)
 
     );
+
 
     // ========================================================
     // GPU MMIO SLAVE
     // ========================================================
     //
     // The GPU block currently implements only configuration
-    // and status registers.
-    //
-    // It does not yet generate its own memory requests.
+    // and status registers. Its memory-master port remains
+    // separate and may be driven by a future GPU engine.
     // ========================================================
 
     gpu u_gpu (

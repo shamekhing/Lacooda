@@ -113,7 +113,7 @@ module ddr3_bridge (
     logic address_aligned;
 
     assign address_valid =
-        ddr3_bus_req.addr < bus_pkg::DDR3_SIZE;
+        ddr3_bus_req.addr < cpu_pkg::word_t'(memory_pkg::DDR3_BYTES);
 
     assign address_aligned =
         bus_pkg::bus_is_aligned(ddr3_bus_req.addr);

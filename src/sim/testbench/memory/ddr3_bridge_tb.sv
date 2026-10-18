@@ -29,6 +29,11 @@ module ddr3_bridge_tb;
 
     import cpu_pkg::*;
     import bus_pkg::*;
+    import memory_pkg::*;
+
+    // Local alias for the DDR3 address-window size. The size now
+    // lives in memory_pkg (capacity ownership) rather than bus_pkg.
+    localparam word_t DDR3_SIZE = word_t'(memory_pkg::DDR3_BYTES);
 
     // ========================================================
     // CLOCK

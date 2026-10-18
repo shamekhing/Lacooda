@@ -3,7 +3,7 @@
   "verilog.includes": [
     "src/rtl",
     "src/rtl/packages",
-    "src/rtl/interconnect",
+    "src/rtl/rpu",
     "src/rtl/cpu",
     "src/rtl/cpu/alu",
     "src/rtl/cpu/core",
@@ -24,7 +24,58 @@
   "verilog.lint.verilator.path": "verilator",
   "verilog.svFormat.formatter": "verible-verilog-format",
   "verilog.svFormat.verible.path": "verible-verilog-format",
-  "verilog.svFormat.verible.args": "",
+  // Active style: 4-space indentation and a 100-column target.
+  // Uncomment or change the options below to customize formatting.
+  //
+  // Basic formatting options:
+  // "--line_break_penalty=2"
+  // "--line_terminator=auto"                 // auto, CR, CRLF
+  // "--over_column_limit_penalty=100"
+  // "--wrap_spaces=4"
+  //
+  // Alignment options: align, flush-left, preserve, infer.
+  // "--assignment_statement_alignment=infer"
+  // "--case_items_alignment=infer"
+  // "--class_member_variable_alignment=infer"
+  // "--distribution_items_alignment=infer"
+  // "--enum_assignment_statement_alignment=infer"
+  // "--formal_parameters_alignment=infer"
+  // "--module_net_variable_alignment=infer"
+  // "--named_parameter_alignment=infer"
+  // "--named_port_alignment=infer"
+  // "--parameter_declaration_alignment=infer"
+  // "--port_declarations_alignment=infer"
+  // "--struct_union_members_alignment=infer"
+  //
+  // Indentation options: indent, wrap.
+  // "--formal_parameters_indentation=wrap"
+  // "--named_parameter_indentation=wrap"
+  // "--named_port_indentation=wrap"
+  // "--port_declarations_indentation=wrap"
+  //
+  // Other style options:
+  // "--class_parameter_space=false"
+  // "--compact_indexing_and_selections=true"
+  // "--expand_coverpoints=false"
+  // "--port_declarations_right_align_packed_dimensions=false"
+  // "--port_declarations_right_align_unpacked_dimensions=false"
+  // "--try_wrap_long_lines=false"
+  // "--wrap_end_else_clauses=false"
+  // "--alignment_group_boundary=none"        // none, blank-lines, separator-comments, blank-lines-and-separator-comments
+  //
+  // Invocation/diagnostic options (normally leave these to the editor):
+  // "--failsafe_success=true"
+  // "--inplace=false"
+  // "--lines=1-10"                           // format selected line ranges
+  // "--max_search_states=100000"
+  // "--show_equally_optimal_wrappings=false"
+  // "--show_inter_token_info=false"
+  // "--show_largest_token_partitions=0"
+  // "--show_token_partition_tree=false"
+  // "--stdin_name=<stdin>"
+  // "--verbose=false"
+  // "--verify_convergence=true"
+  "verilog.svFormat.verible.args": "--indentation_spaces=4 --column_limit=100 --over_column_limit_penalty=1000",
   "verilog.formatDirs": [
     "src/rtl",
     "src/sim/testbench"

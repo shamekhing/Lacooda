@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA FPGA TOP — STAGE 4
+// LACOODA FPGA TOP — STAGE 5
 // ============================================================
 //
 // TARGET
@@ -17,15 +17,15 @@
 //   led1   : Sticky CPU fault (fetch, data bus, illegal instruction)
 //   led2-5 : Reserved
 //
-// STAGE 4
+// STAGE 5
 //
-//   The system includes a three-master arbiter.
+//   The system includes the four-master RPU routing fabric.
 //
 //   CPU:
-//     Connected and active.
+//     Instruction and data buses are both RPU masters.
 //
 //   GPU:
-//     Memory master currently disabled.
+//     Memory master currently disabled; MMIO slave is active.
 //
 //   TPU:
 //     Memory master currently disabled.

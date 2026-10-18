@@ -152,14 +152,36 @@ run_test "DATA RAM BUS TEST" data_ram_tb data_ram_sim data_ram.vcd \
     src/rtl/memory/data_ram.sv \
     src/sim/testbench/memory/data_ram_tb.sv
 
-run_test "BUS ARBITER TEST" bus_arbiter_tb bus_arbiter_sim bus_arbiter.vcd \
+run_test "RPU DECODER TEST" rpu_decoder_tb rpu_decoder_sim rpu_decoder.vcd \
     src/rtl/packages/opcode_pkg.sv \
     src/rtl/packages/cpu_pkg.sv \
     src/rtl/packages/alu_pkg.sv \
     src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
-    src/rtl/interconnect/bus_arbiter.sv \
-    src/sim/testbench/bus/bus_interconnect_tb.sv
+    src/rtl/rpu/rpu_pkg.sv \
+    src/rtl/rpu/rpu_decoder.sv \
+    src/sim/testbench/rpu/rpu_decoder_tb.sv
+
+run_test "RPU SLAVE PORT TEST" rpu_slave_port_tb rpu_slave_port_sim rpu_slave_port.vcd \
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/rpu/rpu_slave_port.sv \
+    src/sim/testbench/rpu/rpu_slave_port_tb.sv
+
+run_test "RPU CROSSBAR TEST" rpu_crossbar_tb rpu_crossbar_sim rpu_crossbar.vcd \
+    src/rtl/packages/opcode_pkg.sv \
+    src/rtl/packages/cpu_pkg.sv \
+    src/rtl/packages/alu_pkg.sv \
+    src/rtl/packages/memory_pkg.sv \
+    src/rtl/packages/bus_pkg.sv \
+    src/rtl/rpu/rpu_pkg.sv \
+    src/rtl/rpu/rpu_decoder.sv \
+    src/rtl/rpu/rpu_slave_port.sv \
+    src/rtl/rpu/rpu_crossbar.sv \
+    src/sim/testbench/rpu/rpu_crossbar_tb.sv
 
 run_test "FINAL CPU BUS TEST" cpu_tb cpu_sim cpu.vcd \
     src/rtl/packages/opcode_pkg.sv \
@@ -190,6 +212,7 @@ run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/packages/memory_pkg.sv \
     src/rtl/packages/bus_pkg.sv \
     src/rtl/packages/gpu_pkg.sv \
+    src/rtl/rpu/rpu_pkg.sv \
     src/rtl/cpu/alu/arithmetic.sv \
     src/rtl/cpu/alu/logic_unit.sv \
     src/rtl/cpu/alu/shifter.sv \
@@ -204,9 +227,10 @@ run_test "CPU SYSTEM TEST" system_tb system_sim system.vcd \
     src/rtl/cpu/fetch/program_counter.sv \
     src/rtl/cpu/fetch/instruction_fetch.sv \
     src/rtl/cpu/cpu.sv \
-    src/rtl/interconnect/address_decoder.sv \
-    src/rtl/interconnect/bus_arbiter.sv \
-    src/rtl/interconnect/bus_interconnect.sv \
+    src/rtl/rpu/rpu_decoder.sv \
+    src/rtl/rpu/rpu_slave_port.sv \
+    src/rtl/rpu/rpu_crossbar.sv \
+    src/rtl/rpu/rpu_top.sv \
     src/rtl/memory/instruction_rom.sv \
     src/rtl/memory/data_ram.sv \
     src/rtl/memory/memory_subsystem.sv \
@@ -262,6 +286,8 @@ gtkwave \
     src/sim/waveforms/branch_unit.vcd \
     src/sim/waveforms/instruction_fetch.vcd \
     src/sim/waveforms/data_ram.vcd \
-    src/sim/waveforms/bus_interconnect.vcd \
+    src/sim/waveforms/rpu_decoder.vcd \
+    src/sim/waveforms/rpu_slave_port.vcd \
+    src/sim/waveforms/rpu_crossbar.vcd \
     src/sim/waveforms/cpu.vcd \
     src/sim/waveforms/system.vcd

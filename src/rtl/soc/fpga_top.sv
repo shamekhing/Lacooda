@@ -1,25 +1,49 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA Tang Primer 20K board wrapper
+// LACOODA FPGA TOP — STAGE 4
+// ============================================================
 //
-// This wrapper is the synthesizable FPGA top and exposes board-level I/O:
+// TARGET
 //
-//      clk27   -> system clock (27 MHz onboard oscillator)
-//      btn_n0  -> synchronous active-high reset (active-low button)
-//      btn_n1  -> run enable (active-low button)
-//      led0..1 -> retire_valid, illegal_instr
-//      led2..5 -> reserved
+//   Sipeed Tang Primer 20K
 //
-// system stays the unit under test in simulation; here it is driven by
-// the board pins and retirement status is exposed through the LEDs.
+// BOARD INTERFACE
+//
+//   clk27  : 27 MHz system clock
+//   btn_n0 : Active-low reset button
+//   btn_n1 : Active-low run button
+//   led0   : Stretched CPU instruction retirement
+//   led1   : Sticky CPU fault (fetch, data bus, illegal instruction)
+//   led2-5 : Reserved
+//
+// STAGE 4
+//
+//   The system includes a three-master arbiter.
+//
+//   CPU:
+//     Connected and active.
+//
+//   GPU:
+//     Memory master currently disabled.
+//
+//   TPU:
+//     Memory master currently disabled.
+//
+//   DDR3:
+//     Backend unavailable until physical controller
+//     integration is completed.
+//
+// This wrapper preserves the existing physical port list
+// and does not invent FPGA pin assignments.
 // ============================================================
 
 module fpga_top (
-    input  logic clk27,
 
-    input  logic btn_n0,
-    input  logic btn_n1,
+    input logic clk27,
+
+    input logic btn_n0,
+    input logic btn_n1,
 
     output logic led0,
     output logic led1,
@@ -27,54 +51,146 @@ module fpga_top (
     output logic led3,
     output logic led4,
     output logic led5
+
 );
 
-    // ------------------------------------------------------------
-    // Button conditioning.
+    // ========================================================
+    // BUTTON SYNCHRONIZERS
+    // ========================================================
     //
-    // The board buttons are asynchronous and active-low; the CPU reset is
-    // synchronous and active-high. Two flops de-metastabilize the pins and
-    // flip the polarity in one place.
-    // ------------------------------------------------------------
-    logic [1:0] rst_sync;
-    logic [1:0] run_sync;
+    // Two-stage synchronization of asynchronous button
+    // signals into the 27 MHz clock domain.
+    //
+    // Internal rst/run signals are active-high.
+    // ========================================================
 
-    always_ff @(posedge clk27) begin
-        rst_sync <= {rst_sync[0], ~btn_n0};
-        run_sync <= {run_sync[0], ~btn_n1};
-    end
+    logic [1:0] rst_sync = 2'b11;
+    logic [1:0] run_sync = 2'b00;
 
     logic rst;
     logic run;
 
+    always_ff @(posedge clk27) begin
+
+        rst_sync <= {
+            rst_sync[0],
+            ~btn_n0
+        };
+
+        run_sync <= {
+            run_sync[0],
+            ~btn_n1
+        };
+
+    end
+
     assign rst = rst_sync[1];
     assign run = run_sync[1];
 
-    // ------------------------------------------------------------
-    // CPU system
-    // ------------------------------------------------------------
+    // ========================================================
+    // CPU STATUS
+    // ========================================================
+
     logic retire_valid;
-    logic illegal_instr;
+    logic cpu_fault;
+    logic [19:0] activity_count;
+    always_ff @(posedge clk27) begin
+        if (rst) activity_count <= '0;
+        else if (retire_valid) activity_count <= '1;
+        else if (activity_count != '0) activity_count <= activity_count - 1'b1;
+    end
+
+    // ========================================================
+    // GPU MEMORY MASTER
+    // ========================================================
+    //
+    // The existing GPU only contains MMIO registers.
+    //
+    // It cannot yet generate framebuffer memory requests.
+    //
+    // Therefore, its master request remains inactive.
+    // ========================================================
+
+    bus_pkg::bus_req_s gpu_bus_req;
+    bus_pkg::bus_rsp_s gpu_bus_rsp;
+
+    assign gpu_bus_req = '0;
+
+    // ========================================================
+    // TPU MEMORY MASTER
+    // ========================================================
+    //
+    // No TPU execution engine has been connected yet.
+    //
+    // Reserve its native bus connection without generating
+    // invalid transactions.
+    // ========================================================
+
+    bus_pkg::bus_req_s tpu_bus_req;
+    bus_pkg::bus_rsp_s tpu_bus_rsp;
+
+    assign tpu_bus_req = '0;
+
+    // ========================================================
+    // DDR3 BACKEND
+    // ========================================================
+    //
+    // The native bus bridge exists.
+    //
+    // The physical Gowin DDR3 controller is not connected
+    // in this configuration.
+    //
+    // Report the backend as unavailable.
+    //
+    // The DDR3 bridge responds with a bus error instead
+    // of issuing transactions into nonexistent hardware.
+    // ========================================================
+
+    logic ddr3_backend_ready;
+
+    bus_pkg::bus_req_s ddr3_backend_bus_req;
+    bus_pkg::bus_rsp_s ddr3_backend_bus_rsp;
+
+    assign ddr3_backend_ready = 1'b0;
+    assign ddr3_backend_bus_rsp   = '0;
+
+    // ========================================================
+    // LACOODA SYSTEM
+    // ========================================================
 
     system u_system (
-        .clk           (clk27),
-        .rst           (rst),
-        .run           (run),
 
-        .retire_valid  (retire_valid),
-        .illegal_instr (illegal_instr)
+        .clk                (clk27),
+        .rst                (rst),
+        .run                (run),
+
+        .retire_valid       (retire_valid),
+        .illegal_instr      (),
+        .cpu_fault          (cpu_fault),
+
+        .gpu_bus_req        (gpu_bus_req),
+        .gpu_bus_rsp        (gpu_bus_rsp),
+
+        .tpu_bus_req        (tpu_bus_req),
+        .tpu_bus_rsp        (tpu_bus_rsp),
+
+        .ddr3_backend_ready (ddr3_backend_ready),
+
+        .ddr3_backend_bus_req   (ddr3_backend_bus_req),
+        .ddr3_backend_bus_rsp   (ddr3_backend_bus_rsp)
+
     );
 
-    // ------------------------------------------------------------
-    // Observation LEDs.
-    //
-    // Retirement status is visible; the remaining LEDs are reserved.
-    // ------------------------------------------------------------
-    assign led0 = retire_valid;
-    assign led1 = illegal_instr;
-    assign led2 = 1'b0; // ALU parity not yet implemented
-    assign led3 = 1'b0; // ALU parity not yet implemented
-    assign led4 = 1'b0; // ALU parity not yet implemented
-    assign led5 = 1'b0; // ALU parity not yet implemented
+    // ========================================================
+    // BOARD STATUS OUTPUTS
+    // ========================================================
+
+    assign led0 = activity_count != '0;
+    assign led1 = cpu_fault;
+
+    assign led2 = 1'b0;
+    assign led3 = 1'b0;
+    assign led4 = 1'b0;
+    assign led5 = 1'b0;
 
 endmodule

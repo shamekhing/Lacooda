@@ -35,6 +35,8 @@ module cpu_datapath (
     input opcode_pkg::opcode_t alu_op,
     input logic carry_in,
     input logic alu_start,
+    input logic capture_operands,
+    input logic use_captured_operands,
 
     // Immediate operand (the word that followed the instruction)
     input cpu_pkg::word_t imm_operand,
@@ -53,9 +55,14 @@ module cpu_datapath (
     output cpu_pkg::word_t operand_b,
     output cpu_pkg::word_t store_data,
     output cpu_pkg::word_t alu_result,
-    output logic alu_done
+    output logic alu_done,
+    output logic carry_flag
 );
     cpu_pkg::word_t rs2_data;
+    cpu_pkg::word_t rs1_data;
+    cpu_pkg::word_t operand_a_reg;
+    cpu_pkg::word_t operand_b_reg;
+    cpu_pkg::word_t store_data_reg;
     cpu_pkg::word_t writeback_data;
 
     logic register_wen;
@@ -64,6 +71,7 @@ module cpu_datapath (
     logic alu_busy;
     cpu_pkg::flags_s flags;
     cpu_pkg::status_t status;
+    assign carry_flag = status[2];
 
     // =========================================================
     // WRITE ENABLE CONTROL
@@ -87,7 +95,7 @@ module cpu_datapath (
         .rst(rst),
 
         .rs1_addr(rs1),
-        .rs1_data(operand_a),
+        .rs1_data(rs1_data),
 
         .rs2_addr(rs2),
         .rs2_data(rs2_data),
@@ -98,14 +106,27 @@ module cpu_datapath (
     );
 
     // STORE always needs the unmodified value read from RS2.
-    assign store_data = rs2_data;
+    assign store_data = use_captured_operands ? store_data_reg : rs2_data;
 
     // =========================================================
     // OPERAND B MULTIPLEXER
     // =========================================================
 
-    assign operand_b =
-        imm_sel ? imm_operand : rs2_data;
+    assign operand_a = use_captured_operands ? operand_a_reg : rs1_data;
+    assign operand_b = use_captured_operands ? operand_b_reg :
+        (imm_sel ? imm_operand : rs2_data);
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            operand_a_reg <= '0;
+            operand_b_reg <= '0;
+            store_data_reg <= '0;
+        end else if (capture_operands) begin
+            operand_a_reg <= rs1_data;
+            operand_b_reg <= imm_sel ? imm_operand : rs2_data;
+            store_data_reg <= rs2_data;
+        end
+    end
 
     // =========================================================
     // ALU

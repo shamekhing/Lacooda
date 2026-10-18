@@ -3,15 +3,13 @@
 // ============================================================
 // LACOODA CPU core — bus-handshake integration
 //
-// The core still decodes and executes the same Stage-7 ISA. The only
-// architectural change here is how LOAD/STORE complete:
+// The core decodes and executes the Stage-7 ISA. LOAD/STORE completion:
 //
 //   - dbus_valid is asserted for every LOAD/STORE request.
 //   - dbus_write distinguishes STORE (1) from LOAD (0).
 //   - address/write data remain stable while the instruction_word is held.
-//   - a memory instruction_word is not architecturally complete until
-//     dbus_ready is asserted by the external slave.
-//   - LOAD writes RD only on the accepting bus handshake.
+//   - a bus handshake captures read data.
+//   - LOAD/STORE retire and write back on the following cycle.
 //
 // Normal ALU and branch instructions remain fixed-latency and do not
 // use the bus handshake.
@@ -30,13 +28,14 @@ module cpu_core (
 
     // --------------------------------------------------------
     // Data-bus response from the external system.
-    // dbus_rdata is consumed by LOAD when dbus_valid && dbus_ready.
+    // dbus_rdata is captured by LOAD when dbus_valid && dbus_ready.
     // --------------------------------------------------------
     input  logic dbus_ready,
     input  cpu_pkg::word_t dbus_rdata,
 
     output logic illegal_instr,
     output logic retire_valid,
+    output logic carry_flag,
 
     // Stage 6 control-flow alu_result returned to the fetch wrapper.
     output logic redirect,
@@ -59,6 +58,10 @@ module cpu_core (
     cpu_pkg::reg_addr_t rs1;
     cpu_pkg::reg_addr_t rs2;
     cpu_pkg::reg_addr_t rd;
+    cpu_pkg::reg_addr_t rs1_reg;
+    cpu_pkg::reg_addr_t rs2_reg;
+    cpu_pkg::word_t imm_operand_reg;
+    logic imm_sel_reg;
 
     opcode_pkg::opcode_t alu_op;
     cpu_pkg::word_t imm_operand;
@@ -88,17 +91,22 @@ module cpu_core (
     logic effective_flags_write;
 
     // Multi-cycle execution state.
-    typedef enum logic [1:0] {
+    typedef enum logic [2:0] {
         EX_IDLE,
+        EX_CAPTURE,
         EX_ALU,
-        EX_MEM
+        EX_MEM,
+        EX_MEM_RETIRE
     } ex_state_e;
 
     ex_state_e ex_state;
 
     logic alu_start;
+    logic capture_operands;
     logic alu_done;
     logic mem_accept;
+    cpu_pkg::word_t mem_rdata_reg;
+    assign capture_operands = (ex_state == EX_CAPTURE) && core_enable && !rst;
 
     // --------------------------------------------------------
     // INSTRUCTION cpu_decoder
@@ -137,16 +145,22 @@ module cpu_core (
     // --------------------------------------------------------
     // EXECUTION FSM
     //
-    // Every decoded instruction runs the multi-cycle ALU. A LOAD/STORE
+    // Operands are captured before the ALU starts. Every decoded instruction
+    // runs the multi-cycle ALU. A LOAD/STORE
     // uses it to form the effective address; a branch uses the result
     // only as an observable value (the branch decision itself is made by
     // the combinational branch unit). Memory operations then wait for the
-    // bus before retiring.
+    // bus before retiring on the following cycle.
     // --------------------------------------------------------
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             ex_state  <= EX_IDLE;
             alu_start <= 1'b0;
+            mem_rdata_reg <= '0;
+            rs1_reg <= '0;
+            rs2_reg <= '0;
+            imm_operand_reg <= '0;
+            imm_sel_reg <= 1'b0;
         end else begin
             alu_start <= 1'b0;
 
@@ -154,9 +168,17 @@ module cpu_core (
 
                 EX_IDLE: begin
                     if (core_enable && decode_valid && !rst) begin
-                        alu_start <= 1'b1;
-                        ex_state  <= EX_ALU;
+                        rs1_reg <= rs1;
+                        rs2_reg <= rs2;
+                        imm_operand_reg <= imm_operand;
+                        imm_sel_reg <= imm_sel;
+                        ex_state <= EX_CAPTURE;
                     end
+                end
+
+                EX_CAPTURE: begin
+                    alu_start <= 1'b1;
+                    ex_state <= EX_ALU;
                 end
 
                 EX_ALU: begin
@@ -165,9 +187,14 @@ module cpu_core (
                 end
 
                 EX_MEM: begin
-                    if (mem_accept || !core_enable)
+                    if (mem_accept) begin
+                        mem_rdata_reg <= dbus_rdata;
+                        ex_state <= EX_MEM_RETIRE;
+                    end else if (!core_enable)
                         ex_state <= EX_IDLE;
                 end
+
+                EX_MEM_RETIRE: ex_state <= EX_IDLE;
 
                 default: ex_state <= EX_IDLE;
 
@@ -202,7 +229,7 @@ module cpu_core (
     // --------------------------------------------------------
     // retire_valid marks the single cycle on which the instruction
     // completes, so it also gates the register/flags writes. A LOAD only
-    // completes on the bus handshake, a normal instruction on alu_done.
+    // retires after the bus handshake, a normal instruction on alu_done.
     assign effective_register_write =
         register_write_enable && retire_valid;
 
@@ -216,28 +243,31 @@ module cpu_core (
         .clk(clk),
         .rst(rst),
 
-        .rs1(rs1),
-        .rs2(rs2),
+        .rs1(rs1_reg),
+        .rs2(rs2_reg),
         .rd(rd),
 
         .alu_op(alu_op),
         .carry_in(carry_in),
         .alu_start(alu_start),
+        .capture_operands(capture_operands),
+        .use_captured_operands(ex_state != EX_IDLE),
 
-        .imm_operand(imm_operand),
-        .imm_sel(imm_sel),
+        .imm_operand(imm_operand_reg),
+        .imm_sel(imm_sel_reg),
 
         .register_write_enable(effective_register_write),
         .flags_write_enable(effective_flags_write),
 
-        .dmem_rdata(dbus_rdata),
+        .dmem_rdata(mem_rdata_reg),
         .writeback_from_mem(memory_read_enable),
 
         .operand_a(operand_a),
         .operand_b(operand_b),
         .store_data(store_data),
         .alu_result(alu_result),
-        .alu_done(alu_done)
+        .alu_done(alu_done),
+        .carry_flag(carry_flag)
     );
 
     // --------------------------------------------------------
@@ -267,6 +297,6 @@ module cpu_core (
         decode_valid &&
         !rst &&
         ( (!memory_op && alu_done) ||
-          mem_accept );
+          (ex_state == EX_MEM_RETIRE) );
 
 endmodule

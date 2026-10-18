@@ -13,8 +13,8 @@ module gpu_tb;
     // GPU bus
     // ========================================================
 
-    bus_pkg::bus_req_s mmio_req;
-    bus_pkg::bus_rsp_s mmio_rsp;
+    bus_pkg::bus_req_s gpu_mmio_bus_req;
+    bus_pkg::bus_rsp_s gpu_mmio_bus_rsp;
 
     // ========================================================
     // Test values
@@ -31,8 +31,8 @@ module gpu_tb;
         .clk       (clk),
         .rst       (rst),
 
-        .mmio_req (mmio_req),
-        .mmio_rsp (mmio_rsp)
+        .gpu_mmio_bus_req (gpu_mmio_bus_req),
+        .gpu_mmio_bus_rsp (gpu_mmio_bus_rsp)
     );
 
     // ========================================================
@@ -58,14 +58,15 @@ module gpu_tb;
 
             @(negedge clk);
 
-            mmio_req.valid = 1'b1;
-            mmio_req.op    = bus_pkg::BUS_WRITE;
-            mmio_req.addr  = cpu_pkg::word_t'(addr);
-            mmio_req.wdata = data;
+            gpu_mmio_bus_req.valid = 1'b1;
+            gpu_mmio_bus_req.op    = bus_pkg::BUS_WRITE;
+            gpu_mmio_bus_req.addr  = cpu_pkg::word_t'(addr);
+            gpu_mmio_bus_req.wdata = data;
+            gpu_mmio_bus_req.wstrb = bus_pkg::BUS_STRB_ALL;
 
             #1;
 
-            if (!mmio_rsp.ready)
+            if (!gpu_mmio_bus_rsp.ready)
                 $fatal(
                     1,
                     "GPU write did not complete: addr=%h",
@@ -76,7 +77,7 @@ module gpu_tb;
 
             @(negedge clk);
 
-            mmio_req = '0;
+            gpu_mmio_bus_req = '0;
 
         end
 
@@ -95,25 +96,25 @@ module gpu_tb;
 
             @(negedge clk);
 
-            mmio_req.valid = 1'b1;
-            mmio_req.op    = bus_pkg::BUS_READ;
-            mmio_req.addr  = cpu_pkg::word_t'(addr);
-            mmio_req.wdata = '0;
+            gpu_mmio_bus_req.valid = 1'b1;
+            gpu_mmio_bus_req.op    = bus_pkg::BUS_READ;
+            gpu_mmio_bus_req.addr  = cpu_pkg::word_t'(addr);
+            gpu_mmio_bus_req.wdata = '0;
 
             #1;
 
-            if (!mmio_rsp.ready)
+            if (!gpu_mmio_bus_rsp.ready)
                 $fatal(
                     1,
                     "GPU read did not complete: addr=%h",
                     addr
                 );
 
-            data = mmio_rsp.rdata;
+            data = gpu_mmio_bus_rsp.rdata;
 
             @(negedge clk);
 
-            mmio_req = '0;
+            gpu_mmio_bus_req = '0;
 
         end
 
@@ -128,7 +129,7 @@ module gpu_tb;
         $dumpfile("gpu.vcd");
         $dumpvars(0, gpu_tb);
 
-        mmio_req = '0;
+        gpu_mmio_bus_req = '0;
         rst       = 1'b1;
 
         repeat (2)

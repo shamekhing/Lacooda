@@ -37,6 +37,8 @@ module cpu_datapath_tb;
     logic alu_start;
     logic alu_busy;
     logic alu_done;
+    logic capture_operands = 1'b0;
+    logic use_captured_operands = 1'b0;
 
     cpu_pkg::status_t status_flags;
 
@@ -58,6 +60,8 @@ module cpu_datapath_tb;
         .alu_op(alu_op),
         .carry_in(carry_in),
         .alu_start(alu_start),
+        .capture_operands(capture_operands),
+        .use_captured_operands(use_captured_operands),
 
         .imm_operand(immediate),
         .imm_sel(use_immediate),
@@ -518,6 +522,25 @@ module cpu_datapath_tb;
         memory_read_data = '0;
 
         check_reg(reg_addr_t'(10), word_t'(16'hBEEF));
+
+        // The ALU operand stays fixed after the capture edge.
+        @(negedge clk);
+        rs1 = ZERO_REG;
+        rs2 = ZERO_REG;
+        use_immediate = 1'b1;
+        immediate = word_t'(123);
+        capture_operands = 1'b1;
+        @(posedge clk);
+        #1;
+        capture_operands = 1'b0;
+        use_captured_operands = 1'b1;
+        immediate = word_t'(456);
+        tests = tests + 1;
+        if (operand_b !== word_t'(123)) begin
+            $display("[FAIL] captured operand changed during operation");
+            errors = errors + 1;
+        end
+        use_captured_operands = 1'b0;
 
         // =====================================================
         // RESET

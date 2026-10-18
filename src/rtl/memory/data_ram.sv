@@ -3,341 +3,247 @@
 `define DATA_RAM_SV
 
 // ============================================================
-// Data memory
+// LACOODA SYNCHRONOUS DATA RAM
+// ============================================================
 //
-// LACOODA local data RAM.
+// 32 KiB, organized as 8192 x 32-bit words.
 //
-// The data memory is a memory-bus slave.
+// Features:
+//   - Synchronous read
+//   - Synchronous write
+//   - Byte write enables
+//   - Registered response
+//   - Address alignment validation
+//   - Local address range validation
+//   - Error reporting
 //
-// Memory organization:
+// The RAM array is not reset.
 //
-//     CPU address:
-//         byte address
+// Initialization uses the existing memory image.
 //
-//     RAM index:
-//         word address
+// TRANSACTION TIMING:
 //
-// At the fixed 32-bit configuration:
+//   Cycle N:
+//       valid = 1
+//       ready = 0
 //
-//     32 KiB
-//     8192 x 32-bit words
+//   Rising edge:
+//       Read or write executes.
 //
-// ------------------------------------------------------------
-// ADDRESS RESPONSIBILITY
-// ------------------------------------------------------------
+//   Cycle N+1:
+//       ready = 1
+//       Read data and error status are valid.
 //
-// The address decoder/interconnect is responsible for deciding
-// whether an address belongs to this memory region.
+//   Next rising edge:
+//       Transaction completes.
 //
-// Therefore data_ram does not repeat the global range check.
+// The master must hold its request until completion.
 //
-// If data_ram_req.valid reaches this module, the interconnect has
-// already selected data memory.
+// The RAM does not accept a second transaction while a
+// response is pending.
 //
-// This module only checks whether the local byte address is
-// correctly aligned to an architectural word.
-//
-// ------------------------------------------------------------
-// RAM TIMING
-// ------------------------------------------------------------
-//
-// Both reads and writes are synchronous.
-//
-// LOAD:
-//
-//     Cycle N:
-//         valid = 1
-//         ready = 0
-//         address presented
-//
-//         rising edge:
-//             memory word is captured
-//
-//     Cycle N+1:
-//         ready = 1
-//         rdata = captured word
-//
-// STORE:
-//
-//     Cycle N:
-//         valid = 1
-//         ready = 0
-//         address + wdata presented
-//
-//         rising edge:
-//             memory word is written
-//
-//     Cycle N+1:
-//         ready = 1
-//
-// This structure is intentionally different from the previous
-// asynchronous-read implementation so that the large memory
-// can match a synchronous FPGA BSRAM inference pattern.
-//
-// ------------------------------------------------------------
-// BUS PROTOCOL
-// ------------------------------------------------------------
-//
-// A transaction completes when:
-//
-//     data_ram_req.valid && data_ram_rsp.ready
-//
-// The CPU holds its request stable while ready is low.
-//
-// Once ready is asserted, that request is complete.
-//
-// A new request may immediately follow on the next cycle;
-// valid does NOT have to fall between transactions.
+// This implementation is intentionally non-pipelined.
 // ============================================================
 
 module data_ram (
-    input  logic              clk,
-    input  logic              rst,
 
-    input  bus_pkg::bus_req_s data_ram_req,
-    output bus_pkg::bus_rsp_s data_ram_rsp
+    input logic clk,
+    input logic rst,
+
+    input  bus_pkg::bus_req_s ram_bus_req,
+    output bus_pkg::bus_rsp_s ram_bus_rsp
+
 );
-
 
     // ========================================================
     // MEMORY ARRAY
     // ========================================================
-    //
-    // The array stores architectural words.
-    //
-    //     8192 x 32
-    //
-    // The synchronous access pattern below is intentional for
-    // FPGA block-RAM inference.
-    // ========================================================
 
-    cpu_pkg::word_t ram_words [0 : memory_pkg::DATA_RAM_WORDS-1];
+    cpu_pkg::word_t ram_words [
+        0 : memory_pkg::DATA_RAM_WORDS-1
+    ];
 
     // ========================================================
-    // INITIALIZATION
+    // INITIAL MEMORY CONTENTS
     // ========================================================
     //
-    // Do NOT initialize this RAM with:
+    // No reset loop is used.
     //
-    //     for (...)
-    //         ram_words[i] = '0;
-    //
-    // At 32 KiB that produces thousands of elaborated loop
-    // iterations and previously hit Gowin's synthesis loop
-    // limit.
-    //
-    // Instead the initial contents come from a hexadecimal
-    // memory image.
-    //
-    // This does NOT make the RAM read-only.
-    //
-    // STORE instructions may overwrite the initialized values
-    // normally after configuration.
+    // A large reset loop would interfere with efficient
+    // FPGA block RAM inference.
     // ========================================================
 
     initial begin
-        $readmemh(memory_pkg::DATA_RAM_INIT_FILE, ram_words);
-    end
 
+        $readmemh(
+            memory_pkg::DATA_RAM_INIT_FILE,
+            ram_words
+        );
+
+    end
 
     // ========================================================
     // ADDRESS VALIDATION
     // ========================================================
-    //
-    // Range checking is NOT performed here.
-    //
-    // The address decoder/interconnect has already determined
-    // that the request belongs to data memory.
-    //
-    // We only need to check word alignment.
-    //
-    //     WORD_BYTES = 4
-    //
-    //     valid:
-    //         0x00000000
-    //         0x00000004
-    //         0x00000008
-    //
-    //     invalid:
-    //         0x00000001
-    //         0x00000002
-    //         0x00000006
-    //
-    // WORD_BYTES is a compile-time constant, so synthesis can
-    // simplify this operation.
-    // ========================================================
 
+    localparam int RAM_INDEX_WIDTH =
+        $clog2(memory_pkg::DATA_RAM_WORDS);
+
+    localparam cpu_pkg::word_t RAM_SIZE_BYTES =
+        cpu_pkg::word_t'(memory_pkg::DATA_RAM_WORDS)
+        * cpu_pkg::word_t'(cpu_pkg::WORD_BYTES);
+
+    logic addr_aligned;
+    logic addr_in_range;
     logic addr_valid;
 
+    logic [RAM_INDEX_WIDTH-1:0] word_index;
+    bus_pkg::bus_strb_t write_strobes;
+    cpu_pkg::word_t write_data;
+
+    assign write_strobes = ram_bus_req.wstrb;
+    assign write_data = ram_bus_req.wdata;
+
+    assign addr_aligned =
+        bus_pkg::bus_is_aligned(ram_bus_req.addr);
+
+    assign addr_in_range =
+        ram_bus_req.addr < RAM_SIZE_BYTES;
+
     assign addr_valid =
-        (data_ram_req.addr % cpu_pkg::WORD_BYTES) == 0;
+        addr_aligned && addr_in_range;
 
+    // Divide byte address by four to obtain word index.
+    //
+    // Division by a power-of-two constant synthesizes
+    // as a shift or bit selection.
 
-    // ========================================================
-    // REGISTERED READ RESULT
-    // ========================================================
-    //
-    // This is the value returned by a LOAD.
-    //
-    // The important difference from the old implementation is
-    // that this register is loaded inside always_ff:
-    //
-    //     read_data <= ram_words[index];
-    //
-    // rather than reading:
-    //
-    //     rdata = ram_words[index];
-    //
-    // combinationally.
-    //
-    // That makes the RAM read synchronous.
-    // ========================================================
-
-    cpu_pkg::word_t read_data;
-
+    assign word_index =
+        RAM_INDEX_WIDTH'(
+            ram_bus_req.addr / cpu_pkg::WORD_BYTES
+        );
 
     // ========================================================
-    // RESPONSE PENDING
-    // ========================================================
-    //
-    // pending = 0
-    //
-    //     Memory may accept a new request.
-    //
-    // pending = 1
-    //
-    //     The request accepted on the previous rising edge has
-    //     completed and its response is available.
-    //
-    // data_ram_rsp.ready is generated from this state.
+    // RESPONSE REGISTERS
     // ========================================================
 
     logic pending;
+    logic response_error;
 
+    cpu_pkg::word_t read_data;
 
     // ========================================================
-    // SYNCHRONOUS MEMORY ACCESS
+    // SYNCHRONOUS TRANSACTION PROCESSING
+    // ========================================================
+    //
+    // pending = 0:
+    //   May accept a request.
+    //
+    // pending = 1:
+    //   Response is available.
+    //   No additional memory operation is executed.
+    //
+    // Both pending and read_data update after the same
+    // rising edge through nonblocking assignments.
+    //
+    // Therefore ready is not asserted before read_data
+    // has been captured.
     // ========================================================
 
     always_ff @(posedge clk) begin
 
         if (rst) begin
 
-            // ------------------------------------------------
-            // Reset interface state only.
-            //
-            // DO NOT reset the complete memory array here.
-            //
-            // A reset loop over thousands of memory words can
-            // prevent efficient block-RAM inference and would
-            // require the physical RAM to support runtime
-            // clearing behavior that we do not need.
-            //
-            // RAM initialization is handled by $readmemh.
-            // ------------------------------------------------
+            pending        <= 1'b0;
+            response_error <= 1'b0;
+            read_data      <= '0;
 
-            pending   <= 1'b0;
-            read_data <= '0;
-
-        end
-        else begin
+        end else if (pending) begin
 
             // ------------------------------------------------
-            // A pending response is consumed when:
+            // COMPLETE PREVIOUS TRANSACTION
+            // ------------------------------------------------
             //
-            //     valid && ready
+            // The master observes ready = 1 before this edge.
             //
-            // Since ready == pending, a held valid request
-            // completes here.
+            // At this edge the handshake completes.
             //
-            // Clear pending by default.
+            // Return to the request-acceptance state.
             // ------------------------------------------------
 
             pending <= 1'b0;
 
+        end else if (ram_bus_req.valid) begin
 
             // ------------------------------------------------
-            // Accept a new request only when there is no
-            // previous response waiting.
+            // ACCEPT NEW TRANSACTION
             // ------------------------------------------------
 
-            if (data_ram_req.valid && !pending) begin
-                // --------------------------------------------
-                // The request will receive a response during
-                // the following cycle.
-                // --------------------------------------------
-                pending <= 1'b1;
+            pending <= 1'b1;
 
-                // ============================================
-                // ALIGNED ACCESS
-                // ============================================
+            response_error <= !addr_valid;
 
-                if (addr_valid) begin
+            // ------------------------------------------------
+            // INVALID ADDRESS
+            // ------------------------------------------------
+            //
+            // Do not access memory.
+            // Return an error response.
+            // ------------------------------------------------
 
-                    // ----------------------------------------
-                    // STORE
-                    //
-                    // Because this assignment occurs inside
-                    // always_ff @(posedge clk), the memory
-                    // write is synchronous.
-                    // ----------------------------------------
+            if (!addr_valid) begin
 
-                    if (data_ram_req.op == bus_pkg::BUS_WRITE) begin
+                read_data <= '0;
 
-                        ram_words[
-                            data_ram_req.addr
-                            / cpu_pkg::WORD_BYTES
-                        ] <= data_ram_req.wdata;
+            end
 
-                    end
+            // ------------------------------------------------
+            // WRITE
+            // ------------------------------------------------
+            //
+            // Update only enabled bytes.
+            //
+            // The write executes once at this edge.
+            // ------------------------------------------------
 
+            else if (
+                ram_bus_req.op == bus_pkg::BUS_WRITE
+            ) begin
 
-                    // ----------------------------------------
-                    // LOAD
-                    //
-                    // The selected memory word is captured at
-                    // the rising edge.
-                    //
-                    // read_data then remains stable during the
-                    // response cycle while ready is asserted.
-                    // ----------------------------------------
+                for (
+                    int byte_index = 0;
+                    byte_index < cpu_pkg::WORD_BYTES;
+                    byte_index++
+                ) begin
 
-                    else begin
+                    if (write_strobes[byte_index]) begin
 
-                        read_data <= ram_words[
-                            data_ram_req.addr
-                            / cpu_pkg::WORD_BYTES
-                        ];
+                        ram_words[word_index]
+                            [8*byte_index +: 8]
+                            <=
+                            write_data
+                            [8*byte_index +: 8];
 
                     end
 
                 end
 
+                read_data <= '0;
 
-                // ============================================
-                // MISALIGNED ACCESS
-                // ============================================
+            end
 
-                else begin
+            // ------------------------------------------------
+            // READ
+            // ------------------------------------------------
+            //
+            // Synchronous read.
+            //
+            // The selected word is captured at this edge.
+            // ------------------------------------------------
 
-                    // ----------------------------------------
-                    // Misaligned LOAD:
-                    //
-                    //     complete normally
-                    //     return zero
-                    //
-                    // Misaligned STORE:
-                    //
-                    //     complete normally
-                    //     perform no write
-                    //
-                    // This preserves the existing simple
-                    // "invalid access does nothing" policy.
-                    // ----------------------------------------
+            else begin
 
-                    read_data <= '0;
-
-                end
+                read_data <= ram_words[word_index];
 
             end
 
@@ -345,33 +251,23 @@ module data_ram (
 
     end
 
-
     // ========================================================
-    // BUS RESPONSE
-    // ========================================================
-    //
-    // pending becomes 1 after a request has been processed at
-    // a rising edge.
-    //
-    // Therefore:
-    //
-    //     pending = 0 -> ready = 0
-    //
-    //     pending = 1 -> ready = 1
-    //
-    // For LOAD, read_data contains the synchronously captured
-    // memory word.
-    //
-    // For STORE, rdata is irrelevant to the CPU.
+    // RESPONSE
     // ========================================================
 
     always_comb begin
 
-        data_ram_rsp.ready = pending;
-        data_ram_rsp.rdata = read_data;
+        ram_bus_rsp = '0;
+
+        if (!rst && pending) begin
+
+            ram_bus_rsp.ready = 1'b1;
+            ram_bus_rsp.rdata = read_data;
+            ram_bus_rsp.error = response_error;
+
+        end
 
     end
-
 
 endmodule
 

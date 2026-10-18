@@ -1,65 +1,50 @@
 `timescale 1ns/1ps
 
 // ============================================================
-// LACOODA GPU register block
+// LACOODA GPU MMIO REGISTER BLOCK
+// ============================================================
 //
-// CPU-visible GPU MMIO register bank.
+// Native LACOODA bus slave.
 //
-// This module is a direct LACOODA bus slave.
+// Existing register map:
 //
-// Input:
+//   0x00 : ID
+//   0x04 : CONTROL
+//   0x08 : STATUS
+//   0x0C : FRAMEBUFFER_BASE
+//   0x10 : FRAMEBUFFER_WIDTH
+//   0x14 : FRAMEBUFFER_HEIGHT
+//   0x18 : CLEAR_COLOR
 //
-//     bus_pkg::bus_req_s
+// Access rules:
 //
-// Output:
+//   - Word-aligned accesses only.
+//   - Reads ignore write strobes.
+//   - Writes require all four byte strobes.
+//   - ID and STATUS are read-only.
+//   - Unknown addresses return an error.
+//   - Invalid writes have no side effects.
 //
-//     bus_pkg::bus_rsp_s
+// MMIO responses are combinational.
 //
-// The bus interconnect has already:
+// A successful write executes at the rising edge on which
+// valid && ready is asserted.
 //
-//     1. determined that the address belongs to the GPU
-//     2. subtracted bus_pkg::GPU_BASE
-//
-// Therefore mmio_req.addr is already a GPU-local byte address.
-//
-// Responsibilities:
-//
-//     - decode GPU register addresses
-//     - store CPU-writable GPU configuration
-//     - expose read-only GPU status
-//     - generate the bus response
-//
-// Not responsible for:
-//
-//     - rendering
-//     - rasterization
-//     - framebuffer memory
-//     - command execution
-//     - display output
-//
-// Those belong to later GPU stages.
+// This module does not execute GPU rendering commands.
 // ============================================================
 
 module gpu_register (
+
     input logic clk,
     input logic rst,
 
-    // --------------------------------------------------------
-    // LACOODA slave bus
-    // --------------------------------------------------------
+    input  bus_pkg::bus_req_s gpu_mmio_bus_req,
+    output bus_pkg::bus_rsp_s gpu_mmio_bus_rsp,
 
-    input  bus_pkg::bus_req_s mmio_req,
-    output bus_pkg::bus_rsp_s mmio_rsp,
-
-    // --------------------------------------------------------
-    // GPU internal state
-    // --------------------------------------------------------
-
-    input gpu_pkg::gpu_status_s status,
-
+    input  gpu_pkg::gpu_status_s status,
     output gpu_pkg::gpu_config_s gpu_cfg
-);
 
+);
 
     // ========================================================
     // LOCAL ADDRESS
@@ -67,21 +52,98 @@ module gpu_register (
 
     gpu_pkg::gpu_addr_t local_addr;
 
-    assign local_addr = gpu_pkg::gpu_addr_t'(
-            mmio_req.addr
+    assign local_addr =
+        gpu_pkg::gpu_addr_t'(gpu_mmio_bus_req.addr);
+
+    // ========================================================
+    // REGISTER DECODING
+    // ========================================================
+
+    logic addr_aligned;
+    logic addr_known;
+    logic addr_writable;
+
+    logic write_strobes_valid;
+    logic access_valid;
+
+    assign addr_aligned =
+        bus_pkg::bus_is_aligned(gpu_mmio_bus_req.addr);
+
+    // --------------------------------------------------------
+    // Known and writable register classification.
+    // --------------------------------------------------------
+
+    always_comb begin
+
+        addr_known    = 1'b0;
+        addr_writable = 1'b0;
+
+        case (local_addr)
+
+            gpu_pkg::GPU_REG_ID,
+            gpu_pkg::GPU_REG_STATUS: begin
+
+                addr_known = 1'b1;
+
+            end
+
+            gpu_pkg::GPU_REG_CONTROL,
+            gpu_pkg::GPU_REG_FRAMEBUFFER_BASE,
+            gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH,
+            gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT,
+            gpu_pkg::GPU_REG_CLEAR_COLOR: begin
+
+                addr_known    = 1'b1;
+                addr_writable = 1'b1;
+
+            end
+
+            default: begin
+
+                addr_known    = 1'b0;
+                addr_writable = 1'b0;
+
+            end
+
+        endcase
+
+    end
+
+    // ========================================================
+    // WRITE STROBE CHECK
+    // ========================================================
+    //
+    // RAM supports partial writes.
+    //
+    // GPU MMIO does not.
+    //
+    // Every GPU register write must update the complete word.
+    // ========================================================
+
+    assign write_strobes_valid =
+        (gpu_mmio_bus_req.op == bus_pkg::BUS_READ) ||
+        (gpu_mmio_bus_req.wstrb == bus_pkg::BUS_STRB_ALL);
+
+    // ========================================================
+    // ACCESS VALIDITY
+    // ========================================================
+
+    assign access_valid =
+        addr_aligned &&
+        addr_known &&
+        write_strobes_valid &&
+        (
+            (gpu_mmio_bus_req.op == bus_pkg::BUS_READ) ||
+            addr_writable
         );
 
-
     // ========================================================
-    // CONFIGURATION REGISTER WRITE
+    // CONFIGURATION REGISTERS
     // ========================================================
     //
-    // All writable GPU registers are stored inside gpu_cfg.
+    // All configuration fields are reset together.
     //
-    // ID and STATUS are not stored here because they are
-    // read-only.
-    //
-    // Reserved register addresses simply ignore writes.
+    // Invalid writes do not modify configuration.
     // ========================================================
 
     always_ff @(posedge clk or posedge rst) begin
@@ -91,85 +153,52 @@ module gpu_register (
             gpu_cfg <= '0;
 
         end else if (
-            mmio_req.valid && (mmio_req.op == bus_pkg::BUS_WRITE)
+            gpu_mmio_bus_req.valid &&
+            gpu_mmio_bus_rsp.ready &&
+            access_valid &&
+            (gpu_mmio_bus_req.op == bus_pkg::BUS_WRITE)
         ) begin
 
             case (local_addr)
 
-                // --------------------------------------------
-                // CONTROL
-                // --------------------------------------------
-
                 gpu_pkg::GPU_REG_CONTROL: begin
 
-                    gpu_cfg.control <=
-                        mmio_req.wdata;
+                    gpu_cfg.control <= gpu_mmio_bus_req.wdata;
 
                 end
-
-
-                // --------------------------------------------
-                // FRAMEBUFFER BASE
-                // --------------------------------------------
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
                     gpu_cfg.framebuffer_base <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
-
-
-                // --------------------------------------------
-                // FRAMEBUFFER WIDTH
-                // --------------------------------------------
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
                     gpu_cfg.framebuffer_width <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
-
-
-                // --------------------------------------------
-                // FRAMEBUFFER HEIGHT
-                // --------------------------------------------
 
                 gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
                     gpu_cfg.framebuffer_height <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
-
-
-                // --------------------------------------------
-                // CLEAR COLOR
-                // --------------------------------------------
 
                 gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
                     gpu_cfg.clear_color <=
-                        mmio_req.wdata;
+                        gpu_mmio_bus_req.wdata;
 
                 end
 
-
-                // --------------------------------------------
-                // READ-ONLY / RESERVED
-                // --------------------------------------------
-
                 default: begin
 
-                    // GPU_REG_ID:
-                    //     read-only
-                    //
-                    // GPU_REG_STATUS:
-                    //     read-only
-                    //
-                    // Unknown addresses:
-                    //     ignored
+                    // Read-only or reserved register.
+                    // No write occurs.
 
                 end
 
@@ -179,145 +208,78 @@ module gpu_register (
 
     end
 
-
     // ========================================================
-    // BUS READ RESPONSE
-    // ========================================================
-    //
-    // MMIO registers currently have no wait states.
-    //
-    // Therefore every valid GPU request completes immediately.
-    //
-    // Reserved addresses:
-    //
-    //     READ  -> zero
-    //     WRITE -> ignored
-    //
-    // This matches the simple invalid-access behavior already
-    // used elsewhere in the current LACOODA system.
+    // READ RESPONSE
     // ========================================================
 
     always_comb begin
 
-        mmio_rsp = '0;
+        gpu_mmio_bus_rsp = '0;
 
+        if (gpu_mmio_bus_req.valid && !rst) begin
 
-        // ----------------------------------------------------
-        // VALID REQUEST
-        // ----------------------------------------------------
-
-        if (mmio_req.valid) begin
-
-            mmio_rsp.ready =
-                1'b1;
-
-
-            // ------------------------------------------------
-            // READ
-            // ------------------------------------------------
+            gpu_mmio_bus_rsp.ready = 1'b1;
+            gpu_mmio_bus_rsp.error = !access_valid;
 
             if (
-                mmio_req.op ==
-                bus_pkg::BUS_READ
+                access_valid &&
+                (gpu_mmio_bus_req.op == bus_pkg::BUS_READ)
             ) begin
 
                 case (local_addr)
 
-
-                    // ========================================
-                    // ID
-                    // ========================================
-
                     gpu_pkg::GPU_REG_ID: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_pkg::GPU_ID_VALUE;
 
                     end
 
-
-                    // ========================================
-                    // CONTROL
-                    // ========================================
-
                     gpu_pkg::GPU_REG_CONTROL: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.control;
 
                     end
 
-
-                    // ========================================
-                    // STATUS
-                    // ========================================
-
                     gpu_pkg::GPU_REG_STATUS: begin
 
-                        mmio_rsp.rdata =
-                            cpu_pkg::word_t'(
-                                status
-                            );
+                        gpu_mmio_bus_rsp.rdata =
+                            cpu_pkg::word_t'(status);
 
                     end
 
-
-                    // ========================================
-                    // FRAMEBUFFER BASE
-                    // ========================================
-
                     gpu_pkg::GPU_REG_FRAMEBUFFER_BASE: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_base;
 
                     end
 
-
-                    // ========================================
-                    // FRAMEBUFFER WIDTH
-                    // ========================================
-
                     gpu_pkg::GPU_REG_FRAMEBUFFER_WIDTH: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_width;
 
                     end
 
-
-                    // ========================================
-                    // FRAMEBUFFER HEIGHT
-                    // ========================================
-
                     gpu_pkg::GPU_REG_FRAMEBUFFER_HEIGHT: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.framebuffer_height;
 
                     end
 
-
-                    // ========================================
-                    // CLEAR COLOR
-                    // ========================================
-
                     gpu_pkg::GPU_REG_CLEAR_COLOR: begin
 
-                        mmio_rsp.rdata =
+                        gpu_mmio_bus_rsp.rdata =
                             gpu_cfg.clear_color;
 
                     end
 
-
-                    // ========================================
-                    // RESERVED
-                    // ========================================
-
                     default: begin
 
-                        mmio_rsp.rdata =
-                            '0;
+                        gpu_mmio_bus_rsp.rdata = '0;
 
                     end
 
